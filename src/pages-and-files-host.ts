@@ -130,6 +130,8 @@ interface TreeState {
 const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 
 export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
+  // The shared host modules and hosts handed over whole, made once by the host: their members are read at call time.
+  const { notices, session, view, preview, textIndex, media, pageBuilder } = ports;
   let pageActions: ReturnType<typeof createPagesController> | undefined;
   const loadPagesActions = ports.lazyModule(async () => {
     const [module] = await Promise.all([import("./controllers/pages-controller"), loadFileOps()]);
@@ -145,7 +147,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     return { ...create, ...actions, ...confirm, ...picker, ...tree, createExplorerActions: explorer.createExplorerActions, findFiles: explorer.findFiles, measureSwitch: explorer.measureSwitch, fileRowNow: explorer.fileRowNow, revealFiles: explorer.revealFiles, rowsBeside: explorer.rowsBeside, focusFiles: explorer.focusFiles };
   });
 
-  function treeState(scope = ports.session.draftScope()): TreeState {
+  function treeState(scope = session.draftScope()): TreeState {
     const drafts = scope ? draftStore().list(scope) : [];
     const changes = listChanges(drafts);
     return {
@@ -163,7 +165,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     // Files found follow the files: a new or removed file (an agent's too) shows in them without typing again; a closed
     // explorer draws them on opening.
     refresh: () => {
-      if (!filesTree) return ports.media.mediaController.requestGalleryRefresh();
+      if (!filesTree) return media.mediaController.requestGalleryRefresh();
       // Only a tree drawn again (the files changed) draws the found files again, so a rename typed there stays.
       const drawn = ports.panels.files.firstElementChild;
       filesTree.refresh();
@@ -212,7 +214,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         dropProblem: (source, folder) => dropProblem(source, folder),
         drop: (source, folder) => void dropFileTarget(source, folder),
         dropFiles: (files, folder) => upload(folder, files),
-        announce: ports.notices.announce,
+        announce: notices.announce,
       });
       fileActions.attachRoot(ports.panels.files);
       // The found files' own space (and "No file matches") is the top of the repository too, as the tree's is.
@@ -223,11 +225,11 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       filesTree = createFilesTreeController({
         ui: { node, button, setIcon, iconButton },
         snapshot: () => ports.appStore.snapshot.value, repo: () => ports.appStore.repository.value,
-        openFile: () => ports.appStore.openFile.value, epoch: ports.session.currentLoad, root: () => ports.panels.files,
-        state: treeState, scope: ports.session.draftScope, draft: (scope, path) => draftStore().get(scope, path),
-        load: input => ports.repo.api<Directory>("tree", input), images: () => ports.media.mediaController.requestGalleryRefresh(),
-        clearError: ports.notices.clearError, error: ports.notices.errorMessage, status: ports.notices.status, announce: ports.notices.announce, refuse, intent: (path) => ports.previewSelection.recordIntent(path),
-        openDraft: ports.view.openNewDraft, openEntry: (entry, path, epoch) => ports.view.openEntry(entry, path, ports.session.stampOf(epoch)), restore: target => fileOps!.restoreFileTarget(target),
+        openFile: () => ports.appStore.openFile.value, epoch: session.currentLoad, root: () => ports.panels.files,
+        state: treeState, scope: session.draftScope, draft: (scope, path) => draftStore().get(scope, path),
+        load: input => ports.repo.api<Directory>("tree", input), images: () => media.mediaController.requestGalleryRefresh(),
+        clearError: notices.clearError, error: notices.errorMessage, status: notices.status, announce: notices.announce, refuse, intent: (path) => ports.previewSelection.recordIntent(path),
+        openDraft: view.openNewDraft, openEntry: (entry, path, epoch) => view.openEntry(entry, path, session.stampOf(epoch)), restore: target => fileOps!.restoreFileTarget(target),
         create: openCreate, actions: () => fileActions,
         visible: filesShown,
       });
@@ -255,32 +257,32 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       pagesTree = createPagesTree({
         open: (file) => {
           // The open page chosen again shows in the preview, which a link may have taken elsewhere.
-          if (file === ports.appStore.openFile.value && ports.editorModule?.isMounted(file)) { ports.panels.explorerDropdown?.close(); ports.preview.updateNativePreview(); }
-          else void ports.view.restoreFile(file, ports.session.begin());
+          if (file === ports.appStore.openFile.value && ports.editorModule?.isMounted(file)) { ports.panels.explorerDropdown?.close(); preview.updateNativePreview(); }
+          else void view.restoreFile(file, session.begin());
         },
         plan: (request) => {
           const planned = pageActions!.planNew(request);
           return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
         },
         create: (request) => pageActions!.createNew(request),
-        announce: ports.notices.announce,
-        onInteractionEnd: ports.textIndex.flushPendingNativePageTitles,
+        announce: notices.announce,
+        onInteractionEnd: textIndex.flushPendingNativePageTitles,
         retitle: (file, title) => pageActions!.retitle(file, title),
         changed: (file) => treeState().changes.get(file),
         discard: (file) => savePublish.discardFile(file),
         duplicate: (file) => pageActions!.duplicate(file),
         remove: (target) => void pageActions!.remove(target),
         createPage: (route) => pageActions!.createFolderPage(route),
-        pageSettings: (path) => { ports.element("explorer-toggle").focus(); void ports.pageBuilder.openNativePageSettings(path); },
-        navigation: (path) => { ports.element("explorer-toggle").focus(); void ports.pageBuilder.openNativeNavigation(path); },
-        canAddToNavigation: () => Boolean(ports.pageBuilder.nativeNavigationTarget(ports.runtime.site?.routes["/"])),
+        pageSettings: (path) => { ports.element("explorer-toggle").focus(); void pageBuilder.openNativePageSettings(path); },
+        navigation: (path) => { ports.element("explorer-toggle").focus(); void pageBuilder.openNativeNavigation(path); },
+        canAddToNavigation: () => Boolean(pageBuilder.nativeNavigationTarget(ports.runtime.site?.routes["/"])),
         planUrl: (target, value) => (target.file ? pageActions!.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
         typedUrl: (target, text, typing) => (target.file ? pageActions!.typedUrl(target.file, text, typing) : text),
         changeUrl: (target, value, keep) => (target.file ? pageActions!.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
         moveTo: (target) => pageActions!.moveTo(target),
         dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),
         drop: (source, parent) => pageActions!.confirmMove(source, parent),
-        cardOffer: (parent) => ports.pageBuilder.cards.cardOffer(parent),
+        cardOffer: (parent) => pageBuilder.cards.cardOffer(parent),
         searchCleared: () => { ports.element<HTMLInputElement>("explorer-search").value = ""; search(); },
       });
       pagesTree.agents(agentMarks);
@@ -310,7 +312,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     explorer.addEventListener("toggle", () => {
       // Closing a popover queues its toggle; session expiry may detach it before dispatch.
       if (!explorer.isConnected) return;
-      if (ports.media.mediaController.galleryVisible() && pagesController.explorerTab() === "media") void ensureExplorer().then(() => ports.media.mediaController.ensureGallery()).catch(ports.notices.errorMessage);
+      if (media.mediaController.galleryVisible() && pagesController.explorerTab() === "media") void ensureExplorer().then(() => media.mediaController.ensureGallery()).catch(notices.errorMessage);
     });
     const tabs = { pages: ports.element<HTMLButtonElement>("explorer-tab-pages"), media: ports.element<HTMLButtonElement>("explorer-tab-media"), files: ports.element<HTMLButtonElement>("explorer-tab-files") };
     for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
@@ -336,7 +338,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     if (!files && ports.element("files-found").hidden && !ports.panels.files.querySelector("li[hidden]")) return;
     // Another workspace drawn while the module loaded has its own explorer: this search no longer writes.
     const explorer = ports.element("explorer");
-    void loadExplorerModules().then(({ findFiles }) => { if (document.getElementById("explorer") === explorer) findFiles(ports, searchText("files"), fileActions?.attach); }).catch(ports.notices.errorMessage);
+    void loadExplorerModules().then(({ findFiles }) => { if (document.getElementById("explorer") === explorer) findFiles(ports, searchText("files"), fileActions?.attach); }).catch(notices.errorMessage);
   }
   // `reset`: another repository, branch or load: the search starts afresh too.
   function paintExplorerTabs(tab: ExplorerTab, native: boolean, reset = false) {
@@ -373,8 +375,8 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
 
   // The whole site read for the repository open now: an error message, or nothing.
   async function nativeSiteReadForCreate() {
-    const at = ports.session.begin();
-    const problem = await ports.textIndex.ensureNativeTextIndex();
+    const at = session.begin();
+    const problem = await textIndex.ensureNativeTextIndex();
     if (problem) return problem;
     if (!at.holds() || !ports.runtime.site) return "The repository changed meanwhile. Try again.";
     return pagesController.homeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
@@ -399,52 +401,52 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
     edits: ports.guardedEdits,
     site: () => ports.runtime.site,
-    routeForPath: ports.preview.nativeRouteForPath,
+    routeForPath: preview.nativeRouteForPath,
     source: path => ports.runtime.source(path),
     files: () => ports.runtime.files(),
     baseFiles: () => ports.runtime.base.files,
-    drafts: () => { const scope = ports.session.draftScope(); return scope ? draftStore().list(scope) : []; },
-    hasDraftScope: () => Boolean(ports.session.draftScope()),
-    routeInfo: ports.preview.nativeRouteInfo,
-    titles: ports.preview.nativeTitles,
+    drafts: () => { const scope = session.draftScope(); return scope ? draftStore().list(scope) : []; },
+    hasDraftScope: () => Boolean(session.draftScope()),
+    routeInfo: preview.nativeRouteInfo,
+    titles: preview.nativeTitles,
     siteUrl: () => nativeSiteSettings(ports.runtime.source(NATIVE_CONFIG_PATH)).url,
-    writeMeta: (file, field, value, flush) => ports.pageBuilder.writeNativePageMeta(file, field, value, flush),
-    ensureIndex: ports.textIndex.ensureNativeTextIndex,
+    writeMeta: (file, field, value, flush) => pageBuilder.writeNativePageMeta(file, field, value, flush),
+    ensureIndex: textIndex.ensureNativeTextIndex,
     readRedirects: readNativeRedirects,
     withMovedPageUrls,
     pageLinks: (...args) => fileOps!.pageLinks(...args),
-    cardsLinkingTo: (...args) => ports.pageBuilder.cards.cardsLinkingTo(...args),
+    cardsLinkingTo: (...args) => pageBuilder.cards.cardsLinkingTo(...args),
     confirmation: () => confirmDialog,
     picker: () => pagePicker,
     refreshMeta: () => ports.pageStructure?.refreshMeta(),
-    refreshLabel: ports.view.updateCurrentPageLabel,
+    refreshLabel: view.updateCurrentPageLabel,
     tree: () => pagesTree,
     pagesHidden: () => Boolean(ports.element("explorer-pages").hidden),
     openFile: () => ports.appStore.openFile.value,
-    clearPendingTitles: ports.textIndex.clearPendingTitles,
+    clearPendingTitles: textIndex.clearPendingTitles,
     tabsMounted: () => Boolean(document.getElementById("explorer-tabs")),
     paintTabs: paintExplorerTabs,
-    resetExplorer: () => { pagesTree?.reset(); ports.media.mediaController.disposeGallery(); },
-    showMedia: () => { if (ports.panels.explorerDropdown?.isOpen()) void ensureExplorer().then(() => ports.media.mediaController.ensureGallery()).catch(ports.notices.errorMessage); },
+    resetExplorer: () => { pagesTree?.reset(); media.mediaController.disposeGallery(); },
+    showMedia: () => { if (ports.panels.explorerDropdown?.isOpen()) void ensureExplorer().then(() => media.mediaController.ensureGallery()).catch(notices.errorMessage); },
     siteReadForCreate: nativeSiteReadForCreate,
-    createWithCard: (request) => ports.pageBuilder.cards.createWithCard(request),
-    navigationTarget: ports.pageBuilder.nativeNavigationTarget,
+    createWithCard: (request) => pageBuilder.cards.createWithCard(request),
+    navigationTarget: pageBuilder.nativeNavigationTarget,
     restoreDeleted: file => undoFileChanges({ restore: [file] }),
-    announce: ports.notices.announce,
+    announce: notices.announce,
     refuse,
-    error: ports.notices.errorMessage,
+    error: notices.errorMessage,
   });
   const pagesController = createPagesState(pagePorts());
 
   // Shared file operations use the same pure source/draft policy as Pages.
   function onBranchHere(path: string) {
-    const scope = ports.session.draftScope();
+    const scope = session.draftScope();
     return pageOnBranchHere(path, ports.runtime.base.files, scope ? draftStore().list(scope) : []);
   }
   // `_redirects` as it is now: its draft, or the branch's file.
   async function readNativeRedirects(): Promise<string | undefined> {
-    const repo = ports.appStore.repository.value, at = ports.session.begin();
-    const scope = ports.session.draftScope();
+    const repo = ports.appStore.repository.value, at = session.begin();
+    const scope = session.draftScope();
     const draft = scope ? draftStore().get(scope, NATIVE_REDIRECTS_PATH) : undefined;
     if (draft) return draft.deleted ? undefined : draft.content;
     if (!ports.runtime.base.files.includes(NATIVE_REDIRECTS_PATH) || !ports.appStore.repository.value) return undefined;
@@ -469,9 +471,9 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   // again and the trees drawn.
   function discardedNewPages(_paths: string[]) {
     if (!ports.runtime.site) return;
-    ports.pageBuilder.refreshNativeRoutes();
+    pageBuilder.refreshNativeRoutes();
     filesTreeController.render();
-    ports.view.updateAgentContext();
+    view.updateAgentContext();
   }
 
   let createDialog: ReturnType<typeof createCreateDialog> | undefined;
@@ -503,7 +505,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   function openCreate(folder: string, opener: HTMLElement) {
     if (!ports.appStore.snapshot.value) return;
     const since = ports.guardedEdits.stamp("repository");
-    void ensureExplorer().then(() => { if (since.holds()) createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener }); }).catch(ports.notices.errorMessage);
+    void ensureExplorer().then(() => { if (since.holds()) createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener }); }).catch(notices.errorMessage);
   }
 
   // ---- Deleting, renaming, moving and duplicating files. ----
@@ -538,17 +540,17 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   }
 
   const filePorts = (): Parameters<typeof createLazyFileOperationsController>[0] => ({
-    edits: ports.guardedEdits, draftScope: ports.session.draftScope,
+    edits: ports.guardedEdits, draftScope: session.draftScope,
     engaged: () => ports.runtime.engaged, repository: () => ports.appStore.repository.value,
     parentOf, treeState, pathNow, branchFilesUnder, findEntry: ports.repo.findEntry, draftStore,
     baseSource: path => ports.runtime.base.sources.get(path), readFiles: ports.repo.readFiles, readFile: ports.repo.readFile,
     nativeFiles: scope => ports.runtime.files(scope),
-    ensureNativeTextIndex: ports.textIndex.ensureNativeTextIndex, branchPathProblem,
-    readMediaText: ports.media.readMediaText, origins: ports.media.mediaOrigins,
+    ensureNativeTextIndex: textIndex.ensureNativeTextIndex, branchPathProblem,
+    readMediaText: media.readMediaText, origins: media.mediaOrigins,
     onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,
     undoFileChanges,
     duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
-    afterFileChanges, announce: ports.notices.announce, refuse, errorMessage: ports.notices.errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
+    afterFileChanges, announce: notices.announce, refuse, errorMessage: notices.errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
     openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), revealFile: path => filesTreeController.reveal([path]),
     rowsBeside: path => rows?.rowsBeside(ports, filesTree, path) ?? [], focusFiles: () => rows?.focusFiles(ports),
     filesSearch: () => ports.element<HTMLInputElement>("explorer-search").value,
@@ -582,11 +584,11 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   // Closes what shows the files among `paths` (the editor, the style pane) and
   // forgets the models kept for them. Returns the open file when it is one.
   function releaseFiles(paths: Set<string>) {
-    const scope = ports.session.draftScope();
+    const scope = session.draftScope();
     const open = ports.appStore.openFile.value && paths.has(ports.appStore.openFile.value) ? ports.appStore.openFile.value : undefined;
     if (open) {
-      ports.view.fileGeneration++;
-      ports.view.setCurrentPage();
+      view.fileGeneration++;
+      view.setCurrentPage();
     }
     const pane = ports.linkedStyles.secondaryPath();
     if (pane && paths.has(pane)) ports.linkedStyles.unlink();
@@ -605,7 +607,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   let nativeResyncDone: Promise<void> | undefined;
   function resyncNativeSite(): boolean {
     if (nativeResyncing) return true;
-    const scope = ports.session.draftScope();
+    const scope = session.draftScope();
     if (!scope || !ports.appStore.snapshot.value) return false;
     const home = draftStore().get(scope, NATIVE_HOME_PAGE);
     const drafted = isNewDraft(home);
@@ -616,7 +618,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     nativeResyncDone = new Promise<void>((resolve) => {
       queueMicrotask(() => {
         // Nothing is reopened when the home page went away; else the open file is.
-        void ports.view.loadSnapshot(wanted ? undefined : "").finally(() => { nativeResyncing = false; nativeResyncDone = undefined; resolve(); });
+        void view.loadSnapshot(wanted ? undefined : "").finally(() => { nativeResyncing = false; nativeResyncDone = undefined; resolve(); });
       });
     });
     return true;
@@ -630,28 +632,28 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       // Component stylesheets are found again where their components now are.
       ports.runtime.state.componentStyles.clear();
       ports.runtime.state.missingComponentStyles.clear();
-      ports.pageBuilder.refreshNativeRoutes();
+      pageBuilder.refreshNativeRoutes();
       void ports.loadNativeComponentStyles(Object.keys(ports.runtime.site.components));
     }
     filesTreeController.render();
-    ports.view.updateAgentContext();
-    ports.view.updateCurrentPageLabel();
+    view.updateAgentContext();
+    view.updateCurrentPageLabel();
     resyncNativeSite();
-    ports.media.mediaController.requestGalleryRefresh();
+    media.mediaController.requestGalleryRefresh();
   }
 
   // Opens `path` after an operation, or the home page (else the folder summary)
   // when it is gone. `keepExplorer`: the explorer stays open (true) or closes
   // (false); by default a new file keeps it open and a branch file closes it.
   async function openAfter(path: string | undefined, keepExplorer?: boolean, quietStatus = false) {
-    const at = ports.session.begin();
-    const scope = ports.session.draftScope();
+    const at = session.begin();
+    const scope = session.draftScope();
     const draft = path && scope ? draftStore().get(scope, path) : undefined;
     const keep = { keepExplorer: keepExplorer ?? false, quietStatus };
-    if (draft && isNewDraft(draft)) await ports.view.openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
-    else if (path && !draft?.deleted) await ports.view.restoreFile(path, at, keep);
-    else if (ports.runtime.site?.routes["/"]) await ports.view.restoreFile(ports.runtime.site.routes["/"], at, keep);
-    else if (ports.appStore.snapshot.value) ports.view.showDirectory(ports.appStore.snapshot.value);
+    if (draft && isNewDraft(draft)) await view.openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
+    else if (path && !draft?.deleted) await view.restoreFile(path, at, keep);
+    else if (ports.runtime.site?.routes["/"]) await view.restoreFile(ports.runtime.site.routes["/"], at, keep);
+    else if (ports.appStore.snapshot.value) view.showDirectory(ports.appStore.snapshot.value);
   }
 
   /**
@@ -659,7 +661,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
    * Save panel's Restore and Move back, Discard changes on a renamed file).
    */
   function undoFileChanges(what: { restore?: string[]; moveBack?: string[] }) {
-    const scope = ports.session.draftScope();
+    const scope = session.draftScope();
     if (!scope) return;
     const store = draftStore();
     const involved = new Set<string>();
@@ -689,15 +691,15 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     filesTreeController.reveal(done);
     const back = opened && (reversed.find((move) => move.from === opened)?.to ?? opened);
     if (back) void openAfter(back);
-    ports.notices.announce(done.length === 1 ? (reversed.length ? `Moved ${reversed[0].from} back to ${reversed[0].to}.` : `Restored ${done[0]}.`) : `Restored ${done.length} files.`);
+    notices.announce(done.length === 1 ? (reversed.length ? `Moved ${reversed[0].from} back to ${reversed[0].to}.` : `Restored ${done[0]}.`) : `Restored ${done.length} files.`);
   }
 
   // A change's Restore (a deletion), Move back (a rename) or Discard (an edit, a new file) in the Save panel.
   async function discardFileChange(change: FileChange) {
-    if (change.kind === "A" && change.drafts[0]?.upload) await ports.media.discardUpload(change.path);
+    if (change.kind === "A" && change.drafts[0]?.upload) await media.discardUpload(change.path);
     else if (change.kind === "D") undoFileChanges({ restore: [change.path] });
     else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
-    else if (savePublish.discard([change.path])) ports.notices.announce(`Discarded the changes to ${change.path}.`);
+    else if (savePublish.discard([change.path])) notices.announce(`Discarded the changes to ${change.path}.`);
   }
 
   function adopt(result: Snapshot) {
@@ -705,26 +707,26 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     ports.repositoryIndex.seed(ports.appStore.repository.value!, result);
   }
   function showSaved(commit: string) {
-    ports.view.updateAgentContext();
+    view.updateAgentContext();
     ports.element("revision").textContent = commit.slice(0, 7);
     ports.element("revision").title = commit;
     filesTreeController.render();
-    if (ports.runtime.engaged && ports.runtime.site) ports.textIndex.startNativeTextIndex(ports.appStore.repository.value!, ports.runtime.site, ports.session.draftScope(), ports.session.begin(), ports.runtime.state.request);
+    if (ports.runtime.engaged && ports.runtime.site) textIndex.startNativeTextIndex(ports.appStore.repository.value!, ports.runtime.site, session.draftScope(), session.begin(), ports.runtime.state.request);
   }
   const savePublish = createSavePublishController({
     stamp: () => ports.guardedEdits.stamp("repository"),
     snapshot: () => ports.appStore.snapshot.value,
-    scope: ports.session.draftScope, drafts: draftStore, api: ports.repo.api, findEntry: ports.repo.findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce: ports.notices.announce, status: ports.notices.status,
-    fail: ports.notices.errorMessage, fallback: ports.preview.nativeFallbackPage, resync: resyncNativeSite,
+    scope: session.draftScope, drafts: draftStore, api: ports.repo.api, findEntry: ports.repo.findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce: notices.announce, status: notices.status,
+    fail: notices.errorMessage, fallback: preview.nativeFallbackPage, resync: resyncNativeSite,
     onWake: (check) => { document.addEventListener("visibilitychange", check); addEventListener("focus", check); return () => { document.removeEventListener("visibilitychange", check); removeEventListener("focus", check); }; },
     visible: () => document.visibilityState === "visible",
-    reload: () => ports.view.loadSnapshot(),
+    reload: () => view.loadSnapshot(),
     foldIn: (commit, live) => import("./outside-merge").then(module => module.foldIn(ports, { adopt, showSaved, seeHead: savePublish.seeHead, drafts: draftStore }, commit, live)),
     forget: (scope, path) => ports.editorModule?.forgetDraftModel(scope, path),
     redraw: () => {
       ports.editorModule?.refreshDrafts();
       filesTreeController.render();
-      if (ports.runtime.site) ports.preview.updateNativePreviewSources();
+      if (ports.runtime.site) preview.updateNativePreviewSources();
     },
     saved: (scope, result, submitted, shown) => {
       if (shown) ports.runtime.adoptSaved(scope, result, submitted);
@@ -733,7 +735,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
       if (ports.runtime.engaged && !result.unchanged)
         ports.panels.siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
-          () => holdsDraftScope(ports.session.current().scope, scope));
+          () => holdsDraftScope(session.current().scope, scope));
     },
     adopt,
     showSaved,
@@ -745,12 +747,12 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     forgetAuthors: (scope, path) => void import("./save-authors").then(module => module.saveAuthors().forget(draftKey(scope, path))).catch(() => undefined),
     clearHistory: () => ports.editorModule?.clearHistory(),
     reopen: (opened, back, styled) => {
-      if (ports.preview.nativeModeActive()) ports.preview.updateNativePreviewSources();
+      if (preview.nativeModeActive()) preview.updateNativePreviewSources();
       const page = ports.appStore.openFile.value;
       if (opened) void openAfter(back);
-      else if (styled && page && ports.preview.nativeModeActive()) {
+      else if (styled && page && preview.nativeModeActive()) {
         // The open page stays; its stylesheet opens again as GitHub has it.
-        if (ports.preview.nativeComponentTagForPath(page)) void ports.linkedStyles.openComponentLinkedStyle(page);
+        if (preview.nativeComponentTagForPath(page)) void ports.linkedStyles.openComponentLinkedStyle(page);
         else void ports.linkedStyles.openDefaultLinkedStyle(page);
       }
     },
@@ -779,7 +781,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         void ensureExplorer().then(() => {
           pagesController.renderTree();
           if (filesTreeController.visible()) filesTreeController.shown();
-        }).catch(ports.notices.errorMessage);
+        }).catch(notices.errorMessage);
       } else {
         pagesTree?.reset();
         fileActions?.close();
