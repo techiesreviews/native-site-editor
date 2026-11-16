@@ -22,6 +22,11 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const addCard = (page: Page) => page.locator(".card-ghost__add");
 const source = async (page: Page) => (await editorMounted(page), page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")));
 const undo = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"));
+/**
+ * After a reload the browser's kept copy shows first and GitHub's newer files fold in behind it
+ * (src/workspace-boot.ts, checkKept). A hover before that fold lands on the page the fold replaces.
+ */
+const githubChecked = (page: Page) => expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 
 const fresh = [
   "<card-project>",
@@ -46,6 +51,7 @@ async function openSectionWork(page: Page, baseURL: string | undefined, keep: nu
   expect(made).toContain("</section-work>");
   await edit("index.html", made);
   await page.reload();
+  await githubChecked(page);
   await expect(frame(page).locator("section-work > h2")).toBeVisible({ timeout: 30_000 });
   await editorMounted(page);
   await expect.poll(() => source(page)).toBe(made);
@@ -108,6 +114,7 @@ test("of two named card slots, the one whose part of the template is under the p
   expect(made).toContain("</section-pair>");
   await edit("index.html", made);
   await page.reload();
+  await githubChecked(page);
   await expect(frame(page).locator("section-pair > h2")).toBeVisible({ timeout: 30_000 });
   await editorMounted(page);
   await expect.poll(() => source(page)).toBe(made);
@@ -508,6 +515,7 @@ test("a plain div.cards grid with unlinked component items places a card then op
   const unlinked = home.replace(/href="\/work\/[^"]+"/g, 'href=""');
   await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-cards", path: "index.html", content: unlinked } });
   await page.reload();
+  await githubChecked(page);
   const cards = frame(page).locator("div.cards > card-project");
   await expect(cards).toHaveCount(2);
   await cards.last().hover();
@@ -579,6 +587,7 @@ test("Create page in one of two named card slots copies a page its own list link
   ].join("\n"));
   await edit("index.html", made);
   await page.reload();
+  await githubChecked(page);
   await expect(frame(page).locator("section-pair > h2")).toBeVisible({ timeout: 30_000 });
   await editorMounted(page);
   await expect.poll(() => source(page)).toBe(made);
@@ -626,6 +635,7 @@ for (const create of [false, true]) {
     await edit("index.html", made);
     await edit("styles/site.css", readFileSync(new URL("../../fixtures/native-cards/styles/site.css", import.meta.url), "utf8") + cardLinkRule + "\narticle.quote { padding: 24px; min-height: 180px; }\n");
     await page.reload();
+    await githubChecked(page);
     const cards = frame(page).locator("#work .cards > article");
     await expect(cards).toHaveCount(2);
     await cards.last().hover();
@@ -682,6 +692,7 @@ for (const create of [false, true]) {
     await edit("components/section-work/section-work.html", '<section><slot name="title"><h2>Recent work</h2></slot><div class="cards"><slot><card-quote></card-quote></slot></div></section>');
     await edit("styles/site.css", readFileSync(new URL("../../fixtures/native-cards/styles/site.css", import.meta.url), "utf8") + cardLinkRule);
     await page.reload();
+    await githubChecked(page);
     await expect(frame(page).locator("section-work > h2")).toBeVisible({ timeout: 30_000 });
     await frame(page).locator("section-work > h2").hover();
     await addCard(page).click();
