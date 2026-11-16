@@ -35,6 +35,8 @@ export interface WarmCopy {
   branch: string;
   snapshot: Snapshot;
   files: { path: string; sha: string; text: string }[];
+  /** When it was kept (ms): its commit is trusted as a head this tab saw then, for as long as any (src/controllers/save-publish-controller.ts). */
+  at?: number;
 }
 
 const DATABASE = "native-site-editor-warm-copy", STORE = "copy", KEY = "last";

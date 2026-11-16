@@ -577,7 +577,7 @@ test("a kept copy opens on its own snapshot at once: no snapshot read, its head 
   assert.deepEqual(f.paths(), ["branches"], "nothing read from GitHub before the page shows but the branch list");
   assert.equal(f.ports.appStore.snapshot.value, KEPT_SNAPSHOT);
   assert.equal(f.cached.get(HELLO_SHA), HELLO);
-  assert.deepEqual(f.heads, [], "the kept head is not trusted over GitHub's");
+  assert.deepEqual(f.heads, [], "a copy with no kept time: its head is not trusted");
   assert.deepEqual(f.headChecks, [true], "GitHub's head is asked for once the page is on screen");
 });
 
@@ -829,14 +829,21 @@ test("two tabs keeping their own sites: the last one left owns the copy", async 
   }
 });
 
-test("a head check taken over by a newer one: once that one settles on the head shown, up to date, with no check of its own", () => withDocument(async () => {
+test("a head check taken over by a newer one asks again once that one settled, cancelling none; a third takeover waits for the next look", () => withDocument(async () => {
   const f = fixture({ remember: false, native: true });
-  f.answerHead(Promise.resolve(null));
-  f.whenSettled(async () => { f.ports.savePublish.seeHead(sha(9)); });
+  let settledWhileChecking = 0;
+  f.answerHead(Promise.resolve(null), Promise.resolve(sha(9)));
+  f.whenSettled(async () => { settledWhileChecking++; });
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
   await flush();
-  assert.equal(f.headChecks.length, 1, "nothing that would cancel the newer check");
+  assert.equal(settledWhileChecking, 1, "the second check waited for the newer one");
+  assert.equal(f.headChecks.length, 2);
   assert.match(f.shown.status, /^Up to date with main · 0000000/);
+  const g = fixture({ remember: false, native: true });
+  g.answerHead(Promise.resolve(null));
+  await g.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  await flush();
+  assert.equal(g.headChecks.length, 3, "taken over three times: no more until the tab is next shown");
 }));
 
 test("a head check taken over by a newer one that settled without the head shown asks again once it is done", () => withDocument(async () => {
@@ -854,4 +861,13 @@ test("the paint and its fallback timer both reporting start one head check behin
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
   await flush();
   assert.equal(f.headChecks.length, 1);
+});
+
+test("a recently kept copy's head is trusted as of when it was kept, so a lagging GitHub read never steps back from it", async () => {
+  const f = fixture({ remember: false, native: true });
+  const heads: [string, number | undefined][] = [];
+  f.ports.savePublish.seeHead = (commit: string, at?: number) => { heads.push([commit, at]); };
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ at: 1234 }));
+  await flush();
+  assert.deepEqual(heads[0], [sha(9), 1234]);
 });
