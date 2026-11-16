@@ -92,8 +92,8 @@ const agentPresence = createAgentPresence({
 });
 // An agent stopped in another tab of this browser (ticket am-12) goes from this one's views too.
 window.addEventListener("storage", event => { if (event.key === STOPPED_AGENTS_KEY) { agentStops.reread(); agentPresence.stopsChanged(); } });
-function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); share.check(); preview.sync(); return workspaceSession.begin(); }
-const { share, preview } = createWorkspaceShares({ shown: shownScope, siteOpen: () => Boolean(runtime.site), login: () => info?.user?.login, begin: () => workspaceSession.begin(), preview: () => nativePreview, previewLinks: () => Boolean(info?.previewLinks), files: () => nativeSiteFiles() }); // Share to edit (slice 30), Share preview (slice 35)
+function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.loaded(); workingPart.left(); share.check(); previewShare.sync(); return workspaceSession.begin(); }
+const { share, preview: previewShare } = createWorkspaceShares({ shown: shownScope, siteOpen: () => Boolean(runtime.site), login: () => info?.user?.login, begin: () => workspaceSession.begin(), preview: () => nativePreview, previewLinks: () => Boolean(info?.previewLinks), files: () => nativeSiteFiles() }); // Share to edit (slice 30), Share preview (slice 35)
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter is the site preview below.
 const runtime = createNativeSiteRuntime({
@@ -380,7 +380,7 @@ const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeCo
 // By value: consts declared above and hoisted functions; `let` state goes in as accessors (tests/main-ts-ceiling.test.ts).
 const workspace = createWorkspaceMount({
   app, element, appStore, editorModule, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, linkedStyles, versions, pagesAndFiles, setup, repositoryIndex, cleanSources,
-  notices, session, view, preview: sitePreview, textIndex, media, pageBuilder, share, previewShare: preview,
+  notices, session, view, preview: sitePreview, textIndex, media, pageBuilder, share, previewShare,
   site: { deactivate: deactivateNative, assets: loadNativeAssets, shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles },
   get info() { return info; }, get repositories() { return repositories; }, set repositories(value) { repositories = value; },
   get nativePreview() { return nativePreview; }, set nativePreview(value) { nativePreview = value; },
