@@ -20,7 +20,8 @@
 // - head check (checkKept): the same commit: up to date, the head trusted; a newer one: folds in as an outside change
 //   (unsaved edits kept and merged) or loads the branch again; fails, never answers (given up as a failure) or the
 //   tab is hidden: "Could not check" while shown, asked again when next shown or focused; taken over by a newer
-//   check: that one's outcome stands, and the status follows it once it settles.
+//   check: that one's outcome stands, and this one asks again once it settles (after a third takeover, "Could not
+//   check" while shown, asked again on the next look).
 // - leaving (a new listing, navigation, sign-out): the copy's texts not yet proven cache nothing and read nothing.
 
 import type { Repository, Snapshot } from "../shared/types";
@@ -35,7 +36,7 @@ export interface WarmCopy {
   branch: string;
   snapshot: Snapshot;
   files: { path: string; sha: string; text: string }[];
-  /** When it was kept (ms): its commit is trusted as a head this tab saw then, for as long as any (src/controllers/save-publish-controller.ts). */
+  /** When this tab learned its commit as the branch head (ms), if it did: trusted as a head seen then, for as long as any (src/controllers/save-publish-controller.ts). */
   at?: number;
 }
 
@@ -81,7 +82,10 @@ export function asWarmCopy(value: Partial<WarmCopy> | undefined): WarmCopy | und
   if (!value || !isText(value.login) || !isText(value.source) || !isText(value.branch) || !repo || !Number.isSafeInteger(repo.id) || !isText(repo.full_name) || !isText(repo.name) ||
     !snapshot || !isText(snapshot.commit) || snapshot.branch !== value.branch || snapshot.empty || !Array.isArray(snapshot.tree) || !Array.isArray(snapshot.entries) ||
     !Array.isArray(files) || !files.every((file) => file && isText(file.path) && isText(file.sha) && typeof file.text === "string")) return undefined;
-  return value as WarmCopy;
+  // A time from the future (a clock moved back) counts as now; anything else that is not a time, as none.
+  const at = typeof value.at === "number" && Number.isFinite(value.at) ? Math.min(value.at, Date.now()) : undefined;
+  const { at: _stored, ...copy } = value as WarmCopy;
+  return at === undefined ? copy : { ...copy, at };
 }
 // Signed out here or in another tab: this page keeps nothing more in that storage (a tab leaving or a late timer included).
 const forgotten = new WeakSet<Factory>();

@@ -393,6 +393,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
 
   return {
     proof, seeHead, trustedHead, headFor, checkHead, pushed, beginSave,
+    /** The head this tab last learned and when, trusted or not. */
+    headSeen: () => headSeen && { ...headSeen },
     /** Resolves once no head check is under way (a fold or load after it included). */
     headSettled: async () => { while (checking) await checking.catch(() => undefined); }, checkDeleted, settleDeleted,
     discard, discardFile, discardAll, published, dispose,
