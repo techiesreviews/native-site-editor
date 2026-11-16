@@ -27,7 +27,7 @@ function harness(connected = true) {
     watch: (heard) => { listener = heard; heard([]); return () => { listener = undefined; }; },
     clock: { setTimeout: (run) => { timers.push(run); return timers.length; }, clearTimeout: () => undefined },
   });
-  const request = (fields: Partial<PinRequest>): PinRequest => ({ id: "req-1", text: "", state: "open", createdAt: 1, repoId: 1, element, ...fields } as PinRequest);
+  const request = (fields: Partial<PinRequest>): PinRequest => ({ id: "req-1", text: "", state: "open", createdAt: 1, repoId: 1, element, ...fields });
   const tell = (requests: PinRequest[]) => listener?.(requests);
   const settle = () => new Promise(done => setTimeout(done));
   return { agent, asked, dismissed, tell, request, timers, settle, listening: () => Boolean(listener) };

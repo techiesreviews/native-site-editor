@@ -82,7 +82,7 @@
 /* A thin line between rows, as in the prototype (TOOLS-253): each row's strip sits under it. */
 .inbox__row + .inbox__row {
   margin-block-start: var(--space-4xs);
-  border-block-start: 1px solid color-mix(in oklch, var(--text) 8%, transparent);
+  border-block-start: 1px solid var(--line);
 }
 /* The rows and the strips' actions are the Button part (src/ui/button/button.css), set through its hooks on its own
    layer: a row is see-through until hovered and lays out its icon, what and where; an action is the compact size. */
@@ -131,8 +131,8 @@
 .inbox__item > b { font-weight: 500; }
 .inbox__item > small { color: var(--muted); font-size: var(--type-small); }
 /* A shared part's note: where it sits and how many pages a fix changes, in the editor's component violet. */
-.inbox__shared { color: var(--component-text); font-weight: 500; }
-.inbox__shared > svg { display: inline-block; margin-inline: 0 var(--space-4xs); vertical-align: -2px; }
+.inbox__shared { display: inline-flex; align-items: center; gap: var(--space-4xs); color: var(--component-text); font-weight: 500; }
+.inbox__shared > svg { margin-inline: 0; }
 /* The strip of actions under a row, and the suggestion box, start under its words: past the row's padding, icon and gap. */
 .inbox__actions, .inbox__suggest { margin: 0 var(--space-xs) var(--space-xs) calc(2 * var(--space-xs) + var(--space-m)); }
 .inbox__actions, .inbox__buttons { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }

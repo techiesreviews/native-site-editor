@@ -219,3 +219,9 @@ test("in a shared part, what a page may give instead (a slot's fallback, a link 
   ]);
   assert.deepEqual(items.map(({ kind, where, at }) => ({ kind, where, at })), [{ kind: "picture", where: "Section split", at: split.indexOf(`<img src="/images/mark.svg">`) }]);
 });
+
+test("a link's name is judged as the edit bar judges it: an empty label names nothing; a title or a described picture names it", () => {
+  const source = `${head("Home")}<a href="/a/" aria-label=""></a><a href="/b/" title="Cart"></a><a href="/c/"><img src="/images/s.svg" alt="Shop"></a><a href="/d/" aria-labelledby="x"></a></body>`;
+  const items = siteItems([page("index.html", source)], rules);
+  assert.deepEqual(items.filter(item => item.kind === "link").map(item => item.at), [source.indexOf(`<a href="/a/"`)]);
+});

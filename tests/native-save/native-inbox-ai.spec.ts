@@ -110,5 +110,13 @@ test.describe("Fix with AI", () => {
     // Left: the row whose suggestion failed, ready to be asked again.
     await expect(inbox(page).getByRole("button", { name: "Link that only says “click here”, Home page", exact: true })).toHaveCount(0);
     await expect(row(page, "Link without a name, Home page")).toBeVisible();
+    // Accept all is one Undo step: one Undo puts every page and the header back, and their rows wait again, ready.
+    await page.getByRole("banner").getByRole("button", { name: "Undo", exact: true }).click();
+    await expect.poll(() => source(page, baseURL, "index.html")).toContain(`<a href="/about/" data-key="vague">click here</a>`);
+    expect(await source(page, baseURL, "index.html")).not.toContain("A desk with a laptop");
+    await expect.poll(() => source(page, baseURL, "components/site-header/site-header.html")).not.toContain("Native Studio logo");
+    await inboxButton(page).click();
+    await expect(row(page, "Picture without a description, Site header · changes 2 pages").getByRole("button", { name: /^Fix with AI: / })).toBeVisible();
+    await expect(inbox(page).getByRole("button", { name: "Fix all with AI", exact: true })).toBeVisible();
   });
 });

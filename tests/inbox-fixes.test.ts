@@ -211,3 +211,47 @@ test("the words land as the page's own markup: a description, a link's name, a l
   // The element is no longer where the row found it: nothing is planned.
   assert.ok("refuse" in fixEdits(picture, "x", page.replace("<img", "<p")));
 });
+
+test("a fix replaces an empty attribute in place, never adding a second one", () => {
+  const source = `<p><img src="/x.svg" alt=""><a href="/" aria-label=""><svg></svg></a></p>`;
+  const img: InboxItem = { ...picture, at: source.indexOf("<img"), found: source };
+  const link: InboxItem = { ...unnamed, at: source.indexOf("<a"), found: source };
+  const apply = (item: InboxItem, words: string) => {
+    const edits = fixEdits(item, words, source);
+    assert.ok(!("refuse" in edits));
+    return [...edits].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+  };
+  assert.equal(apply(img, "A mark"), `<p><img src="/x.svg" alt="A mark"><a href="/" aria-label=""><svg></svg></a></p>`);
+  assert.equal(apply(link, "Home"), `<p><img src="/x.svg" alt=""><a href="/" aria-label="Home"><svg></svg></a></p>`);
+});
+
+test("a link's name may not be vague words either", async () => {
+  const fake = fakeAgent({ [unnamed.key]: "click here" });
+  const { fixes, written } = setup(fake.agent);
+  const asking = fixes.suggest(unnamed);
+  await fake.release();
+  await asking;
+  assert.equal(await fixes.accept(unnamed), false);
+  assert.equal(fixes.state(unnamed.key)?.invalid, true);
+  assert.equal(written.length, 0);
+});
+
+test("an accepted row the next check still lists (its change undone) is ready for Fix with AI again", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders" });
+  const { fixes } = setup(fake.agent);
+  const asking = fixes.suggest(picture);
+  await fake.release();
+  await asking;
+  await fixes.accept(picture);
+  assert.equal(fixes.state(picture.key)?.status, "accepted");
+  fixes.keep([picture]);
+  assert.equal(fixes.state(picture.key), undefined);
+});
+
+test("an agent that goes away while Thinking leaves the row failed, never stuck", async () => {
+  let connected = true;
+  const agent: InboxAgent = { connected: () => connected, suggest: () => { connected = false; return Promise.reject(new Error("No agent is connected.")); } };
+  const { fixes } = setup(agent);
+  await fixes.suggest(picture);
+  assert.equal(fixes.state(picture.key)?.status, "failed");
+});

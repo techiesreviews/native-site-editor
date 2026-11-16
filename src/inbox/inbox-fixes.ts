@@ -60,8 +60,8 @@ export function createInboxFixes(ports: {
     set(item.key, words ? { status: "suggested", draft: words } : { status: "failed" });
   }
 
-  /** Whether the words for `item` may be written; an empty, too long or (for a link's words) still vague text may not. */
-  const valid = (item: InboxItem, words: string) => Boolean(words) && words.length <= SUGGESTION_LIMIT && !(item.fix === "words" && vagueWords(words));
+  /** Whether the words for `item` may be written; an empty, too long or (for a link's words or name) still vague text may not. */
+  const valid = (item: InboxItem, words: string) => Boolean(words) && words.length <= SUGGESTION_LIMIT && !(item.fix !== "alt" && vagueWords(words));
 
   /** Writes the suggestions of `items` (each checked first); false when one is refused or the write failed. */
   async function accept(items: readonly InboxItem[]) {
@@ -140,10 +140,11 @@ export function createInboxFixes(ports: {
       if (count("accepted")) return { status: "accepted" as const, count: count("accepted") };
       return { status: "ready" as const, count: rows.filter(row => row === undefined || row === "failed").length };
     },
-    /** The rows listed now: the others' suggestions are forgotten. */
+    /** The rows a check lists now: the others' suggestions are forgotten, and an accepted row still listed (its
+     * change undone, or not enough) is ready again. */
     keep(items: readonly InboxItem[]) {
       const keys = new Set(items.map(item => item.key));
-      for (const key of [...states.keys()]) if (!keys.has(key)) states.delete(key);
+      for (const [key, state] of [...states]) if (!keys.has(key) || state.status === "accepted") states.delete(key);
     },
   };
 }
