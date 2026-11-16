@@ -434,6 +434,8 @@ test("a card swapped before filling stays as written after a page switch, with n
   const linker = page.getByRole("group", { name: "Link the new card to a page" });
   await linker.getByRole("button", { name: "Card: card-project" }).click();
   await page.getByRole("dialog", { name: "Card look" }).getByRole("button", { name: "card-quote" }).click();
+  // The swap places a new combobox: typing before it lands goes to the one it replaces.
+  await expect(linker.getByRole("button", { name: "Card: card-quote" })).toBeFocused();
   await page.getByRole("combobox", { name: "Link to a page" }).fill("harbour");
   await page.keyboard.press("Enter");
   const quoted = added.replace(freshWithImage, harbourQuote);
