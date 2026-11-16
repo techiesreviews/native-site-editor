@@ -107,8 +107,9 @@ export function createSavePublishController(ports: SavePublishPorts) {
     return was.stamp.holds() && (!same || was.snapshot === ports.snapshot());
   }
 
-  function seeHead(commit: string) {
-    headSeen = { commit, at: Date.now() };
+  // `at`: when the head was learned, for one learned before now (a kept copy's, src/warm-copy.ts).
+  function seeHead(commit: string, at = Date.now()) {
+    headSeen = { commit, at };
   }
   const trustedHead = () => (headSeen && Date.now() - headSeen.at < headTrust ? headSeen.commit : undefined);
   // Whether `scope` is the workspace open now (src/workspace-session.ts: the repository by id).
@@ -159,8 +160,12 @@ export function createSavePublishController(ports: SavePublishPorts) {
       // Changed pages and stylesheets fold in where they are; anything else loads the branch again.
       // A failed fold loads the branch again only while this check's load still holds.
       const holds = () => token === headCheck && live(was);
-      if (!await ports.foldIn?.(commit, holds)?.catch(() => !holds())) await ports.reload();
-      return commit;
+      if (!await ports.foldIn?.(commit, holds)?.catch(() => !holds())) {
+        if (token !== headCheck) return null;
+        await ports.reload();
+      }
+      // A newer check took over during the fold or load: its outcome stands.
+      return token === headCheck ? commit : null;
     } catch {
       // Checked again on the next focus.
       return undefined;

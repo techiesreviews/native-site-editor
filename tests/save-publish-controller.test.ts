@@ -666,3 +666,24 @@ test("checkHead tells its outcome apart, and headSettled waits for the check und
   assert.equal(await hidden.controller.checkHead(true), undefined, "not checked while hidden");
   await hidden.controller.headSettled();
 });
+
+test("a check taken over while its fold runs resolves null; a head seen earlier is asked about as known (TOOLS-242)", async () => {
+  const f = fixture();
+  let fold!: (done: boolean) => void;
+  f.ports.foldIn = () => new Promise<boolean>((done) => { fold = done; });
+  const first = f.controller.checkHead(true);
+  f.answers[0].resolve({ commit: "d".repeat(40) });
+  await flush();
+  void f.controller.checkHead(true);
+  fold(true);
+  assert.equal(await first, null, "the newer check's outcome stands");
+
+  const kept = fixture();
+  kept.controller.seeHead("e".repeat(40), Date.now() - 60_000);
+  void kept.controller.checkHead(true);
+  assert.equal((kept.calls[0][1] as Record<string, string>).commit, "e".repeat(40), "a lagging read never steps back from it");
+  const old = fixture();
+  old.controller.seeHead("e".repeat(40), Date.now() - 10 * 60_000);
+  void old.controller.checkHead(true);
+  assert.equal((old.calls[0][1] as Record<string, string>).commit, undefined, "past the trust, GitHub's head is believed");
+});

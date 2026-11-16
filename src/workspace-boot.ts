@@ -162,12 +162,13 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     }
   }
 
-  // `warm`: `prefetched` is the copy this browser kept (src/warm-copy.ts), shown at once: its head is not
-  // trusted, and GitHub's is asked for once it is on screen.
+  // `warm`: `prefetched` is the copy this browser kept (src/warm-copy.ts), shown at once: its head is trusted as
+  // one seen when it was kept (`warm.at`), so a lagging read never steps back from it, and GitHub's is asked for
+  // once it is on screen.
   async function loadSnapshot(
     resumePath?: string,
     prefetched?: Promise<Snapshot>,
-    warm?: boolean,
+    warm?: { at?: number },
   ) {
     if (!appStore.repository.value || !appStore.branch.value) return;
     ports.removeFinishStarter();
@@ -221,6 +222,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       appStore.snapshot.value = result;
       repositoryIndex.seed(repo, result);
       if (!warm) savePublish.seeHead(result.commit);
+      else if (warm.at !== undefined) savePublish.seeHead(result.commit, warm.at);
       ports.updateAgentContext();
       ports.updatePreview();
       // Start reading the file to reopen now, alongside the native site's files.
@@ -293,8 +295,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       }
       // A kept copy is up to date only once GitHub's head says so (checkKept), which may have answered already.
       const shown = appStore.snapshot.value?.commit ?? result.commit;
-      ports.settleStatus(!warm || savePublish.trustedHead() === shown ? upToDate(branch, shown)
-        : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
+      ports.settleStatus(!warm ? upToDate(branch, shown) : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
     } catch (error) {
       if (at.holds()) {
         ports.files.replaceChildren(
@@ -327,21 +328,17 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   let keptSaid: { at: SessionStamp; text: string } | undefined;
   /**
    * GitHub's head behind a kept copy on show: a newer one folds in (or loads the branch again); the one shown is
-   * trusted from then on. A check with no answer (a hidden tab, a failed read) asks again when the tab is next
+   * trusted anew from then on. A check with no answer (a hidden tab, a failed read) asks again when the tab is next
    * shown or focused; one a newer check took over waits for it to settle.
    */
-  function checkKept(at: SessionStamp, branch: string) {
+  function checkKept(at: SessionStamp, branch: string, takenOver = 0) {
     void savePublish.checkHead(true).then((commit) => {
       if (!at.holds()) return;
-      // Taken over by a newer check (a push notice, a save): its outcome stands. Once no check is under way, the
-      // head it trusted says up to date; else this one asks again, cancelling none.
+      // Taken over by a newer check (a push notice, a save): its outcome stands; once no check is under way, this
+      // one asks again, cancelling none (twice in a row at most, then on the next look).
       if (commit === null) {
-        void savePublish.headSettled().then(() => {
-          const shown = appStore.snapshot.value?.commit;
-          if (!at.holds() || !shown) return;
-          if (savePublish.trustedHead() === shown) ports.settleStatus(upToDate(branch, shown));
-          else checkKept(at, branch);
-        });
+        if (takenOver >= 2) onNextWake(() => { if (at.holds()) checkKept(at, branch); });
+        else void savePublish.headSettled().then(() => { if (at.holds()) checkKept(at, branch, takenOver + 1); });
         return;
       }
       if (!commit) {
@@ -354,7 +351,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       }
       if (appStore.snapshot.value?.commit !== commit) return;
       savePublish.seeHead(commit);
-      ports.settleStatus(upToDate(branch, commit));
+      keptSaid = { at, text: upToDate(branch, commit) };
+      ports.settleStatus(keptSaid.text);
     });
   }
   function onNextWake(run: () => void) {
@@ -396,7 +394,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const signature = `${repo.id} ${branch} ${snapshot.commit} ${files.length} ${length}`;
     if (signature === kept && !force) return;
     kept = signature;
-    void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files });
+    void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files, at: Date.now() });
   }
   // The site as it shows now, once painted (`wait`: after the paint under way, once): a save or an outside change
   // folded in since its first paint.
@@ -589,7 +587,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         appStore.branch.value = branch;
         ports.branchSelect.value = branch;
         ports.branchSelect.disabled = true;
-        const opening = loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot), Boolean(warmed));
+        const opening = loadSnapshot(resume?.path, Promise.resolve(guessedSnapshot), warmed ? { at: kept.at } : undefined);
         // The branch list fills and enables the selector when it comes. One that fails says so as the plain
         // path does, once the site is open: its message, and Try again (one GitHub never answered) reads it again.
         const current = () => appStore.repository.value === opened && appStore.branch.value === branch;
