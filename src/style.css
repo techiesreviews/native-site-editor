@@ -309,9 +309,11 @@ pre:focus-visible {
     border-radius: var(--size-compact) / var(--size-tap);
     background-clip: padding-box;
   }
-  /* The focus ring goes round the pill a person sees, not the clear band. */
+  /* The focus ring goes round the pill a person sees, not the clear band. The transparent outline stays for forced
+     colours, which drop box shadows and paint it in a system colour. */
   .code-pane__rule:focus-visible {
-    outline: none;
+    outline: 2px solid transparent;
+    outline-offset: calc((var(--size-compact) - var(--size-tap)) / 2);
     box-shadow: var(--focus-ring-inset);
   }
 }
