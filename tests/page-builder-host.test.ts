@@ -47,13 +47,15 @@ const TEXTS: Record<string, string> = {
 const SCOPE = { account: "o", repoId: 1, repo: "o/site", branch: "main" } satisfies DraftScope;
 
 // A host over the real runtime, session and app store with the site above; the rest record what the host asked of them.
-// main.ts's later consts (versions, linked styles, media, Pages & files, agents) throw when read while the host is made.
-// `getterOnly` hands fileGeneration over without its setter, as a main.ts that dropped it would; `preview` adds to the
-// preview stand-in and `ports` replaces plain ports.
-function setup(texts = TEXTS, options: { getterOnly?: boolean; preview?: object; ports?: Partial<Pick<PageBuilderHostPorts, "loadSiteSettings" | "ensureNativeTextIndex">> } = {}) {
+// Each shared host module (src/host-modules.ts) is one fake. main.ts's later consts (the workspace's panels, versions,
+// linked styles, media, Pages & files, agents) throw when read while the host is made.
+// `getterOnly` hands the view's fileGeneration over without its setter, as a main.ts that dropped it would; `preview` adds to the
+// preview stand-in and `ports` replaces the site settings' load and the text index's wait.
+type Ports = PageBuilderHostPorts;
+function setup(texts = TEXTS, options: { getterOnly?: boolean; preview?: object; ports?: Partial<Pick<Ports, "loadSiteSettings"> & Pick<Ports["textIndex"], "ensureNativeTextIndex">> } = {}) {
   const calls: string[] = [], errors: string[] = [], planned: PlanResult[] = [];
   let made = false, scope: DraftScope | undefined, generation = 0, setupKey = "o/site:main", view: { path: string } | undefined;
-  let tools: PageBuilderHostPorts["componentTools"];
+  let tools: Ports["componentTools"];
   const mounted = new Set<string>();
   const runtime = createNativeSiteRuntime({
     scope: () => scope, shown: () => undefined, drafts: () => ({ get: () => undefined, list: () => [] }), mounted: () => undefined,
@@ -71,47 +73,61 @@ function setup(texts = TEXTS, options: { getterOnly?: boolean; preview?: object;
   const late = <T,>(name: string, value: T) => { assert.ok(made, `${name} is read while the host is made`); return value; };
   const record = (name: string) => () => { calls.push(name); };
   const reads = stand<Reads>({ site: () => runtime.site, source: (path: string) => runtime.source(path), template: () => undefined });
+  const notices: Ports["notices"] = {
+    errorMessage: (error: unknown) => { errors.push(error instanceof Error ? error.message : String(error)); },
+    announce: (text: string) => { calls.push(`announce ${text}`); },
+  };
+  const session: Ports["session"] = {
+    begin: () => workspaceSession.begin(), currentLoad: () => workspaceSession.current().load, draftScope: () => scope, stampOf: () => workspaceSession.begin(),
+  };
+  const repo: Ports["repo"] = { api: async () => { throw new Error("no GitHub read in these tests"); } };
+  const hostView: Ports["view"] = {
+    restoreFile: async () => {}, updateCurrentPageLabel: record("label"), updateAgentContext: record("agent"),
+    get fileGeneration() { return generation; }, set fileGeneration(value) { generation = value; },
+  };
+  const preview: Ports["preview"] = {
+    nativeRouteInfo: (route: string) => ({ title: /<title>(.*)<\/title>/.exec(runtime.source(runtime.site!.routes[route]) ?? "")?.[1] }),
+    nativeRouteForPath: (path: string | undefined) => Object.entries(runtime.site?.routes ?? {}).find(([, file]) => file === path)?.[0],
+    nativeComponentTagForPath: (path: string) => Object.entries(runtime.site?.components ?? {}).find(([, file]) => file === path)?.[0],
+    nativePageStyles: () => [], updateNativePreviewSources: record("sources"),
+  };
+  const textIndex: Ports["textIndex"] = { ensureNativeTextIndex: async () => undefined, wantNativeTextIndex: record("want index") };
   const ports = {
-    app: stand<HTMLElement>({ querySelector: () => null }), appStore, runtime, workspaceSession,
-    editorModule: stand<PageBuilderHostPorts["editorModule"]>({ isMounted: (path: string) => mounted.has(path), refreshVariants: record("variants") }),
+    app: stand<HTMLElement>({ querySelector: () => null }), appStore, runtime,
+    editorModule: stand<Ports["editorModule"]>({ isMounted: (path: string) => mounted.has(path), refreshVariants: record("variants") }),
     // A plan runs against the files above and is kept; nothing is written.
-    guardedEdits: stand<PageBuilderHostPorts["guardedEdits"]>({
+    guardedEdits: stand<Ports["guardedEdits"]>({
       stamp: () => workspaceSession.begin(), peek: reads,
       run: async (plan: (r: Reads) => PlanResult | Promise<PlanResult>) => { planned.push(await plan(reads)); return { ok: true, status: "applied" }; },
     }),
     element: <T extends HTMLElement>(id: string) => stand<T>(id === "status" ? status : {}),
     lazyModule: <T,>(load: () => Promise<T>) => load,
-    loadSiteSettings: async () => stand<Awaited<ReturnType<PageBuilderHostPorts["loadSiteSettings"]>>>({}),
-    errorMessage: (error: unknown) => { errors.push(error instanceof Error ? error.message : String(error)); },
-    announce: (text: string) => { calls.push(`announce ${text}`); },
-    codePanes: stand<PageBuilderHostPorts["codePanes"]>({}), nativeHistoryShares: new Map(),
-    currentLoad: () => workspaceSession.current().load, setupScope: () => setupKey, draftScope: () => scope,
-    stampOf: () => workspaceSession.begin(), nativeHistorySession: (_scope: DraftScope, path: string) => path,
-    nativeRouteInfo: (route: string) => ({ title: /<title>(.*)<\/title>/.exec(runtime.source(runtime.site!.routes[route]) ?? "")?.[1] }),
-    nativeRouteForPath: (path: string | undefined) => Object.entries(runtime.site?.routes ?? {}).find(([, file]) => file === path)?.[0],
-    nativeComponentTagForPath: (path: string) => Object.entries(runtime.site?.components ?? {}).find(([, file]) => file === path)?.[0], nativePageStyles: () => [], nativeImagePaths: () => [],
-    ensureNativeTextIndex: async () => undefined, wantNativeTextIndex: record("want index"),
+    loadSiteSettings: async () => stand<Awaited<ReturnType<Ports["loadSiteSettings"]>>>({}),
+    notices, session, repo, view: hostView, preview, textIndex,
+    nativeHistoryShares: new Map(), setupScope: () => setupKey, nativeHistorySession: (_scope: DraftScope, path: string) => path,
     showNativeWarnings: (warnings: unknown[]) => { calls.push(`warnings ${warnings.length}`); },
-    updateCurrentPageLabel: record("label"), updateNativePreviewSources: record("sources"), updateAgentContext: record("agent"),
-    workspace: { explorerDropdown: undefined, sidebarResize: undefined }, get componentTools() { return tools; },
-    get nativePreview() { return stand<PageBuilderHostPorts["nativePreview"]>({ activate: record("activate"), route: () => "/", clearSelection: () => {}, hideEditBar: record("hide bar"), refreshCardLooks: record("card looks"), ...options.preview }); },
-    get pageStructure() { return stand<PageBuilderHostPorts["pageStructure"]>({ refreshMeta: record("meta"), select: () => {} }); },
-    get fileGeneration() { return generation; }, set fileGeneration(value) { generation = value; },
-    get versions() { return late("versions", stand<PageBuilderHostPorts["versions"]>({ get view() { return view; } })); },
-    get linkedStyles() { return late("linkedStyles", stand<PageBuilderHostPorts["linkedStyles"]>({ beginReveal: () => 7, clearStyles: record("clear styles") })); },
-    get mediaController() { return late("mediaController", stand<PageBuilderHostPorts["mediaController"]>({})); },
-    get pagesController() { return late("pagesController", stand<PageBuilderHostPorts["pagesController"]>({ renderTree: record("tree"), pageLabel: (file: string) => file })); },
-    get pagesAndFiles() { return late("pagesAndFiles", stand<PageBuilderHostPorts["pagesAndFiles"]>({})); },
-    get agentController() { return late("agentController", stand<PageBuilderHostPorts["agentController"]>({})); },
-    restoreFile: async () => {}, ensureExplorer: async () => {}, openCreate: () => {}, nativeSiteReadForCreate: () => undefined,
-  } satisfies PageBuilderHostPorts;
-  Object.assign(ports, options.ports);
-  if (options.getterOnly) Object.defineProperty(ports, "fileGeneration", { get: () => generation, set: undefined });
+    get componentTools() { return tools; },
+    get nativePreview() { return stand<Ports["nativePreview"]>({ activate: record("activate"), route: () => "/", clearSelection: () => {}, hideEditBar: record("hide bar"), refreshCardLooks: record("card looks"), ...options.preview }); },
+    get pageStructure() { return stand<Ports["pageStructure"]>({ refreshMeta: record("meta"), select: () => {} }); },
+    get panels() { return late("panels", stand<Ports["panels"]>({ explorerDropdown: undefined, sidebarResize: undefined, codePanes: {} })); },
+    get versions() { return late("versions", stand<Ports["versions"]>({ get view() { return view; } })); },
+    get linkedStyles() { return late("linkedStyles", stand<Ports["linkedStyles"]>({ beginReveal: () => 7, clearStyles: record("clear styles") })); },
+    get media() { return late("media", stand<Ports["media"]>({ mediaController: {}, nativeImagePaths: () => [] })); },
+    get pagesAndFiles() {
+      return late("pagesAndFiles", stand<Ports["pagesAndFiles"]>({
+        pagesController: { renderTree: record("tree"), pageLabel: (file: string) => file }, ensureExplorer: async () => {}, openCreate: () => {}, nativeSiteReadForCreate: () => undefined,
+      }));
+    },
+    get agentController() { return late("agentController", stand<Ports["agentController"]>({})); },
+  } satisfies Ports;
+  if (options.ports?.loadSiteSettings) ports.loadSiteSettings = options.ports.loadSiteSettings;
+  if (options.ports?.ensureNativeTextIndex) textIndex.ensureNativeTextIndex = options.ports.ensureNativeTextIndex;
+  if (options.getterOnly) Object.defineProperty(hostView, "fileGeneration", { get: () => generation, set: undefined });
   const host = createPageBuilderHost(ports);
   made = true;
   return { host, runtime, appStore, workspaceSession, calls, errors, planned, status, mounted, open: (next?: DraftScope) => { scope = next; },
     generation: () => generation, setSetupKey: (key: string) => { setupKey = key; },
-    setView: (next?: { path: string }) => { view = next; }, setTools: (next: PageBuilderHostPorts["componentTools"]) => { tools = next; } };
+    setView: (next?: { path: string }) => { view = next; }, setTools: (next: Ports["componentTools"]) => { tools = next; } };
 }
 
 test("making the host reads none of main.ts's later consts", () => {
@@ -207,7 +223,7 @@ test("clearing the selection tells agents and bumps main.ts's file generation th
   assert.deepEqual(calls.filter((call) => call === "agent" || call === "clear styles"), ["agent", "clear styles"]);
 });
 
-test("fileGeneration handed over without its setter throws on the host's first write", async () => {
+test("the view's fileGeneration handed over without its setter throws on the host's first write", async () => {
   const { host, generation } = setup(TEXTS, { getterOnly: true });
   await assert.rejects(host.previewSelection.select(cleared), { name: "TypeError", message: /fileGeneration/ });
   assert.equal(generation(), 0);

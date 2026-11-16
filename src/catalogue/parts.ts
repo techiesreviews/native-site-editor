@@ -527,7 +527,7 @@ export async function fillTopBar(scope: HTMLElement, values: Values) {
 export async function phoneTopBar(app: HTMLElement, values: Values, open: boolean, current = () => true) {
   const [{ mountTopBarPhone }, { signal }] = await Promise.all([import("../components/top-bar-phone"), import("@preact/signals-core")]);
   if (!current()) return;
-  mountTopBarPhone({ app, appStore: { repository: signal(sampleRepository(values)) }, page: { siteSettings: () => Promise.resolve() }, errorMessage: () => undefined });
+  mountTopBarPhone({ app, appStore: { repository: signal(sampleRepository(values)) }, pageBuilder: { openNativeSiteSettings: () => Promise.resolve() }, notices: { errorMessage: () => undefined } });
   // Open as the cell asks (the frame is its own page, so its modal never holds the board), once the frame shows the bar.
   if (open) requestAnimationFrame(() => { if (current()) app.querySelector<HTMLButtonElement>("#topbar-menu")?.click(); });
 }

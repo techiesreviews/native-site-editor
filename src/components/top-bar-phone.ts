@@ -29,9 +29,9 @@ export interface TopBarPhonePorts {
   readonly app: HTMLElement;
   /** The open project (the page button follows it). */
   readonly appStore: Pick<AppStore, "repository">;
-  readonly page: { siteSettings(): Promise<unknown> };
-  /** A part that could not load. */
-  errorMessage(error: unknown): void;
+  readonly pageBuilder: { openNativeSiteSettings(): Promise<unknown> };
+  /** Says a part that could not load. */
+  readonly notices: { errorMessage(error: unknown): void };
 }
 
 // The rows' own icons load with this menu; the rest are the editor's (src/icons.ts).
@@ -60,7 +60,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     void import("./phone-sheet").then((module) => {
       // The workspace may have gone while the sheet's code loaded (a sign-out, another project).
       if (workspace.isConnected) module.mountPhoneSheet(workspace, app.querySelector<HTMLButtonElement>("#sheet-handle")!);
-    }).catch((error: unknown) => ports.errorMessage(error));
+    }).catch((error: unknown) => ports.notices.errorMessage(error));
   };
   upright.addEventListener("change", sheetHandle);
   sheetHandle();
@@ -183,7 +183,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     // The bar's Inbox button stays off a phone's bar: its panel opens from here (TOOLS-222).
     inbox: () => rowButton("tray", "Inbox", handOver(() => find("#inbox")?.showPopover())),
     share: () => rowButton("shareNetwork", "Share a preview link", handOver(projectMenu)),
-    settings: () => rowButton("gear", "Site settings", handOver(() => void ports.page.siteSettings())),
+    settings: () => rowButton("gear", "Site settings", handOver(() => void ports.pageBuilder.openNativeSiteSettings())),
     switch: () => rowButton("arrowsLeftRight", "Switch site", handOver(projectMenu)),
   };
 

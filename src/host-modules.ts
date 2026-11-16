@@ -30,6 +30,8 @@ export interface Session extends Pick<WorkspaceSession, "begin" | "current"> {
   /** A controller's load number as a stamp; once that load moved on, one that says the scope changed. */
   stampOf(epoch: number): SessionStamp;
   draftScope(): DraftScope | undefined;
+  /** The load's scope once its snapshot is on show: none on the overview or while a load runs. */
+  shownScope(): WorkspaceScope | undefined;
 }
 
 /** The open repository's reads: GitHub's API, its blobs and the snapshot's tree (src/github-reads.ts, src/site-loading.ts). */

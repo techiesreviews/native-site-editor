@@ -169,7 +169,24 @@ function setup() {
       closeActiveEditGroup: say("closeActiveEditGroup"),
       clearDrafts: say("clearDrafts"),
     } satisfies Editor,
-    workspaceSession: { begin },
+    // The shared host modules (src/host-modules.ts), one fake each.
+    notices: {
+      errorMessage: (error: unknown) => { calls.push(`error ${error instanceof Error ? error.message : String(error)}`); },
+      announce: say("announce"),
+    } satisfies WorkspaceMountPorts["notices"],
+    session: {
+      begin, draftScope: () => state.scope, shownScope: () => state.shown,
+      nextLoad: () => { calls.push("nextLoad"); return begin(); },
+    } satisfies WorkspaceMountPorts["session"],
+    view: {
+      setCurrentPage: say("setCurrentPage"),
+      get fileGeneration() { return state.fileGeneration; }, set fileGeneration(value) { state.fileGeneration = value; },
+    } satisfies WorkspaceMountPorts["view"],
+    preview: {
+      nativeModeActive: () => state.native, updateNativePreviewSources: say("updateNativePreviewSources"), nativeRouteForPath: () => undefined,
+      get nativePreviewBehind() { return state.nativePreviewBehind; },
+    } satisfies WorkspaceMountPorts["preview"],
+    textIndex: { noteNativePainted: say("noteNativePainted") } satisfies WorkspaceMountPorts["textIndex"],
     runtime: { get site() { return state.site; }, get engaged() { return state.engaged; }, source: (path: string) => state.sources[path] } satisfies WorkspaceMountPorts["runtime"],
     finishedWork: { open: say("finishedWork.open"), shown: say("finishedWork.shown") } satisfies WorkspaceMountPorts["finishedWork"],
     mediaHistoryHome: { adopt: say("mediaHistoryHome.adopt"), clear: say("mediaHistoryHome.clear") } satisfies WorkspaceMountPorts["mediaHistoryHome"],
@@ -179,18 +196,11 @@ function setup() {
       stamp: (key?: string) => ({ holds: () => key !== "repository" || state.holds, changed: () => undefined }),
       peek: fake<GuardedEdits["peek"]>({ source: (path: string) => state.sources[path] }),
     } satisfies WorkspaceMountPorts["guardedEdits"],
-    mediaController: { disposeGallery: say("disposeGallery"), mediaEnded: say("mediaEnded"), chooseImage: sayAsync("chooseImage") } satisfies WorkspaceMountPorts["mediaController"],
-    paletteController: { shortcut: say("shortcut"), mount: say("palette.mount"), dispose: say("palette.dispose") } satisfies WorkspaceMountPorts["paletteController"],
-    previewSelection: { handlers: () => ({ onSelect: () => {}, onSelectionRect: () => {}, onTextSelection: () => {}, onItemGrids: () => {} }) } satisfies WorkspaceMountPorts["previewSelection"],
-    pageStructureController: {
-      nativeFormatActions: {}, applyNativeTextEdit: sayAsync("applyNativeTextEdit"), textEdits: async () => {}, nativeElementMoveAction: undefined,
-      removeRow: () => false, isNativeSectionTag: (tag: string) => state.sectionTags.has(tag),
-      moveBlock: (_at, _step, options) => { calls.push(`moveBlock ${options.stale}`); return "stayed" as const; },
-      renderEditBar: (selection: NativePreviewSelection) => { calls.push(`renderEditBar ${selection.path}`); },
-    } satisfies WorkspaceMountPorts["pageStructureController"],
+    media: {
+      mediaController: { disposeGallery: say("disposeGallery"), mediaEnded: say("mediaEnded"), chooseImage: sayAsync("chooseImage") },
+    } satisfies WorkspaceMountPorts["media"],
     linkedStyles: { updateBodyStyles: say("updateBodyStyles"), clearSources: say("linkedStyles.clearSources") } satisfies WorkspaceMountPorts["linkedStyles"],
     versions: { view: undefined, history: { destroy: say("history.destroy") } } satisfies WorkspaceMountPorts["versions"],
-    cards: fake<WorkspaceMountPorts["cards"]>({}),
     pagesAndFiles: {
       pageActions: undefined, mountExplorer: say("mountExplorer"), loadPagesActions: async () => {},
       filesTreeController: { refresh: say("filesTree.refresh") },
@@ -204,11 +214,10 @@ function setup() {
     cleanSources: { clear: say("cleanSources.clear") },
     get info() { return state.info; },
     get repositories() { return state.repositories; }, set repositories(value) { state.repositories = value; },
-    get fileGeneration() { return state.fileGeneration; }, set fileGeneration(value) { state.fileGeneration = value; },
     get nativePreview() { return state.nativePreview; }, set nativePreview(value) { state.nativePreview = value; },
     get pageStructure() { return state.pageStructure; }, set pageStructure(value) { state.pageStructure = value; },
     get componentTools() { return state.componentTools; }, set componentTools(value) { state.componentTools = value; },
-    get nativePreviewBehind() { return state.nativePreviewBehind; }, get nativeMountListener() { return state.mountListener; },
+    get nativeMountListener() { return state.mountListener; },
     get boot() { return { ensureList: async () => {}, reset: say("boot.reset") } satisfies WorkspaceMountPorts["boot"]; },
     get agentController() { return { ensure: async () => { calls.push("agent.ensure"); }, dismiss: async () => {}, answer: async () => {}, destroy: say("agent.destroy") } satisfies WorkspaceMountPorts["agentController"]; },
     get workspaceBoot() { return { dropGuess: say("dropGuess") }; },
@@ -219,44 +228,43 @@ function setup() {
       choose: async () => { calls.push("chooseRepository"); },
       load: async () => { calls.push(`loadSnapshot ${appStore.branch.value}`); },
     },
-    draftScope: () => state.scope,
-    shownScope: () => state.shown,
-    nextLoad: () => { calls.push("nextLoad"); return begin(); },
-    setCurrentPage: say("setCurrentPage"),
-    errorMessage: (error: unknown) => { calls.push(`error ${error instanceof Error ? error.message : String(error)}`); },
-    announce: say("announce"),
     // The component tools' wait after the first paint, run when a test lets it.
     afterPaint: (callback: () => void) => {
       state.painted.push(callback);
       return () => { state.painted = state.painted.filter((each) => each !== callback); calls.push("toolsWait.cancel"); };
     },
     site: {
-      active: () => state.native,
       deactivate: say("deactivateNative"),
-      update: say("updateNativePreviewSources"),
-      painted: say("noteNativePainted"),
       assets: async () => {},
       shown: async () => {},
       routeSources: () => ({}),
       styles: async () => {},
       files: async () => undefined,
-      route: () => undefined,
     },
-    builder: {
-      choices: () => [],
-      addPoint: () => undefined,
-      addPoints: new WeakMap(),
-      insert: async () => {},
-      drag: () => undefined,
-      dropTree: () => undefined,
-      loadDrag: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["builder"]["loadDrag"]>>>({}),
-      loadInsert: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["builder"]["loadInsert"]>>>({}),
-      insertPorts: { target: () => undefined, refuse: say("refuse") } satisfies WorkspaceMountPorts["builder"]["insertPorts"],
-      finishTyping: async () => state.typingLanded,
-      menuItems: () => [{ label: "Remove", run: say("remove") }],
-      fields: () => "",
-      moveItems: () => () => false,
-      tools: async () => {
+    pageBuilder: {
+      paletteController: { shortcut: say("shortcut"), mount: say("palette.mount"), dispose: say("palette.dispose") },
+      previewSelection: { handlers: () => ({ onSelect: () => {}, onSelectionRect: () => {}, onTextSelection: () => {}, onItemGrids: () => {} }) },
+      pageStructureController: {
+        nativeFormatActions: {}, applyNativeTextEdit: sayAsync("applyNativeTextEdit"), textEdits: async () => {}, nativeElementMoveAction: undefined,
+        removeRow: () => false, isNativeSectionTag: (tag: string) => state.sectionTags.has(tag),
+        moveBlock: (_at, _step, options) => { calls.push(`moveBlock ${options.stale}`); return "stayed" as const; },
+        renderEditBar: (selection: NativePreviewSelection) => { calls.push(`renderEditBar ${selection.path}`); },
+      },
+      cards: fake<WorkspaceMountPorts["pageBuilder"]["cards"]>({}),
+      nativeSectionChoices: () => [],
+      nativeElementAddPoint: () => undefined,
+      nativeAddPoints: new WeakMap(),
+      insertNativeComponent: async () => {},
+      dragPageBlock: () => undefined,
+      structureDrop: () => undefined,
+      loadBlockDrag: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["pageBuilder"]["loadBlockDrag"]>>>({}),
+      loadBlockInsert: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["pageBuilder"]["loadBlockInsert"]>>>({}),
+      blockInsertPorts: { target: () => undefined, refuse: say("refuse") },
+      finishRailTyping: async () => state.typingLanded,
+      elementMenuItems: () => [{ label: "Remove", run: say("remove") }],
+      nativeComponentFieldsRevision: () => "",
+      nativeMoveItems: () => () => false,
+      mountComponentTools: async () => {
         calls.push("mountComponentTools");
         if (state.toolsFail) { state.toolsFail--; throw new Error("The component tools did not load."); }
         await state.toolsWait;
@@ -266,14 +274,12 @@ function setup() {
         instanceSelection: (selection: NativePreviewSelection) => selection,
         newComponent: async (tag: string) => { calls.push(`newComponent ${tag}`); return true; },
       }); },
-    },
-    page: {
-      meta: () => undefined,
-      writeMeta: async () => undefined,
-      settings: async () => {},
-      navigation: async () => {},
-      siteSettings: async () => { calls.push("siteSettings"); },
-    },
+      nativePageMeta: () => undefined,
+      writeNativePageMeta: async () => undefined,
+      openNativePageSettings: async () => {},
+      openNativeNavigation: async () => {},
+      openNativeSiteSettings: async () => { calls.push("siteSettings"); },
+    } satisfies WorkspaceMountPorts["pageBuilder"],
   } satisfies WorkspaceMountPorts;
   const workspace = createWorkspaceMount(ports);
   return { workspace, ports, state, calls, appStore, byId, proof, unmounted: () => unmountedText, viewLoader: () => viewLoader, mounted: () => mounted };
@@ -338,7 +344,7 @@ test("the preview's text edit hands back the write, so the page waits for it bef
   const { workspace, ports } = setup();
   let land!: () => void;
   const written = new Promise<void>((resolve) => { land = resolve; });
-  ports.pageStructureController.applyNativeTextEdit = () => written;
+  ports.pageBuilder.pageStructureController.applyNativeTextEdit = () => written;
   workspace.mountWorkspace();
   const handlers = last("preview").options as NativePreviewHandlers;
   let settled = false;
@@ -483,8 +489,8 @@ test("closing the workspace cancels the wait after the paint, and destroys the t
 test("a remount at the component tools' await hands over nothing", async () => {
   const points = await forEachAwait((race) => {
     const run = setup();
-    const tools = run.ports.builder.tools;
-    run.ports.builder.tools = race.port("tools", () => tools());
+    const tools = run.ports.pageBuilder.mountComponentTools;
+    run.ports.pageBuilder.mountComponentTools = race.port("tools", () => tools());
     run.workspace.mountWorkspace();
     return { ...run, done: run.workspace.loadComponentTools() };
   }, (run) => { run.workspace.mountWorkspace(); }, async (run) => {

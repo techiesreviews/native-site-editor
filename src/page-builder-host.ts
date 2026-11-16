@@ -37,7 +37,6 @@ import { descendants, parseSource } from "./page-builder/component-model";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativePageHead, resolveNativeProject, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
-import type { createCodePanesController } from "./controllers/code-panes-controller";
 import type { createLinkedStylesController } from "./controllers/linked-styles-controller";
 import type { createMediaController } from "./controllers/media-controller";
 import type { createAgentController } from "./controllers/agent-controller";
@@ -45,72 +44,60 @@ import type { ComponentDeps, ComponentTools, PreparedComponentLoader } from "./p
 import { addSectionStep } from "./page-builder/component-plans";
 import type { createPagesAndFilesHost } from "./pages-and-files-host";
 import type { createSiteLoading } from "./site-loading";
-import type { createSiteTextIndex } from "./site-text-index";
 import type { createVersionView } from "./version-view";
-import type { createWorkspaceBoot } from "./workspace-boot";
 import type { createWorkspaceMount } from "./workspace-mount";
 import type { GuardedEdits, Reads, PlanResult } from "./guarded-edit";
-import type { SessionStamp, WorkspaceSession } from "./workspace-session";
+import type { SessionStamp } from "./workspace-session";
+import type { Notices, Preview, Repo, Session, TextIndex, View } from "./host-modules";
 
 type PagesAndFiles = ReturnType<typeof createPagesAndFilesHost>;
-type TextIndex = ReturnType<typeof createSiteTextIndex>;
 
 export interface PageBuilderHostPorts {
+  // The shared host modules (src/host-modules.ts). Those main.ts makes before this host are read once, as below;
+  // the panels, media and Pages & files are made after it, so they are read at call time.
+  notices: Pick<Notices, "errorMessage" | "announce">;
+  session: Pick<Session, "begin" | "currentLoad" | "draftScope" | "stampOf">;
+  repo: Pick<Repo, "api">;
+  view: Pick<View, "fileGeneration" | "restoreFile" | "updateCurrentPageLabel" | "updateAgentContext">;
+  preview: Pick<Preview, "nativeRouteInfo" | "nativeRouteForPath" | "nativeComponentTagForPath" | "nativePageStyles" | "updateNativePreviewSources">;
+  textIndex: Pick<TextIndex, "ensureNativeTextIndex" | "wantNativeTextIndex">;
+  /** The workspace screen's parts (src/workspace-mount.ts), made when it mounts. */
+  readonly panels: Pick<ReturnType<typeof createWorkspaceMount>, "explorerDropdown" | "sidebarResize" | "codePanes">;
+  /** Media's host (src/controllers/media-host.ts): the media controller and the site's image paths. */
+  readonly media: { readonly mediaController: ReturnType<typeof createMediaController>; nativeImagePaths(): string[] };
+  /** Pages & files (src/pages-and-files-host.ts), handed over whole. */
+  readonly pagesAndFiles: PagesAndFiles;
   app: HTMLElement;
   appStore: AppStore;
   runtime: ReturnType<typeof createNativeSiteRuntime>;
-  workspaceSession: WorkspaceSession;
   editorModule: typeof sourceEditor;
   guardedEdits: GuardedEdits;
   element: <T extends HTMLElement>(id: string) => T;
   lazyModule: <T>(load: () => Promise<T>) => () => Promise<T>;
   loadSiteSettings: () => Promise<ReturnType<typeof import("./native-settings").createNativeSettings>>;
-  errorMessage: (error: unknown) => void;
-  /** The editor's GitHub reads (src/github-reads.ts `api`). */
-  api: <T>(path: string, params?: Record<string, string>) => Promise<T>;
-  announce: (text: string) => void;
-  currentLoad: () => number;
   setupScope: () => string;
-  draftScope: () => DraftScope | undefined;
-  stampOf: (epoch: number) => SessionStamp;
   nativeHistorySession: (scope: DraftScope, path: string) => string;
-  nativeRouteInfo: (route: string, site?: NativeSite) => { title?: string; description?: string };
-  nativeRouteForPath: (path: string | undefined) => string | undefined;
-  nativeComponentTagForPath: (path: string) => string | undefined;
-  nativePageStyles: () => string[];
-  nativeImagePaths: () => string[];
-  ensureNativeTextIndex: TextIndex["ensureNativeTextIndex"];
-  wantNativeTextIndex: TextIndex["wantNativeTextIndex"];
   showNativeWarnings: ReturnType<typeof createSiteLoading>["showNativeWarnings"];
-  updateCurrentPageLabel: () => void;
-  updateNativePreviewSources: () => void;
-  updateAgentContext: () => void;
   /** Host state and later consts, read at call time. */
-  readonly workspace: Pick<ReturnType<typeof createWorkspaceMount>, "explorerDropdown" | "sidebarResize">;
-  readonly codePanes: ReturnType<typeof createCodePanesController>;
   readonly nativeHistoryShares: Map<string, { stamp: SessionStamp; session: string }[]>;
   readonly nativePreview: ReturnType<typeof createNativePreview> | undefined;
   readonly pageStructure: ReturnType<typeof createPageStructure> | undefined;
   readonly componentTools: ComponentTools | undefined;
-  fileGeneration: number;
   readonly versions: ReturnType<typeof createVersionView>;
   readonly linkedStyles: ReturnType<typeof createLinkedStylesController>;
-  readonly mediaController: ReturnType<typeof createMediaController>;
-  readonly pagesController: PagesAndFiles["pagesController"];
-  readonly pagesAndFiles: PagesAndFiles;
   readonly agentController: ReturnType<typeof createAgentController>;
-  restoreFile: ReturnType<typeof createWorkspaceBoot>["restoreFile"];
-  ensureExplorer: PagesAndFiles["ensureExplorer"];
-  openCreate: PagesAndFiles["openCreate"];
-  nativeSiteReadForCreate: PagesAndFiles["nativeSiteReadForCreate"];
 }
 
 export function createPageBuilderHost(ports: PageBuilderHostPorts) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
-  const { app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce, api,
-    currentLoad, setupScope, draftScope, stampOf, nativeHistorySession, nativeRouteInfo, nativeRouteForPath,
-    nativeComponentTagForPath, nativePageStyles, nativeImagePaths, ensureNativeTextIndex, wantNativeTextIndex, showNativeWarnings,
-    updateCurrentPageLabel, updateNativePreviewSources, updateAgentContext, restoreFile, ensureExplorer, openCreate, nativeSiteReadForCreate } = ports;
+  const { app, appStore, runtime, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, setupScope, nativeHistorySession, showNativeWarnings, view } = ports;
+  // The shared host modules made before this host: their functions are read once; the file counter stays a `view.` read.
+  const { errorMessage, announce } = ports.notices;
+  const { begin, currentLoad, draftScope, stampOf } = ports.session;
+  const { api } = ports.repo;
+  const { restoreFile, updateCurrentPageLabel, updateAgentContext } = view;
+  const { nativeRouteInfo, nativeRouteForPath, nativeComponentTagForPath, nativePageStyles, updateNativePreviewSources } = ports.preview;
+  const { ensureNativeTextIndex, wantNativeTextIndex } = ports.textIndex;
 
   // The command palette (⌘K, ⌘P) and the keyboard shortcuts sheet (?), with
   // the editor's commands calling what its own controls call
@@ -127,16 +114,16 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     index: ensureNativeTextIndex,
     stamp: () => guardedEdits.stamp("repository"),
     isMounted: path => Boolean(editorModule?.isMounted(path)),
-    beginNewPage: () => { ports.workspace.explorerDropdown?.open(); ports.pagesController.selectTab("pages"); },
+    beginNewPage: () => { ports.panels.explorerDropdown?.open(); ports.pagesAndFiles.pagesController.selectTab("pages"); },
     startNewPage: () => {
       const since = guardedEdits.stamp("repository");
-      void ensureExplorer().then(() => { if (since.holds() && ports.workspace.explorerDropdown?.isOpen()) ports.pagesAndFiles.pagesTree?.startNew("/"); }).catch(errorMessage);
+      void ports.pagesAndFiles.ensureExplorer().then(() => { if (since.holds() && ports.panels.explorerDropdown?.isOpen()) ports.pagesAndFiles.pagesTree?.startNew("/"); }).catch(errorMessage);
     },
     actions: {
       open: (path) => {
         if (path === appStore.openFile.value && editorModule?.isMounted(path)) return;
         previewSelection.recordIntent(path);
-        void restoreFile(path, workspaceSession.begin());
+        void restoreFile(path, begin());
       },
       isSectionTag: tag => pageStructureController.isNativeSectionTag(tag),
       insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
@@ -144,17 +131,17 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       select: (path, node) => ports.nativePreview?.selectNode({ path, node }),
       textSelected: () => { const text = previewSelection.textSelection(); return Boolean(text && !text.caret && text.text); },
       history: (direction) => void editorModule?.runVisualHistory(direction, appStore.openFile.value),
-      toggleCode: () => ports.codePanes.heightResize()?.toggle(),
+      toggleCode: () => ports.panels.codePanes.heightResize()?.toggle(),
       codeHidden: () => element("main").classList.contains("code-collapsed"),
-      toggleStructure: () => ports.workspace.sidebarResize?.toggle(),
+      toggleStructure: () => ports.panels.sidebarResize?.toggle(),
       structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
       newFile: () => {
-        ports.workspace.explorerDropdown?.open();
-        if (runtime.site) ports.pagesController.selectTab("files");
-        openCreate("", element("new-at-root"));
+        ports.panels.explorerDropdown?.open();
+        if (runtime.site) ports.pagesAndFiles.pagesController.selectTab("files");
+        ports.pagesAndFiles.openCreate("", element("new-at-root"));
       },
       showPagesAndFiles: () => {
-        ports.workspace.explorerDropdown?.open();
+        ports.panels.explorerDropdown?.open();
         element("explorer").querySelector<HTMLElement>("[role='tab'][aria-selected='true'], [role='treeitem'][tabindex='0']")?.focus();
       },
       announce,
@@ -188,7 +175,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
         // GitHub's history of a shared file (ticket am-59): the reads, and the workspace's snapshot and GitHub's texts.
         github: { api, app: appStore, runtime } },
       openFile: async (path) => {
-        const at = workspaceSession.begin(), scope = draftScope();
+        const at = begin(), scope = draftScope();
         previewSelection.recordIntent(path);
         // A pane open on its own history when a share (shareHistory below) asks for another opens again on that.
         const shared = scope && ports.nativeHistoryShares.has(draftKey(scope, path)) ? nativeHistorySession(scope, path) : undefined;
@@ -197,11 +184,11 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       },
       announce,
       error: errorMessage,
-      images: nativeImagePaths,
+      images: () => ports.media.nativeImagePaths(),
       prefix: () => runtime.prefix(),
-      chooseImage: (place, placement) => ports.mediaController.choosePath(place, placement),
+      chooseImage: (place, placement) => ports.media.mediaController.choosePath(place, placement),
       links: () => (runtime.site ? nativeLinkSuggestions(Object.keys(runtime.site.routes), (route) => nativeRouteInfo(route).title, runtime.prefix()) : []),
-      pageLabel: (file) => ports.pagesController.pageLabel(file),
+      pageLabel: (file) => ports.pagesAndFiles.pagesController.pageLabel(file),
       panelHost: app.querySelector<HTMLElement>(".sidebar")!,
       canvasComponent: (parts) => ports.nativePreview?.setCanvasComponent(parts),
       codeTitle: element("primary-title").parentElement!,
@@ -215,7 +202,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       shareHistory: (path, owner) => {
         const scope = draftScope();
         if (!scope) return () => {};
-        const key = draftKey(scope, path), share = { stamp: workspaceSession.begin(), session: nativeHistorySession(scope, owner) };
+        const key = draftKey(scope, path), share = { stamp: begin(), session: nativeHistorySession(scope, owner) };
         ports.nativeHistoryShares.set(key, [...ports.nativeHistoryShares.get(key) ?? [], share]);
         return () => {
           const rest = ports.nativeHistoryShares.get(key)?.filter((each) => each !== share) ?? [];
@@ -256,7 +243,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     const found = candidates.find(item => nativeMarkupInsertEdit(source, item.point.parent, item.point.index, markup));
     if (!found) return;
     const point = { ...found.point, parent: [...found.point.parent] };
-    nativeAddPoints.set(point, { source, stamp: workspaceSession.begin(), description: found.description });
+    nativeAddPoints.set(point, { source, stamp: begin(), description: found.description });
     return point;
   }
   /**
@@ -457,7 +444,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     announce: (message) => refuse(message),
     beginReveal: () => {
       const request = ports.linkedStyles.beginReveal();
-      ports.fileGeneration++;
+      view.fileGeneration++;
       return request;
     },
     styleRequest: () => ports.linkedStyles.styleRequest(),
@@ -495,7 +482,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     const wanted = variantWanted, scope = draftScope(), repo = appStore.repository.value;
     variantWanted = undefined;
     if (!wanted || !runtime.site || !scope || !repo || ports.versions.view) return;
-    const at = workspaceSession.begin(), scopeKey = setupScope();
+    const at = begin(), scopeKey = setupScope();
     const key = (path: string) => JSON.stringify([at.load, scopeKey, path]);
     const files = new Set(runtime.files(scope));
     const missing = [...wanted].filter(path => files.has(path) && runtime.source(path, scope) === undefined && !variantReads.has(key(path)));
@@ -515,7 +502,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
   function nativeCssWorkspace(): CssWorkspace | undefined {
     const scope = draftScope(), requester = appStore.openFile.value;
     if (!runtime.site || !scope || !requester || ports.versions.view || !editorModule?.isMounted(requester)) return;
-    const at = workspaceSession.begin(), scopeKey = setupScope(), sources = runtime.sources();
+    const at = begin(), scopeKey = setupScope(), sources = runtime.sources();
     const revision = JSON.stringify([at.load, scopeKey, requester, runtime.site.routes, runtime.site.components, appStore.selection.value?.path, appStore.selection.value?.node, sources]);
     const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
     return {
@@ -591,13 +578,13 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     get versionView() { return ports.versions.view; },
     nativeEffectiveSource: (path: string, scope?: DraftScope) => runtime.source(path, scope),
     nativeNamedDescendant,
-    chooseMediaForImage: (target, files) => ports.mediaController.chooseImage(target, files),
-    mediaPlaceState: (page, src, alt) => ports.mediaController.placeState(page, src, alt),
-    mediaVideoControls: (page, node, source) => ports.mediaController.videoControls(page, node, source),
-    mediaButton: (page, node, source) => ports.mediaController.mediaButton(page, node, source),
-    mediaPlaceFrame: (page, node, tag) => ports.mediaController.placeFrame(page, node, tag),
-    editImage: target => void ports.mediaController.editImage(target),
-    changeMediaPlace: (page, node, decorative) => ports.mediaController.changePlace(page, node, decorative),
+    chooseMediaForImage: (target, files) => ports.media.mediaController.chooseImage(target, files),
+    mediaPlaceState: (page, src, alt) => ports.media.mediaController.placeState(page, src, alt),
+    mediaVideoControls: (page, node, source) => ports.media.mediaController.videoControls(page, node, source),
+    mediaButton: (page, node, source) => ports.media.mediaController.mediaButton(page, node, source),
+    mediaPlaceFrame: (page, node, tag) => ports.media.mediaController.placeFrame(page, node, tag),
+    editImage: target => void ports.media.mediaController.editImage(target),
+    changeMediaPlace: (page, node, decorative) => ports.media.mediaController.changePlace(page, node, decorative),
     nativePictureSources,
     // cards is declared later in this module: read it at call time.
     cardControls: (selection, source) => cards.controls(selection, source),
@@ -607,7 +594,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     restoreFile: (path, epoch, options) => restoreFile(path, stampOf(epoch), options),
     updateNativePreviewSources,
     nativeEditableTemplatePath: () => previewSelection.editableTemplatePath(),
-    nativePageLabelOf: file => ports.pagesController.pageLabel(file),
+    nativePageLabelOf: file => ports.pagesAndFiles.pagesController.pageLabel(file),
     get pageStructure() { return ports.pageStructure; },
     locateNativeElementRange,
     elementPathAt,
@@ -704,7 +691,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
       : await guardedEdits.run(plan);
     if (outcome.message) return outcome.message;
     updateCurrentPageLabel();
-    if (ports.workspace.explorerDropdown?.isOpen() && ports.pagesController.explorerTab() === "pages") ports.pagesController.renderTree();
+    if (ports.panels.explorerDropdown?.isOpen() && ports.pagesAndFiles.pagesController.explorerTab() === "pages") ports.pagesAndFiles.pagesController.renderTree();
     if (outcome.ok && outcome.status === "applied") element("status").textContent = value.trim() ? `${field === "title" ? "Title" : "Description"} updated` : `${field === "title" ? "Title" : "Description"} removed`;
     return undefined;
   }
@@ -727,29 +714,29 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
   }
 
   async function openNativePageSettings(path: string) {
-    const at = workspaceSession.begin();
+    const at = begin();
     const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
     if (!at.holds()) return;
     if (problem) { errorMessage(new Error(problem)); return; }
     const source = runtime.source(path), route = nativeRouteForPath(path);
     if (source === undefined || !route) return;
-    try { settings.nativeSettingsController(settings, [path]).page({ path, source, route, images: nativeImagePaths() }); }
+    try { settings.nativeSettingsController(settings, [path]).page({ path, source, route, images: ports.media.nativeImagePaths() }); }
     catch (error) { errorMessage(error); }
   }
 
   async function openNativeSiteSettings() {
-    const at = workspaceSession.begin();
+    const at = begin();
     if (!runtime.site) { refuse("Open a native site first."); return; }
     const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
     if (!at.holds()) return;
     if (problem || !runtime.site) { if (problem) errorMessage(new Error(problem)); return; }
     try {
-      settings.nativeSettingsController(settings, [NATIVE_CONFIG_PATH, runtime.site.routes["/"]]).site({ values: settings.readSiteIdentity(runtime.source(NATIVE_CONFIG_PATH), runtime.source(runtime.site.routes["/"]) ?? ""), pages: settings.nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(runtime.site.routes["/404.html"]) });
+      settings.nativeSettingsController(settings, [NATIVE_CONFIG_PATH, runtime.site.routes["/"]]).site({ values: settings.readSiteIdentity(runtime.source(NATIVE_CONFIG_PATH), runtime.source(runtime.site.routes["/"]) ?? ""), pages: settings.nativeSitePageChoices(), images: ports.media.nativeImagePaths(), has404: Boolean(runtime.site.routes["/404.html"]) });
     } catch (error) { errorMessage(error); }
   }
 
   async function openNativeNavigation(pagePath: string) {
-    const at = workspaceSession.begin();
+    const at = begin();
     const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
     if (!at.holds()) return;
     if (problem) { errorMessage(new Error(problem)); return; }
@@ -771,7 +758,7 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     updateNativePreviewSources();
     updateAgentContext();
     ports.pageStructure?.refreshMeta();
-    ports.pagesController.renderTree();
+    ports.pagesAndFiles.pagesController.renderTree();
     updateCurrentPageLabel();
   }
 
@@ -784,11 +771,11 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
   // Its ports are read live; every card write is a guarded edit (src/guarded-edit.ts).
   const cards = createCards({
     edits: guardedEdits,
-    siteRead: nativeSiteReadForCreate,
+    siteRead: () => ports.pagesAndFiles.nativeSiteReadForCreate(),
     editable: path => Boolean(draftScope()) && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path) && editorModule.captureHistoryHost(path)),
     preview: () => ports.nativePreview,
-    openPage: file => void restoreFile(file, workspaceSession.begin()),
-    pageLabel: (file) => ports.pagesController.pageLabel(file),
+    openPage: file => void restoreFile(file, begin()),
+    pageLabel: (file) => ports.pagesAndFiles.pagesController.pageLabel(file),
     variantFiles: nativeVariantFiles,
     announce,
   });
