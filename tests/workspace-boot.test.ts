@@ -10,7 +10,7 @@ import type { ApiReceipt } from "../src/boot-api-response.ts";
 import type { FilesResult, Repository, Snapshot } from "../shared/types.ts";
 import { ReadUnansweredError } from "../src/read-retry.ts";
 import type { EarlyReads } from "../src/boot-reads.ts";
-import { readWarmCopy, WARM_READ_MS, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
+import { readWarmCopy, WARM_WAIT_MS, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 
@@ -904,9 +904,34 @@ test("a kept copy whose storage never answers holds the boot back no longer than
     f.boot.startGuess();
     const started = Date.now();
     assert.equal(await f.boot.takeWarmCopy("lex"), undefined);
-    assert.ok(Date.now() - started < WARM_READ_MS + 400, "the plain open goes on");
+    assert.ok(Date.now() - started < WARM_WAIT_MS + 400, "the plain open goes on");
   } finally {
     if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
     else Reflect.deleteProperty(globalThis, "indexedDB");
   }
 });
+
+test("the preview's base text is kept only when it hashes to the snapshot's blob", () => withDocument(async (page) => {
+  const savedFactory = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB();
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    for (const [text, keptText] of [[HELLO, HELLO], ["hello, edited by an agent\n", undefined]] as const) {
+      const f = fixture({ remember: false, native: true });
+      await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept({ files: [] }));
+      await flush();
+      // Not in the clean cache: the preview's base text only.
+      f.cached.clear();
+      f.ports.baseText = (path: string) => path === "index.html" ? text : undefined;
+      f.ports.appStore.snapshot.value = { ...KEPT_SNAPSHOT };
+      // fixed-wait: past the keep's one-second timer and the hash after it; nothing marks the write.
+      await new Promise((done) => setTimeout(done, 1_500));
+      const stored = await readWarmCopy(factory);
+      assert.equal(stored?.files.find((file) => file.path === "index.html")?.text, keptText, text);
+      page.visibilityState = "visible";
+    }
+  } finally {
+    if (savedFactory) Object.defineProperty(globalThis, "indexedDB", savedFactory);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+}));

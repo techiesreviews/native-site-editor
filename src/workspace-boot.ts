@@ -21,7 +21,7 @@ import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
-import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, WARM_READ_MS, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
+import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, warmFor, withinWait, writeWarmCopy, type WarmCopy } from "./warm-copy";
 
 // `retry`: the open this file is part of, offered as Try again when its read gets no answer.
 type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void };
@@ -434,7 +434,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const link = readWorkspaceUrl();
     const target = link ?? (location.hash ? undefined : readWorkspace(login));
     // A storage that never answers (an open blocked elsewhere) holds the boot back no longer than this.
-    const copy = target && read && await Promise.race([read, new Promise<undefined>((done) => setTimeout(done, WARM_READ_MS))]);
+    const copy = target && read && await withinWait(read);
     return copy && warmFor(copy, { login, source: ports.source(), repoId: target.repoId, branch: target.branch }) ? copy : undefined;
   }
   /**
