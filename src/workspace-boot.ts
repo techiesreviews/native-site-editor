@@ -94,6 +94,8 @@ export const GUESS_AFTER_FAILED_LIST_MS = 5000;
 export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   // Host services that live as long as the page (consts in the host).
   const { appStore, savePublish, repositoryIndex, filesTreeController, node } = ports;
+  // The shared host modules, made once by the host: their members are read at call time.
+  const { notices, session, view, preview, textIndex, setup, runtime } = ports;
   const { api } = ports.repo;
 
   async function restoreFile(
@@ -101,13 +103,13 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     at: SessionStamp,
     options: OpenOptions = {},
   ) {
-    const selection = ++ports.view.fileGeneration;
+    const selection = ++view.fileGeneration;
     const repo = appStore.repository.value!;
     const unavailable = () =>
       new Error("The previously open file is no longer available. Choose another file.");
     const nowFolder = () =>
       new Error("The previously open file is now a folder. Choose another file.");
-    const savedDraft = () => { const scope = ports.session.draftScope(); return scope && draftStore().get(scope, path); };
+    const savedDraft = () => { const scope = session.draftScope(); return scope && draftStore().get(scope, path); };
     try {
       let entry: TreeEntry | undefined;
       if (appStore.snapshot.value?.tree) {
@@ -116,7 +118,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         let entries = appStore.snapshot.value!.entries;
         const parts = path.split("/");
         for (let index = 0; index < parts.length; index++) {
-          if (!at.holds() || selection !== ports.view.fileGeneration) return;
+          if (!at.holds() || selection !== view.fileGeneration) return;
           entry = entries.find((entry) => entry.path === parts[index]);
           if (!entry) break;
           if (index === parts.length - 1) break;
@@ -126,29 +128,29 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           ).entries;
         }
       }
-      if (!at.holds() || selection !== ports.view.fileGeneration) return;
+      if (!at.holds() || selection !== view.fileGeneration) return;
       if (!entry) {
         const saved = savedDraft();
         if (saved?.baseSha === null) {
-          await ports.view.openNewDraft(saved, options);
+          await view.openNewDraft(saved, options);
           return;
         }
         // An edit of a file GitHub deleted: opened to be settled.
         if (saved && !saved.deleted) await savePublish.checkDeleted(at);
-        if (!at.holds() || selection !== ports.view.fileGeneration) return;
+        if (!at.holds() || selection !== view.fileGeneration) return;
         if (saved && !saved.deleted && savePublish.isDeleted(path)) {
           if (!options.keepExplorer) ports.panels.explorerDropdown?.close();
-          ports.view.setCurrentPage(path);
-          await ports.view.mountSource(path, saved.original, saved.baseSha, false, at, selection, options);
+          view.setCurrentPage(path);
+          await view.mountSource(path, saved.original, saved.baseSha, false, at, selection, options);
           return;
         }
         throw unavailable();
       }
       if (entry.type === "tree") throw nowFolder();
-      await ports.view.openEntry(entry, path, at, options);
+      await view.openEntry(entry, path, at, options);
     } catch (error) {
-      if (at.holds() && selection === ports.view.fileGeneration)
-        ports.notices.errorMessage(error, options.retry);
+      if (at.holds() && selection === view.fileGeneration)
+        notices.errorMessage(error, options.retry);
     }
   }
 
@@ -161,16 +163,16 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     warm?: { at?: number },
   ) {
     if (!appStore.repository.value || !appStore.branch.value) return;
-    ports.setup.removeFinishStarter();
+    setup.removeFinishStarter();
     const reopen =
       resumePath ??
       (appStore.snapshot.value?.branch === appStore.branch.value ? appStore.openFile.value : undefined);
     // The head this tab saw on the branch: a lagging read never steps back from it.
     const known = appStore.snapshot.value && appStore.snapshot.value.branch === appStore.branch.value ? savePublish.trustedHead() : undefined;
     ports.mediaHistoryHome.clear();
-    const at = ports.session.nextLoad(ports.user ? githubScope({ account: ports.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.branch.value }) : undefined);
-    ports.view.fileGeneration++;
-    ports.notices.clearError();
+    const at = session.nextLoad(ports.user ? githubScope({ account: ports.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.branch.value }) : undefined);
+    view.fileGeneration++;
+    notices.clearError();
     batch(() => {
       appStore.snapshot.value = undefined;
       repositoryIndex.clear();
@@ -178,7 +180,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       ports.panels.siteActions?.revalidate();
       filesTreeController.reset();
       ports.deactivateNative(true);
-      ports.view.setCurrentPage();
+      view.setCurrentPage();
       appStore.selection.value = undefined;
     });
     const repo = appStore.repository.value;
@@ -191,7 +193,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     ports.panels.content.replaceChildren(
       node("p", "empty-message", "Opening your repository…"),
     );
-    ports.notices.status(`Loading ${repo.name} / ${branch}…`);
+    notices.status(`Loading ${repo.name} / ${branch}…`);
     try {
       // The browser's drafts load alongside the snapshot (start()).
       const [result] = await Promise.all([
@@ -213,8 +215,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       repositoryIndex.seed(repo, result);
       if (!warm) savePublish.seeHead(result.commit);
       else if (warm.at !== undefined) savePublish.seeHead(result.commit, warm.at);
-      ports.view.updateAgentContext();
-      ports.preview.updateNativePreview();
+      view.updateAgentContext();
+      preview.updateNativePreview();
       // Start reading the file to reopen now, alongside the native site's files.
       const reopenEntry = reopen ? ports.repo.entryAt(reopen) : undefined;
       if (reopenEntry?.type === "blob" && (reopenEntry.size ?? 0) <= 1024 * 1024)
@@ -223,22 +225,22 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (!at.holds()) return;
       // Drafts of files GitHub deleted or now holds are looked for once the
       // page is on screen (a file opened before then that needs it waits).
-      if (isNative && ports.runtime.site) {
-        ports.textIndex.afterNativePaint(ports.runtime.state.request, () => void savePublish.checkDeleted(at));
-        const painted = ports.runtime.state.request;
+      if (isNative && runtime.site) {
+        textIndex.afterNativePaint(runtime.state.request, () => void savePublish.checkDeleted(at));
+        const painted = runtime.state.request;
         // A newer head folds in as an outside change does (src/outside-merge.ts), or loads the branch again.
         // Once: the paint and its fallback timer both run this.
         let checked = false;
-        if (warm) ports.textIndex.afterNativePaint(painted, () => { if (!checked && at.holds()) { checked = true; checkKept(at, branch); } });
+        if (warm) textIndex.afterNativePaint(painted, () => { if (!checked && at.holds()) { checked = true; checkKept(at, branch); } });
         let remembered = false;
-        ports.textIndex.afterNativePaint(painted, () => {
+        textIndex.afterNativePaint(painted, () => {
           const login = ports.user?.login;
           // Only after a real paint (not the 10 s fallback), once.
-          if (remembered || ports.runtime.state.paintedRequest !== painted) return;
+          if (remembered || runtime.state.paintedRequest !== painted) return;
           remembered = true;
           if (!at.holds() || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
           writeBootMemory(ports.storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
-            files: ports.runtime.state.paintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
+            files: runtime.state.paintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
           void rememberShown(login, repo, branch, result);
         });
       } else {
@@ -248,22 +250,22 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       }
       // A native project opens on its home page when nothing else is selected;
       // its source is already in memory from the site's prefetch.
-      const open = reopen ?? (isNative ? ports.runtime.site?.routes["/"] : undefined);
+      const open = reopen ?? (isNative ? runtime.site?.routes["/"] : undefined);
       ports.element("revision").textContent = result.empty ? "—" : result.commit.slice(0, 7);
       ports.element("revision").title = result.empty ? "No commits yet" : result.commit;
       filesTreeController.render();
       ports.pagesController.updateTabs(true);
-      ports.view.showDirectory(result);
+      view.showDirectory(result);
       // Agents see the site as it is now (pages found, or none yet).
-      ports.view.updateAgentContext();
+      view.updateAgentContext();
       // A repository made on GitHub's own page for a chosen starting point gets it now.
       // Only an empty repository gets it unasked; for any other the remembered choice is dropped.
-      const remembered = !isNative ? ports.setup.takeStartingPoint(repo) : undefined;
+      const remembered = !isNative ? setup.takeStartingPoint(repo) : undefined;
       const chosenPoint = result.empty ? remembered : undefined;
-      if (chosenPoint) void ports.setup.writeStartingPoint(chosenPoint).then((problem) => { if (problem) ports.notices.errorMessage(new Error(problem)); });
+      if (chosenPoint) void setup.writeStartingPoint(chosenPoint).then((problem) => { if (problem) notices.errorMessage(new Error(problem)); });
       // A starting point that stopped part way is offered to be finished.
-      const partialStart = result.empty ? undefined : ports.setup.readPartialStart(repo.id);
-      if (partialStart) ports.setup.offerFinishStarter(repo, partialStart);
+      const partialStart = result.empty ? undefined : setup.readPartialStart(repo.id);
+      if (partialStart) setup.offerFinishStarter(repo, partialStart);
       if (ports.user)
         rememberWorkspace(ports.user.login, {
           repoId: repo.id,
@@ -272,20 +274,20 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         });
       if (open) {
         ports.previewSelection.recordIntent(open);
-        const opening = restoreFile(open, at, { retry }), selection = ports.view.fileGeneration;
+        const opening = restoreFile(open, at, { retry }), selection = view.fileGeneration;
         await opening;
         // Its code pane waits for Monaco: a file opened meanwhile (a new page,
         // a rename) has said what happened, and that stands.
-        if (selection !== ports.view.fileGeneration) return;
+        if (selection !== view.fileGeneration) return;
       }
       if (!at.holds()) return;
       if (result.empty) {
-        ports.notices.settleStatus(`${repo.name} is empty. Choose how to start your site.`);
+        notices.settleStatus(`${repo.name} is empty. Choose how to start your site.`);
         return;
       }
       // A kept copy is up to date only once GitHub's head says so (checkKept), which may have answered already.
       const shown = appStore.snapshot.value?.commit ?? result.commit;
-      ports.notices.settleStatus(!warm ? upToDate(branch, shown) : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
+      notices.settleStatus(!warm ? upToDate(branch, shown) : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
     } catch (error) {
       if (at.holds()) {
         ports.panels.files.replaceChildren(
@@ -297,7 +299,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         );
         const failed = node("p", "empty-message", "Your repository could not be opened.");
         ports.panels.content.replaceChildren(failed);
-        ports.notices.errorMessage(error, retry, failed);
+        notices.errorMessage(error, retry, failed);
       }
     } finally {
       if (at.holds()) ports.panels.refreshButton.disabled = false;
@@ -333,7 +335,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           // Taken over a third time: no answer of its own, said as such; asked again on the next look.
           if (typeof document !== "undefined" && document.visibilityState === "visible") {
             keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
-            ports.notices.settleStatus(keptSaid.text);
+            notices.settleStatus(keptSaid.text);
           }
           onNextWake(() => { if (at.holds()) checkKept(at, branch); });
         });
@@ -342,7 +344,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (!commit) {
         if (typeof document !== "undefined" && document.visibilityState === "visible") {
           keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
-          ports.notices.settleStatus(keptSaid.text);
+          notices.settleStatus(keptSaid.text);
         }
         onNextWake(() => { if (at.holds()) checkKept(at, branch); });
         return;
@@ -350,7 +352,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       if (appStore.snapshot.value?.commit !== commit) return;
       savePublish.seeHead(commit);
       keptSaid = { at, text: upToDate(branch, commit) };
-      ports.notices.settleStatus(keptSaid.text);
+      notices.settleStatus(keptSaid.text);
     });
   }
   function onNextWake(run: () => void) {
@@ -376,11 +378,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const shas = new Map(snapshot.tree.filter((entry) => entry.type === "blob").map((entry) => [entry.path, entry.sha]));
     const files: WarmCopy["files"] = [];
     let length = 0;
-    for (const path of new Set([...ports.runtime.state.paintedPaths, ...shas.keys()])) {
+    for (const path of new Set([...runtime.state.paintedPaths, ...shas.keys()])) {
       const sha = shas.get(path), clean = sha === undefined ? undefined : ports.cleanSources.peek(repo.full_name, sha);
       // The preview's base text is kept only when it is that blob (media and agent writes also land there); leaving
       // the tab (`force`) writes at once, with GitHub's clean texts only.
-      const text = clean ?? (sha === undefined || force ? undefined : ports.runtime.base.sources.get(path));
+      const text = clean ?? (sha === undefined || force ? undefined : runtime.base.sources.get(path));
       if (sha === undefined || text === undefined || length + text.length > MAX_TEXT_LENGTH) continue;
       if (clean === undefined && await textBlobSha(text).catch(() => "") !== sha) continue;
       length += text.length;
@@ -400,9 +402,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   // folded in since its first paint.
   function keepShown(wait = false, force = false) {
     const repo = appStore.repository.value, branch = appStore.branch.value, snapshot = appStore.snapshot.value, login = ports.user?.login;
-    if (!login || !repo || !branch || !snapshot || !ports.runtime.site) return;
-    if (ports.runtime.state.paintedRequest === ports.runtime.state.request) void rememberShown(login, repo, branch, snapshot, force);
-    else if (wait) ports.textIndex.afterNativePaint(ports.runtime.state.request, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
+    if (!login || !repo || !branch || !snapshot || !runtime.site) return;
+    if (runtime.state.paintedRequest === runtime.state.request) void rememberShown(login, repo, branch, snapshot, force);
+    else if (wait) textIndex.afterNativePaint(runtime.state.request, () => { if (appStore.snapshot.value === snapshot) keepShown(); });
   }
   // A new snapshot (a save, a fold) or another page opened is kept a second after it, and leaving the tab keeps
   // what it shows then.
@@ -523,8 +525,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   async function chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy) {
     const choice = ++choices;
     ports.mediaHistoryHome.clear();
-    const at = ports.session.nextLoad();
-    ports.view.fileGeneration++;
+    const at = session.nextLoad();
+    view.fileGeneration++;
     appStore.reset(ports.repositories.find(
       (repo) => String(repo.id) === ports.panels.repositorySelect.value,
     ));
@@ -532,13 +534,13 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     // Try again repeats this choice, until another load supersedes it.
     const retry = () => { if (at.holds()) void chooseRepository(resume); };
     repositoryIndex.clear();
-    ports.view.setCurrentPage();
+    view.setCurrentPage();
     ports.panels.branchSelect.disabled = true;
     ports.panels.refreshButton.disabled = true;
     ports.options(ports.panels.branchSelect, [{ value: "", label: "Loading branches…" }]);
     ports.panels.files.replaceChildren();
     ports.panels.content.replaceChildren(node("p", "empty-message", "Loading branches…"));
-    ports.notices.clearError();
+    notices.clearError();
     if (!appStore.repository.value) {
       ports.options(ports.panels.branchSelect, [{ value: "", label: "—" }]);
       ports.element("revision").textContent = "—";
@@ -549,7 +551,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           "Select a repository from Pages & files to open a project.",
         ),
       );
-      ports.notices.status("Choose a project to continue.");
+      notices.status("Choose a project to continue.");
       return;
     }
     // Begin independent work together: the selected branch is already known from
@@ -604,12 +606,12 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
           ports.options(ports.panels.branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
           ports.panels.branchSelect.value = branch;
           ports.panels.branchSelect.disabled = false;
-          if (failed) ports.notices.clearError();
+          if (failed) notices.clearError();
         }, async (error: unknown) => {
           await opening;
           if (!current()) return;
           failed = true;
-          ports.notices.errorMessage(error, () => void fill(api<string[]>("branches", { repo: opened.full_name })));
+          notices.errorMessage(error, () => void fill(api<string[]>("branches", { repo: opened.full_name })));
         });
         void fill(listing);
         await opening;
@@ -661,7 +663,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.options(ports.panels.branchSelect, [{ value: "", label: "Branches unavailable" }]);
         const failed = node("p", "empty-message", "Branches could not be loaded.");
         ports.panels.content.replaceChildren(failed);
-        ports.notices.errorMessage(error, retry, failed);
+        notices.errorMessage(error, retry, failed);
       }
     }
   }
