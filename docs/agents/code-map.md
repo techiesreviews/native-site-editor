@@ -259,9 +259,9 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Site preview ports (src/site-preview.ts), site loading and text index ports (src/site-loading.ts, src/site-text-index.ts), chunk recovery | 101–146 | sitePreview, updateNativePreviewSources, createSiteLoading, createSiteTextIndex, stampOf |
 | Lazy loader ports (src/lazy-loaders.ts) | 147–168 | lazyLoaders, loadSiteSettings, loadMedia, loadSetupActions |
 | Component tools handle, guarded edit adapter and parked steps | 169–220 | componentTools, nativeMountListener, editorWorkspace, guardedEdits, parkedSteps |
-| Page-builder host ports (src/page-builder-host.ts: palette, component tools, inserts, block moves and drags, preview selection, Variant files, CSS workspace, Page Structure controller, page meta and settings, card grids) | 221–245 | pageBuilder, paletteController, blockMoves, previewSelection, pageStructureController, cards |
+| Page-builder host ports (src/page-builder-host.ts: palette, component tools, inserts, block moves and drags, preview selection, Variant files, CSS workspace, Page Structure controller, page meta and settings, card grids) | 221–245 | pageBuilder, blockMoves, previewSelection, pageStructureController |
 | History wiring (src/version-view.ts), linked styles (src/controllers/linked-styles-controller.ts), repository index, preview handles and draft scope | 246–283 | versions, linkedStyles, repositoryIndex, findEntry, nativePreview, draftScope |
-| Media host ports (src/controllers/media-host.ts) | 284–295 | media, mediaController, mediaPorts, nativeImagePaths, uploadFilesTo, readMediaText |
+| Media host ports (src/controllers/media-host.ts) | 284–295 | media, mediaController, mediaPorts, readMediaText |
 | Leaving the site, current page and session state | 296–326 | deactivateNative, setCurrentPage, info, fileGeneration |
 | Setup host ports (src/setup-host.ts), draft views (src/draft-views.ts) | 327–355 | setup, imagesSignature, openNewDraft, showDeletedFile |
 | Pages & files and workspace host ports (src/pages-and-files-host.ts, src/workspace-mount.ts) | 356–401 | pagesAndFiles, pagesController, savePublish, workspace, mountWorkspace, setupScope |
@@ -279,7 +279,7 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | `appStore` | Holds reactive repository, snapshot, file and selection state. |
 | `lazyLoaders` | Modules loaded on first use, retried after failures (lazy-loaders.ts). |
 | `mountWorkspace` | Mounts editor DOM and controls (`workspace`, workspace-mount.ts). |
-| `mountComponentTools` | Supplies live host ports to component tools (page-builder-host.ts). |
+| `pageBuilder` | Page builder host, handed whole to the workspace (page-builder-host.ts). |
 | `guardedEdits` | Runs proved edits as one undoable transaction. |
 | `blockMoves` | Guarded block moves across pages and templates (page-builder-host.ts). |
 | `pageStructureController` | Page Structure, edit-bar models and text edits (page-builder-host.ts). |
@@ -290,7 +290,7 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | `nativePageStyles` | Lists the shown page's stylesheets with imports (site-preview.ts). |
 | `updateNativePreviewSources` | Updates preview sources; loads media, styles, templates (site-preview.ts). |
 | `activateNativeSite` | Resolves native conventions, starts the editing preview (site-loading.ts). |
-| `ensureNativeTextIndex` | Waits for the complete native text index (site-text-index.ts). |
+| `textIndex` | Text index and first-paint wait, a shared module (site-text-index.ts). |
 | `restoreFile` | Opens a path from drafts or the current snapshot. |
 | `loadSnapshot` | Loads a branch snapshot and opens its workspace. |
 | `findEntry` | Resolves a repository tree entry, fetching when needed. |
