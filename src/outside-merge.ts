@@ -80,7 +80,7 @@ export interface OutsideHost {
   /** Whether a dialog waits for an answer now (the page's open `<dialog>`). */
   asking?: () => boolean;
 }
-type Ports = Pick<PagesAndFilesPorts, "appStore" | "api" | "readFiles" | "draftScope" | "runtime" | "editorModule" | "agentPresence" | "nativeHistorySession">;
+type Ports = Pick<PagesAndFilesPorts, "appStore" | "repo" | "session" | "runtime" | "editorModule" | "agentPresence" | "nativeHistorySession">;
 
 /** A draft the fold cannot merge: a deletion, a move, a new file, bytes, or a draft with no text. */
 const unmergeable = (draft: SavedDraft) => Boolean(draft.deleted || draft.movedTo || draft.movedFrom || draft.opaque || draft.upload || draft.baseSha === null || draft.sourceSha);
@@ -90,14 +90,14 @@ const unmergeable = (draft: SavedDraft) => Boolean(draft.deleted || draft.movedT
  * on meanwhile, `live` false: nothing is left to do); false when the branch must load again instead.
  */
 export async function foldIn(ports: Ports, host: OutsideHost, commit: string, live: () => boolean): Promise<boolean> {
-  const was = ports.appStore.snapshot.value, scope = ports.draftScope(), repo = ports.appStore.repository.value;
+  const was = ports.appStore.snapshot.value, scope = ports.session.draftScope(), repo = ports.appStore.repository.value;
   if (!was?.tree || !scope || !repo || was.empty) return false;
   // Two reads. The snapshot decides whether the fold goes on: it answers (the fold goes on), fails (the caller loads the
   // branch again, while its load holds) or never answers (src/read-retry.ts gives up after its retries: a failure).
   // The commit read only names the chip: it answers (its author), fails, or answers too late or never ("Someone",
   // once AUTHOR_WAIT_MS passed since the fold began). It never holds the fold back past that.
-  const author = within(ports.api<CommitFiles>("commit", { repo: repo.full_name, sha: commit }).then(made => made.author, () => undefined), AUTHOR_WAIT_MS);
-  const next = await ports.api<Snapshot>("snapshot", { repo: repo.full_name, branch: scope.branch, commit });
+  const author = within(ports.repo.api<CommitFiles>("commit", { repo: repo.full_name, sha: commit }).then(made => made.author, () => undefined), AUTHOR_WAIT_MS);
+  const next = await ports.repo.api<Snapshot>("snapshot", { repo: repo.full_name, branch: scope.branch, commit });
   if (!live()) return true;
   if (!next.tree || next.empty) return false;
   const blobs = (tree: TreeEntry[]) => new Map(tree.filter(entry => entry.type === "blob").map(entry => [entry.path, entry]));
@@ -113,7 +113,7 @@ export async function foldIn(ports: Ports, host: OutsideHost, commit: string, li
   const draftsNow = () => new Map(host.drafts().list(scope).map(draft => [draft.path, draft]));
   const mergeable = (drafts: Map<string, SavedDraft>) => !changed.some(entry => drafts.has(entry.path) && unmergeable(drafts.get(entry.path)!));
   if (changed.length > MAX_BATCH_FILES || changed.some(entry => !isNativeTextFile(entry.path)) || !mergeable(draftsNow())) return false;
-  const { texts, unreadable } = await readSiteTexts(changed, shas => ports.readFiles(repo.full_name, shas));
+  const { texts, unreadable } = await readSiteTexts(changed, shas => ports.repo.readFiles(repo.full_name, shas));
   if (!live()) return true;
   if (unreadable.length || texts.size !== changed.length || !mergeable(draftsNow())) return false;
 

@@ -5,9 +5,10 @@ import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import { writeBootMemory, type BootMemory } from "../src/boot-memory.ts";
 import { RepositoryIndex } from "../src/repository-loading.ts";
-import { createWorkspaceSession } from "../src/workspace-session.ts";
+import { createWorkspaceSession, type SessionStamp, type WorkspaceScope } from "../src/workspace-session.ts";
+import type { Notices, Repo, Session, View } from "../src/host-modules.ts";
 import type { ApiReceipt } from "../src/boot-api-response.ts";
-import type { FilesResult, Repository, Snapshot } from "../shared/types.ts";
+import type { FilesResult, Repository, Snapshot, TreeEntry } from "../shared/types.ts";
 import { ReadUnansweredError } from "../src/read-retry.ts";
 import type { EarlyReads } from "../src/boot-reads.ts";
 import { readWarmCopy, WARM_WAIT_MS, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
@@ -74,8 +75,54 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   };
   const box = { replaceChildren: (...nodes: Pick<HTMLElement, "textContent">[]) => { shown.nodes = nodes; shown.content = nodes.map(node => node.textContent).join(""); } };
   const branchSelect = { disabled: false, value: "" }, refreshButton = { disabled: false };
+  // The shared host modules (src/host-modules.ts), one fake each.
+  const notices = {
+    status: (message: string) => { shown.status = message; },
+    settleStatus: (message: string) => { shown.status = message; },
+    clearError: () => {},
+    errorMessage: (error: unknown, _retry?: () => void, _panel?: HTMLElement) => { shown.status = `error: ${error instanceof Error ? error.message : error}`; },
+    announce: () => {},
+  } satisfies Notices;
+  const sessionModule = {
+    begin: () => session.begin(), current: () => session.current(), currentLoad: () => session.current().load, stampOf: () => session.begin(),
+    nextLoad: (scope?: WorkspaceScope) => { session.next(scope); return session.begin(); },
+    draftScope: () => undefined,
+  } satisfies Session;
+  const repo = {
+    api: <T>(path: string, params?: Record<string, string>) => read(path, params) as Promise<T>,
+    apiResponse: <T>(path: string, params?: Record<string, string>, early?: Promise<Response>) => read(path, params, early) as Promise<ApiReceipt<T>>,
+    readFile: async () => "", readFiles: async () => ({}),
+    entryAt: (_path: string): TreeEntry | undefined => undefined, findEntry: async () => undefined,
+  } satisfies Repo;
+  const view = {
+    get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
+    setCurrentPage: () => {}, showDirectory: () => {}, updateAgentContext: () => {}, updateCurrentPageLabel: () => {},
+    openNewDraft: async () => {}, openEntry: async (_entry: TreeEntry, _path: string, _at: SessionStamp) => {}, mountSource: async () => {},
+    restoreFile: async () => {}, loadSnapshot: async () => {},
+  } satisfies View;
+  const panels = {
+    content: box, files: { replaceChildren: () => {} }, refreshButton, branchSelect,
+    repositorySelect: { value: "501" },
+    repositoryMenu: undefined, explorerDropdown: undefined, siteActions: undefined,
+  } satisfies WorkspaceBootPorts["panels"];
+  // A native site paints at once when asked for (`native`), its home page among the painted files.
+  const runtime = {
+    site: native ? { routes: {}, components: {} } : undefined,
+    state: { request: 0, paintedRequest: native ? 0 : -1, paintedPaths: native ? ["index.html"] : [] },
+    base: { sources: new Map<string, string>() },
+  } satisfies WorkspaceBootPorts["runtime"];
+  const textIndex = { afterNativePaint: (_request: number, run: () => void) => { if (native) run(); } } satisfies WorkspaceBootPorts["textIndex"];
+  const setup = {
+    removeFinishStarter: () => {},
+    takeStartingPoint: () => undefined,
+    writeStartingPoint: async () => undefined,
+    readPartialStart: () => undefined,
+    offerFinishStarter: () => {},
+  } satisfies WorkspaceBootPorts["setup"];
   const ports = {
     appStore: createAppStore(createDraftStore()),
+    notices, session: sessionModule, repo, view, panels, runtime, textIndex, setup,
+    preview: { updateNativePreview: () => {} },
     savePublish: { trustedHead: () => heads.at(-1), seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
       checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswers.length > 1 ? headAnswers.shift()! : headAnswers[0]; },
       headSettled: () => settled(), headSeen: () => undefined as { commit: string; at: number } | undefined },
@@ -94,50 +141,19 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     previewSelection: { recordIntent: () => {} },
     mediaHistoryHome: { clear: () => {} },
     user: { login: "lex" },
-    get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
     repositories: [REPO],
-    content: box, files: { replaceChildren: () => {} }, refreshButton, branchSelect,
-    repositorySelect: { value: "501" },
-    repositoryMenu: undefined, explorerDropdown: undefined, siteActions: undefined,
-    // A native site paints at once when asked for (`native`), its home page among the painted files.
-    nativeSite: native ? { routes: {}, components: {} } : undefined,
-    nativeSourcesRequest: 0, nativePaintedRequest: native ? 0 : -1, nativePaintedPaths: native ? ["index.html"] : [],
     source: () => "https://editor.test/",
     sessionTag: () => tag,
     draftsReady: async () => {},
-    nextLoad: (scope) => { session.next(scope); return session.begin(); },
-    api: <T>(path: string, params?: Record<string, string>) => read(path, params) as Promise<T>,
-    apiResponse: <T>(path: string, params?: Record<string, string>, early?: Promise<Response>) => read(path, params, early) as Promise<ApiReceipt<T>>,
-    readFile: async () => "",
-    baseText: () => undefined,
     storage: () => local,
     element: () => ({ textContent: "", title: "" }),
     // A partial element: only the words are read back.
     // eslint-disable-next-line no-restricted-syntax -- a partial DOM fake
     node: (_tag, _className, text) => ({ textContent: text ?? "" }) as HTMLElement,
     options: (select, values) => { select.value = values[0]?.value ?? ""; },
-    status: (message) => { shown.status = message; },
-    settleStatus: (message) => { shown.status = message; },
-    clearError: () => {},
-    errorMessage: (error) => { shown.status = `error: ${error instanceof Error ? error.message : error}`; },
-    draftScope: () => undefined,
     draftsOf: () => drafts,
-    entryAt: () => undefined,
-    setCurrentPage: () => {},
-    openNewDraft: async () => {},
-    openEntry: async () => {},
-    mountSource: async () => {},
     deactivateNative: () => {},
     activateNativeSite: async () => native,
-    afterNativePaint: (_request, run) => { if (native) run(); },
-    updateAgentContext: () => {},
-    updatePreview: () => {},
-    showDirectory: () => {},
-    removeFinishStarter: () => {},
-    takeStartingPoint: () => undefined,
-    writeStartingPoint: async () => undefined,
-    readPartialStart: () => undefined,
-    offerFinishStarter: () => {},
   } satisfies WorkspaceBootPorts;
   const boot = createWorkspaceBoot(ports);
   const pending = (path: string) => reads.filter((entry) => entry.path === path);
@@ -325,7 +341,7 @@ test("a failed branch list and a guess that never lands show the failure at the 
 // Try again (ticket 26): each open hands its own retry to errorMessage with its errors.
 function retries(f: ReturnType<typeof fixture>) {
   const offered: (() => void)[] = [];
-  f.ports.errorMessage = (error: unknown, retry?: () => void) => {
+  f.ports.notices.errorMessage = (error: unknown, retry?: () => void) => {
     f.shown.status = `error: ${error instanceof Error ? error.message : error}`;
     if (retry) offered.push(retry);
   };
@@ -343,7 +359,7 @@ function failedSnapshotLoad(f: ReturnType<typeof fixture>) {
 test("the failed panel handed to errorMessage is the one drawn in the content area", async () => {
   const f = fixture();
   const panels: (HTMLElement | undefined)[] = [];
-  f.ports.errorMessage = (_error: unknown, _retry?: () => void, panel?: HTMLElement) => { panels.push(panel); };
+  f.ports.notices.errorMessage = (_error: unknown, _retry?: () => void, panel?: HTMLElement) => { panels.push(panel); };
   await failedSnapshotLoad(f);
   assert.equal(f.shown.content, "Your repository could not be opened.");
   assert.equal(panels.length, 1);
@@ -524,7 +540,7 @@ test("a guess opens on the linked branch with the selector disabled until the br
   const f = fixture({ remember: false, early: earlySnapshot("lex/site") });
   let retry: (() => void) | undefined;
   const said: string[] = [];
-  f.ports.errorMessage = (error, again) => { said.push(error instanceof Error ? error.message : String(error)); retry = again; };
+  f.ports.notices.errorMessage = (error, again) => { said.push(error instanceof Error ? error.message : String(error)); retry = again; };
   f.boot.startGuess();
   await flush();
   const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
@@ -549,7 +565,7 @@ test("a guess opens on the linked branch with the selector disabled until the br
 test("a branch list that answers enables the selector on the linked branch, with no message", async () => {
   const f = fixture({ remember: false, early: earlySnapshot("lex/site") });
   const said: unknown[] = [];
-  f.ports.errorMessage = (error) => { said.push(error); };
+  f.ports.notices.errorMessage = (error) => { said.push(error); };
   f.boot.startGuess();
   await flush();
   const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
@@ -689,8 +705,8 @@ test("a kept copy left for a new listing before its texts are proven caches noth
 test("a head check that answers before the reopened file is done still leaves the status up to date", async () => {
   const f = fixture({ remember: false, native: true });
   let opened!: () => void;
-  f.ports.entryAt = (path: string) => KEPT_SNAPSHOT.tree!.find((entry) => entry.path === path);
-  f.ports.openEntry = () => new Promise<void>((done) => { opened = done; });
+  f.ports.repo.entryAt = (path: string) => KEPT_SNAPSHOT.tree!.find((entry) => entry.path === path);
+  f.ports.view.openEntry = () => new Promise<void>((done) => { opened = done; });
   f.answerHead(Promise.resolve(sha(9)));
   const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main", path: "index.html" }, kept());
   await flush();
@@ -785,8 +801,8 @@ test("a damaged kept text's GitHub read that lands after the copy was left cache
 test("a head check that fails while the reopened file is still opening keeps saying so after the open", () => withDocument(async () => {
   const f = fixture({ remember: false, native: true });
   let opened!: () => void;
-  f.ports.entryAt = (path: string) => KEPT_SNAPSHOT.tree!.find((entry) => entry.path === path);
-  f.ports.openEntry = () => new Promise<void>((done) => { opened = done; });
+  f.ports.repo.entryAt = (path: string) => KEPT_SNAPSHOT.tree!.find((entry) => entry.path === path);
+  f.ports.view.openEntry = () => new Promise<void>((done) => { opened = done; });
   f.answerHead(Promise.resolve(undefined));
   const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main", path: "index.html" }, kept());
   await flush();
@@ -858,7 +874,7 @@ test("a head check taken over by a newer one that settled without the head shown
 
 test("the paint and its fallback timer both reporting start one head check behind a kept copy", async () => {
   const f = fixture({ remember: false, native: true });
-  f.ports.afterNativePaint = (_request: number, run: () => void) => { run(); run(); };
+  f.ports.textIndex.afterNativePaint = (_request: number, run: () => void) => { run(); run(); };
   await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
   await flush();
   assert.equal(f.headChecks.length, 1);
@@ -922,7 +938,8 @@ test("the preview's base text is kept only when it hashes to the snapshot's blob
       await flush();
       // Not in the clean cache: the preview's base text only.
       f.cached.clear();
-      f.ports.baseText = (path: string) => path === "index.html" ? text : undefined;
+      f.ports.runtime.base.sources.clear();
+      f.ports.runtime.base.sources.set("index.html", text);
       f.ports.appStore.snapshot.value = { ...KEPT_SNAPSHOT };
       // fixed-wait: past the keep's one-second timer and the hash after it; nothing marks the write.
       await new Promise((done) => setTimeout(done, 1_500));

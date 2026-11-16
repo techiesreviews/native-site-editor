@@ -33,21 +33,21 @@ interface Creation {
 
 export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerHost) {
   function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> {
-    const scope = ports.draftScope();
+    const scope = ports.session.draftScope();
     if (!scope || !ports.appStore.snapshot.value) return { ok: false, error: "Open a repository first." };
     const drafted = ports.runtime.newDraftPaths({}, scope);
     const inFolder = (path: string, folder: string) => path.startsWith(`${folder}/`);
     // A folder is there when the branch has it or a file is (drafted) in it.
     const folderExists = (folder: string) =>
-      ports.entryAt(folder)?.type === "tree" || ports.runtime.base.files.some((path) => inFolder(path, folder)) || drafted.some((path) => inFolder(path, folder));
+      ports.repo.entryAt(folder)?.type === "tree" || ports.runtime.base.files.some((path) => inFolder(path, folder)) || drafted.some((path) => inFolder(path, folder));
     // What stands in the way of a new file at `path`, as far as is known here;
     // without the whole-commit tree, GitHub is asked on confirm.
     const problem = (path: string) => {
       if (draftStore().get(scope, path)?.deleted) return `${path} is deleted in your changes. Restore it instead.`;
       if (draftStore().get(scope, path)) return `${path} already has a draft in this browser.`;
       if (folderExists(path)) return `There is a folder ${path} already.`;
-      if (ports.entryAt(path) || ports.runtime.base.files.includes(path)) return `${path} already exists.`;
-      return host.parentProblem(path, (parent) => ports.entryAt(parent)?.type === "blob" || Boolean(draftStore().get(scope, parent)));
+      if (ports.repo.entryAt(path) || ports.runtime.base.files.includes(path)) return `${path} already exists.`;
+      return host.parentProblem(path, (parent) => ports.repo.entryAt(parent)?.type === "blob" || Boolean(draftStore().get(scope, parent)));
     };
     const routes = ports.runtime.site?.routes ?? {};
     const routeTaken = (route: string) => (Object.hasOwn(routes, route) ? `The URL ${route} already has a page, ${routes[route]}.` : undefined);
@@ -70,7 +70,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
 
     const path = host.newFolderPath(folder, name);
     if (!path.ok) return path;
-    if (folderExists(path.value) || ports.entryAt(path.value)) return fail(`${path.value} already exists.`);
+    if (folderExists(path.value) || ports.repo.entryAt(path.value)) return fail(`${path.value} already exists.`);
     const keep = `${path.value}/.gitkeep`;
     const blocked = problem(keep);
     if (blocked) return fail(blocked);
@@ -88,8 +88,8 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     const planned = planCreation(request);
     if (!planned.ok) return planned.error;
     const creation = planned.value;
-    const scope = ports.draftScope()!;
-    const at = ports.workspaceSession.begin();
+    const scope = ports.session.draftScope()!;
+    const at = ports.session.begin();
     try {
       for (const file of creation.files) {
         const problem = await host.branchPathProblem(file.path);
@@ -105,8 +105,8 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     if (failure) return failure;
     ports.editorModule?.refreshDrafts();
     ports.versions.history.refresh();
-    if (ports.runtime.site) ports.refreshNativeRoutes();
-    ports.updateAgentContext();
+    if (ports.runtime.site) ports.pageBuilder.refreshNativeRoutes();
+    ports.view.updateAgentContext();
     if (host.resyncNativeSite()) return undefined;
     // After adding, the new thing is in view: a Files search that could hide it starts afresh.
     const field = ports.element<HTMLInputElement>("explorer-search");
@@ -116,11 +116,11 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
       const parts = creation.folder.split("/");
       parts.forEach((_, index) => host.filesTreeController.openFolder(parts.slice(0, index + 1).join("/")));
       host.filesTreeController.render();
-      const row = [...ports.files.querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === creation.folder);
+      const row = [...ports.panels.files.querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === creation.folder);
       if (row) host.createDialog?.returnFocusTo(row);
     } else host.filesTreeController.render();
     const opened = creation.open ? draftStore().get(scope, creation.open) : undefined;
-    if (opened) await ports.openNewDraft(opened);
+    if (opened) await ports.view.openNewDraft(opened);
     // Written as the user's own announcement, so a load finishing later keeps it.
     ports.element("status").textContent = creation.done;
     return undefined;
@@ -137,13 +137,13 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
         { label: "Upload files…", run: () => void pickFiles().then((picked) => upload(target.path, picked)) },
       );
     // Renamed in place where the row shows: the tree, or the files a search found.
-    items.push({ label: "Rename", shortcut: "F2", run: () => host.fileActions?.rename(ports.files.hidden ? ports.element("files-found") : ports.files, target.path) });
+    items.push({ label: "Rename", shortcut: "F2", run: () => host.fileActions?.rename(ports.panels.files.hidden ? ports.element("files-found") : ports.panels.files, target.path) });
     if (!target.folder) items.push({ label: "Duplicate", run: () => void host.fileOps!.duplicateFileTarget(target) });
     const change = host.treeState().changes.get(target.path);
     if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => host.undoFileChanges({ moveBack: [target.path] }) });
     // A rename discarded brings the file back at its old path, in view (in the workspace and load it was discarded in).
     if (change && !target.folder) items.push({ label: "Discard changes", run: () => {
-      const at = ports.workspaceSession.begin();
+      const at = ports.session.begin();
       void host.savePublish.discardFile(target.path).then(() => {
         if (at.holds() && change.from && !host.treeState().changes.has(target.path)) host.filesTreeController.reveal([change.from]);
       });
@@ -165,8 +165,8 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   // Files from the computer into `folder` (Upload files…, or dropped on a row or the head row): once added, in view, unless
   // another repository or load is shown by then, or the person typed another search meanwhile (it stays).
   function upload(folder: string, files: File[]) {
-    const at = ports.workspaceSession.begin(), field = ports.element<HTMLInputElement>("explorer-search"), typed = field.value;
-    void ports.uploadFilesTo(folder, files).then((paths) => {
+    const at = ports.session.begin(), field = ports.element<HTMLInputElement>("explorer-search"), typed = field.value;
+    void ports.media.uploadFilesTo(folder, files).then((paths) => {
       if (paths.length && at.holds() && field.value === typed) host.filesTreeController.reveal(paths);
     });
   }
@@ -174,7 +174,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
   async function copyFilePath(path: string, opener?: HTMLElement) {
     try {
       await navigator.clipboard.writeText(path);
-      ports.announce(`Copied ${path}`);
+      ports.notices.announce(`Copied ${path}`);
       markDone(opener);
     } catch {
       refuse(`The path could not be copied: ${path}`);
@@ -211,7 +211,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
     const problem = dropProblem(source, folder);
     if (problem) { refuse(problem); return; }
     const error = await host.fileOps!.moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move", { reveal: true });
-    if (error) ports.errorMessage(new Error(error));
+    if (error) ports.notices.errorMessage(new Error(error));
   }
 
   return { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget, upload };
@@ -233,31 +233,31 @@ function searchOpens(list: HTMLElement, open: boolean) {
 /** The explorer's Files search (mock-up 05 v2): every file of the site whose name or folder has `text`, as rows that open the file
  * and carry the tree's row actions (`attach`); without a site's file list (a plain repository), the rows drawn are narrowed instead,
  * the folders on the way to a match opened. Empty `text` shows the tree again. */
-export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | "runtime" | "previewSelection" | "restoreFile" | "workspaceSession" | "appStore">, text: string,
+export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "panels" | "runtime" | "previewSelection" | "view" | "session" | "appStore">, text: string,
   attach?: (row: HTMLButtonElement, line: HTMLElement, target: FileRowTarget) => void) {
   const found = ports.element("files-found"), said = ports.element("files-found-said"), words = text.trim().toLowerCase();
   // Only a site's file list is whole; a plain repository's tree knows the folders opened.
   const all = words && ports.runtime.site ? ports.runtime.files() : [];
-  ports.files.hidden = Boolean(words && all.length);
-  found.hidden = !ports.files.hidden;
+  ports.panels.files.hidden = Boolean(words && all.length);
+  found.hidden = !ports.panels.files.hidden;
   if (found.hidden) {
     // The rows drawn whose path has the words, with the folders leading to them; nothing found says so.
     // The folders the last search opened close again first.
-    for (const list of ports.files.querySelectorAll<HTMLElement>("ul[data-search-open]")) searchOpens(list, false);
-    const items = [...ports.files.querySelectorAll<HTMLElement>("li")];
+    for (const list of ports.panels.files.querySelectorAll<HTMLElement>("ul[data-search-open]")) searchOpens(list, false);
+    const items = [...ports.panels.files.querySelectorAll<HTMLElement>("li")];
     for (const item of items) item.hidden = Boolean(words);
     let narrowed = 0;
     for (const item of words ? items : []) {
       if (!item.querySelector<HTMLElement>(":scope > .file-row-line > .file-row")?.dataset.path?.toLowerCase().includes(words)) continue;
       narrowed++;
-      for (let at: HTMLElement | null = item; at && at !== ports.files; at = at.parentElement) {
+      for (let at: HTMLElement | null = item; at && at !== ports.panels.files; at = at.parentElement) {
         if (at.tagName === "LI") at.hidden = false;
         else if (at.tagName === "UL" && at.hidden) searchOpens(at, true);
       }
     }
     // The rows kept are files and folders alike: only their number is said.
     if (!words || narrowed) { sayFound(said, words ? foundCount(narrowed) : ""); return; }
-    ports.files.hidden = true;
+    ports.panels.files.hidden = true;
     found.hidden = false;
   }
   // Drawn again (a keystroke, or the files changed), the list keeps the focus on the row that had it.
@@ -265,7 +265,7 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
   const matches = all.filter((path) => path.toLowerCase().includes(words)).sort();
   const rows = matches.slice(0, FOUND_MAX).map((path) => {
     const item = node("li"), line = node("div", "file-row-line"), slash = path.lastIndexOf("/");
-    const row = button("", () => { ports.previewSelection.recordIntent(path); void ports.restoreFile(path, ports.workspaceSession.begin()); }, "file-row");
+    const row = button("", () => { ports.previewSelection.recordIntent(path); void ports.view.restoreFile(path, ports.session.begin()); }, "file-row");
     row.dataset.path = path;
     row.title = path;
     if (path === ports.appStore.openFile.value) row.classList.add("selected");
@@ -290,8 +290,8 @@ export function findFiles(ports: Pick<PagesAndFilesPorts, "element" | "files" | 
 type TreeRows = { row(path: string): HTMLElement | undefined; openFolder(path: string): void; render(): void } | undefined;
 
 /** A file's row: while a search shows found files, its found row (none when the search leaves it out); otherwise its tree row. */
-export function fileRowNow(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
-  if (!ports.files.hidden) return tree?.row(path);
+export function fileRowNow(ports: Pick<PagesAndFilesPorts, "element" | "panels">, tree: TreeRows, path: string) {
+  if (!ports.panels.files.hidden) return tree?.row(path);
   return [...ports.element("files-found").querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === path);
 }
 
@@ -319,7 +319,7 @@ export function revealFiles(ports: Parameters<typeof findFiles>[0], tree: TreeRo
 
 /** The rows beside `path`'s, as shown now (found files or the tree): the next, then the one before. Where the focus goes once
  * its file is deleted (ux-rulebook B2). */
-export function rowsBeside(ports: Pick<PagesAndFilesPorts, "element" | "files">, tree: TreeRows, path: string) {
+export function rowsBeside(ports: Pick<PagesAndFilesPorts, "element" | "panels">, tree: TreeRows, path: string) {
   const item = fileRowNow(ports, tree, path)?.closest("li");
   // Only rows shown count: a search in a repository with no site hides rows it leaves out; in an open folder before the file,
   // the row just above is that folder's last row shown.
@@ -332,8 +332,8 @@ export function rowsBeside(ports: Pick<PagesAndFilesPorts, "element" | "files">,
 
 /** No row left to take the focus (a found file deleted, or the last file at the top of the tree): the first found file takes it,
  * or the search field. */
-export function focusFiles(ports: Pick<PagesAndFilesPorts, "element" | "files">) {
-  const found = ports.files.hidden ? ports.element("files-found").querySelector<HTMLElement>(".file-row") : undefined;
+export function focusFiles(ports: Pick<PagesAndFilesPorts, "element" | "panels">) {
+  const found = ports.panels.files.hidden ? ports.element("files-found").querySelector<HTMLElement>(".file-row") : undefined;
   (found ?? ports.element("explorer-search")).focus();
 }
 
