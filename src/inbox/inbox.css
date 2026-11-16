@@ -82,7 +82,7 @@
 /* A thin line between rows, as in the prototype (TOOLS-253): each row's strip sits under it. */
 .inbox__row + .inbox__row {
   margin-block-start: var(--space-4xs);
-  box-shadow: 0 -1px 0 color-mix(in oklch, var(--text) 8%, transparent);
+  border-block-start: 1px solid color-mix(in oklch, var(--text) 8%, transparent);
 }
 /* The rows and the strips' actions are the Button part (src/ui/button/button.css), set through its hooks on its own
    layer: a row is see-through until hovered and lays out its icon, what and where; an action is the compact size. */
@@ -149,12 +149,11 @@
 }
 .inbox__suggest > small { color: var(--muted); font-size: var(--type-small); }
 .inbox__field { inline-size: 100%; min-block-size: var(--size-compact); }
-.inbox__field[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--agent-question-strong); }
 /* Fix all with AI and Accept all, over the list. */
 .inbox__all { display: flex; padding: 0 var(--space-xs) var(--space-xs); }
 @media (hover: none), (pointer: coarse), (width <= 768px) {
-  /* 16 px words in a field on touch, so the phone does not zoom in. */
-  .inbox__field { min-block-size: var(--size-touch); font-size: max(16px, var(--type-base)); }
+  /* 16 px (1rem) words in a field on touch, so the phone does not zoom in. */
+  .inbox__field { min-block-size: var(--size-touch); font-size: max(1rem, var(--type-base)); }
 }
 .inbox__item:focus-visible, .inbox__act:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 
