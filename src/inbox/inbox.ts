@@ -119,7 +119,7 @@ const kinds: Record<InboxItem["kind"], () => SVGElement> = {
 /** What a fix writes, as its Undo step names it. */
 const doneWords = ({ item, words }: InboxFix) => item.kind === "video" ? "Marked No speech" : item.kind === "heading" ? `Heading made level ${words}`
   : item.fix === "alt" ? "Description added" : item.fix === "name" ? "Link named" : "Link words changed";
-const fieldWords = { alt: "description", name: "link name", words: "link words" } as const;
+const fieldWords = { alt: "description", name: "link name", words: "link text" } as const;
 /** A strip's button: the Button part, compact (inbox.css), in its quiet tone or, for Accept, its primary one. */
 const act = (words: string, action: () => void, extra = "", tone: "primary" | "secondary" = "secondary") =>
   button(words, action, `button ${tone} inbox__act ${extra}`.trim());

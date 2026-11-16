@@ -7,11 +7,25 @@ export type RunStep = <T>(name: string, action: () => Promise<T>) => Promise<T>;
 
 /** Seed only the fake GitHub session, leaving the real starter on disk untouched. */
 async function prepareScreen(page: Page, screen: Screen) {
-  if (!["image-popup", "picker", "cleanup"].includes(screen)) return;
+  if (!["image-popup", "picker", "cleanup", "inbox"].includes(screen)) return;
   await page.goto("/");
   const commit = async (path: string, content: string) => {
     expect((await page.request.post("/__demo/external-edit", { data: { path, content } })).status()).toBe(204);
   };
+  if (screen === "inbox") {
+    // The Inbox's kinds (TOOLS-253): a picture without a description in the shared header, and on Home a skipped
+    // heading, a link with no name, a "click here" link and a video without subtitles.
+    const read = async (path: string) => { const response = await page.request.get(`/__demo/file?path=${path}`); expect(response.ok()).toBe(true); return response.text(); };
+    const header = await read("components/site-header/site-header.html");
+    const logo = header.replace(/<header\b[^>]*>/i, '$&\n  <img src="/images/studio-desk.svg" width="24" height="24">');
+    if (logo === header) throw new Error("Starter header has no header element for the Inbox scenario");
+    await commit("components/site-header/site-header.html", logo);
+    const home = await read("index.html");
+    const problems = home.replace(/<\/main>/i, `<section><h2>Workshop</h2><h4>Opening hours</h4><p>Monday to Saturday. See <a href="/about/">click here</a> or <a href="/about/"><svg width="12" height="12" aria-hidden="true"><path d="M2 6h8"/></svg></a>.</p><video src="/images/fit.mp4" controls></video></section>\n$&`);
+    if (problems === home) throw new Error("Starter home has no main element for the Inbox scenario");
+    await commit("index.html", problems);
+    return;
+  }
   if (screen === "cleanup") {
     await commit("images/kit-shots-unused.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="seagreen"/></svg>');
     return;
@@ -43,7 +57,7 @@ export async function runScenario(page: Page, screen: Screen, step: RunStep) {
   }
   await step("openEditor", () => openEditor(page));
   switch (screen) {
-    case "editor": return;
+    case "editor": case "inbox": return;
     case "media-gallery": await step("openMedia", () => openMedia(page)); return;
     case "file-details": await step("openFileDetails", () => openFileDetails(page)); return;
     case "files": await step("openFiles", () => openFiles(page)); return;
