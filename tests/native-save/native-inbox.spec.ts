@@ -4,6 +4,7 @@
 // Default fixture: the home page's hero picture has no alt text.
 import { expect, test, type Page } from "@playwright/test";
 import { openMedia } from "../support/scenarios";
+import { effectiveSource } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const banner = (page: Page) => page.getByRole("banner");
@@ -189,6 +190,15 @@ test.describe("new checks (TOOLS-253)", () => {
     await expect(inbox(page)).toBeHidden();
     await expect(page.getByRole("button", { name: /^Note: Site header is a shared part\. A change here shows on all 2 pages that use it\./ })).toBeVisible({ timeout: 15_000 });
     await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
+  });
+
+  test("Decorative on a shared part's picture marks it in the part, for every page that uses it", async ({ page, baseURL }) => {
+    await seed(page, baseURL);
+    await inboxButton(page).click();
+    await row(page, /^Picture without a description, Site header/).getByRole("button", { name: /^Decorative/ }).click();
+    await expect(inbox(page).getByRole("button", { name: /^Picture without a description, Site header/ })).toHaveCount(0);
+    await expect.poll(() => effectiveSource(page, baseURL, "components/site-header/site-header.html")).toMatch(/<img (alt="" )?class="logo" src="\/images\/placeholder\.svg"[^>]*>/);
+    expect(await effectiveSource(page, baseURL, "components/site-header/site-header.html")).toContain(`alt=""`);
   });
 
   test("an item's row goes to its spot: the unnamed link selected, its Name field asking for one", async ({ page, baseURL }) => {

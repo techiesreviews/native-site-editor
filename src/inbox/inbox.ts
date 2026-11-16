@@ -179,7 +179,7 @@ export function createInboxList(ports: InboxPorts) {
   let shownKeys: string | undefined, shownChecked = false, shownSession: typeof session, dotRules = "";
   function show(next: readonly InboxItem[]) {
     // A row's spot (`at`) and the page text it was found in are part of it: drawn rows act on the items they hold.
-    const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}`).join("\n\n");
+    const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}\n${item.shared?.pages.join(" ") ?? ""}`).join("\n\n");
     // Rows drawn on another session (a reload with the same items) act on it no more: they are drawn again.
     const same = keys === shownKeys && checked === shownChecked && session === shownSession && next.every((item, n) => item.found === items[n]?.found);
     items = next;
@@ -430,7 +430,8 @@ export function createInboxList(ports: InboxPorts) {
     const top = allStrip(found);
     into.replaceChildren(title, ...top ? [top] : [], list);
     const at = focusKey && into.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
-    const back = at && (at.querySelector<HTMLElement>(`[data-act="${focusAct}"]`) ?? at.querySelector<HTMLElement>(".inbox__field, .inbox__actions button, .inbox__buttons button") ?? at.querySelector<HTMLElement>(".inbox__item, [data-act]"));
+    const same = focusAct ? at && at.querySelector<HTMLElement>(`[data-act="${focusAct}"]`) : undefined;
+    const back = same ?? (at && (at.querySelector<HTMLElement>(".inbox__field, .inbox__actions button, .inbox__buttons button") ?? at.querySelector<HTMLElement>(".inbox__item, [data-act]")));
     if (back) {
       back.focus();
       if (caret && back instanceof HTMLInputElement) back.setSelectionRange(caret[0], caret[1]);
