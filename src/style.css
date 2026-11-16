@@ -302,12 +302,14 @@ pre:focus-visible {
     padding-inline: calc(var(--space-xs) + var(--space-4xs));
     border-block: calc((var(--size-tap) - var(--size-compact)) / 2) solid transparent;
     /* Round ends on the 28 px pill inside the clear band: the browser halves these radii to fit the box, so the
-       corners are as wide as half the pill and as tall as half the band, and round once the band is taken off. */
+       corners are as wide as half the pill and as tall as half the 44 px chip, and round once the band is taken off. */
     border-radius: var(--size-compact) / var(--size-tap);
     background-clip: padding-box;
   }
+  /* The focus ring goes round the pill a person sees, not the clear band. */
   .code-pane__rule:focus-visible {
-    outline-offset: calc((var(--size-compact) - var(--size-tap)) / 2);
+    outline: none;
+    box-shadow: var(--focus-ring-inset);
   }
 }
 .code-pane > .workspace-content {
