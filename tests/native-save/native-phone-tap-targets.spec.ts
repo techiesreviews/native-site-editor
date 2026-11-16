@@ -60,15 +60,17 @@ async function structureAndCode(page: Page) {
   const chip = page.locator("#secondary-rules .code-pane__rule").first();
   const add = page.locator("#add-panel-toggle");
   await add.scrollIntoViewIfNeeded();
-  return {
-    add: await box(add),
-    chip: await box(chip),
-    // The pill a person sees: the chip without the clear band round it that takes the finger.
-    chipLook: await chip.evaluate((element) => {
-      const style = getComputedStyle(element);
-      return Math.round(element.getBoundingClientRect().height - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth));
-    }),
-  };
+  // The chips are drawn again as the selection settles (about a second later), so each look finds the chip afresh. The
+  // look is the pill a person sees: the chip without the clear band round it that takes the finger.
+  const measure = () => page.evaluate(() => {
+    const element = document.querySelector("#secondary-rules .code-pane__rule")!;
+    const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
+    const look = rect.height - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth);
+    return { width: Math.round(rect.width), height: Math.round(rect.height), look: Math.round(look) };
+  });
+  await expect(chip).toBeVisible();
+  const { look, ...size } = await measure();
+  return { add: await box(add), chip: size, chipLook: look };
 }
 
 /** 8: Whole-site history's file rows and a commit's ⋯. */

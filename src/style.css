@@ -286,11 +286,15 @@ pre:focus-visible {
    pill takes the finger, and the title's own padding makes room for it, so the title is one 44 px line. */
 @media (hover: none), (pointer: coarse), (width <= 768px) {
   .code-pane__rules {
-    margin-block: -6px;
+    margin-block: calc(-1 * var(--space-2xs));
   }
   .code-pane__rule {
-    padding: 5px 10px;
-    border-block: calc((var(--size-tap) - 28px) / 2) solid transparent;
+    box-sizing: border-box;
+    align-items: center;
+    block-size: var(--size-tap);
+    padding-block: 0;
+    padding-inline: calc(var(--space-xs) + var(--space-4xs));
+    border-block: calc((var(--size-tap) - var(--size-compact)) / 2) solid transparent;
     background-clip: padding-box;
   }
 }
