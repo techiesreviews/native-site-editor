@@ -7,11 +7,10 @@
 // AI over the list asks for every row at once, and Accept all writes them; a shared part's row, Accept button and
 // spot say how many pages it changes.
 import "./inbox.css";
-import textH from "@phosphor-icons/core/regular/text-h.svg?raw";
-import videoIcon from "@phosphor-icons/core/regular/video.svg?raw";
-import diamonds from "@phosphor-icons/core/regular/diamonds-four.svg?raw";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix, type NativeSite } from "../../shared/native-project";
-import { icon, sizedSvg, svgElement } from "../icons";
+import { icon } from "../icons";
+import { elementIcon } from "../components/element-icons";
+import { componentIcon } from "../page-builder/component-icon";
 import { componentLabel } from "../native-insert";
 import { elementPathAt } from "../native-source-location";
 import { componentUsage } from "../page-builder/component-model";
@@ -112,9 +111,10 @@ function decorative(item: InboxItem, ports: InboxPorts, found: { holds(): boolea
   });
 }
 
+// The Inbox's own icons for pictures, titles and links; a heading's and a video's are Page Structure's (element-icons.ts).
 const kinds: Record<InboxItem["kind"], () => SVGElement> = {
   picture: () => icon("image-square", 16), title: () => icon("file", 16), link: () => icon("link", 16),
-  heading: () => svgElement(sizedSvg(textH, 16)), video: () => svgElement(sizedSvg(videoIcon, 16)),
+  heading: () => elementIcon("h2", 16), video: () => elementIcon("video", 16),
 };
 /** What a fix writes, as its Undo step names it. */
 const doneWords = ({ item, words }: InboxFix) => item.kind === "video" ? "Marked No speech" : item.kind === "heading" ? `Heading made level ${words}`
@@ -378,7 +378,7 @@ export function createInboxList(ports: InboxPorts) {
     if (!item.shared) { line.textContent = item.where; return { line, words: item.where }; }
     const words = `${item.shared.name} · changes ${item.shared.pages.length} page${item.shared.pages.length === 1 ? "" : "s"}`;
     const note = node("span", "inbox__shared");
-    note.append(svgElement(sizedSvg(diamonds, 12)), words);
+    note.append(componentIcon(12), words);
     line.append(note);
     return { line, words };
   }
