@@ -278,3 +278,42 @@ test("a branch list that fails behind the kept page says so; the page stays on i
   await expect(page.locator("#branch")).toBeEnabled({ timeout: 15_000 });
   await expect(page.locator("#branch")).toHaveValue("main");
 });
+
+test("publishing on the kept page before GitHub answers, with a newer commit on the branch, overwrites nothing: refused, then merged", async ({ page, baseURL }) => {
+  await samCommits(page, baseURL, indexSource.replace(filler, "Sam wrote this on GitHub."));
+  const github = await holdGitHub(page);
+  await page.reload();
+  await expect(frame(page).getByText(filler)).toBeVisible({ timeout: 15_000 });
+  await pasteSource(page, indexSource.replace(heading, "Lex published early"));
+  await expect(frame(page).locator(".hero h1")).toHaveText("Lex published early", { timeout: 15_000 });
+  const refused = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/publish");
+  await publishButton(page).click();
+  // The page's file changed on GitHub since its draft began: GitHub's version is not replaced.
+  expect((await refused).status()).toBe(409);
+  await github.release();
+  await expect(frame(page).getByText("Sam wrote this on GitHub.")).toBeVisible({ timeout: 15_000 });
+  await expect(frame(page).locator(".hero h1")).toHaveText("Lex published early");
+  const onGitHub = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  expect(onGitHub).toContain("Sam wrote this on GitHub.");
+});
+
+test("the project menu's own list, landing first without the kept repository, takes the kept page away and says so", async ({ page }) => {
+  let held: Route | undefined, release!: () => void;
+  const gate = new Promise<void>((done) => { release = done; });
+  await page.route("**/api/repositories*", async (route) => {
+    const first = !held;
+    if (first) held = route;
+    if (first) await gate;
+    const response = await route.fetch();
+    const listed = (await response.json()) as { id: number }[];
+    await route.fulfill({ response, json: listed.map((repo) => ({ ...repo, id: repo.id + 100_000 })) });
+  });
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toHaveText(heading, { timeout: 15_000 });
+  await page.locator(".repository-menu__trigger").click();
+  await expect(page.getByRole("list", { name: "Repositories" }).getByRole("button", { name: /^native-cards / })).toBeVisible({ timeout: 15_000 });
+  release();
+  await expect(page.locator("#notice")).toContainText("The linked repository is not available to this GitHub account.", { timeout: 15_000 });
+  // The kept site is closed: no project is open.
+  await expect(page.getByRole("button", { name: /^Choose a project/ })).toBeVisible();
+});
