@@ -283,8 +283,13 @@ pre:focus-visible {
   text-decoration: line-through;
 }
 /* On a phone (theme.css's --size-tap switch) a chip is 44 px to tap and 28 px to see: a clear band above and below the
-   pill takes the finger, and the title's own padding makes room for it, so the title is one 44 px line. */
+   pill takes the finger, and the title's own padding makes room for it. Both panes' titles are one 44 px line, so their
+   code starts level. */
 @media (hover: none), (pointer: coarse), (width <= 768px) {
+  .code-pane__title {
+    box-sizing: border-box;
+    min-block-size: var(--size-tap);
+  }
   .code-pane__rules {
     margin-block: calc(-1 * var(--space-2xs));
   }
