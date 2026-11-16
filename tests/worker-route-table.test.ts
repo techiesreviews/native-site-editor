@@ -210,7 +210,8 @@ test("every request that carries a body says how big it may be, and every handle
 });
 
 test("every listed route has a handler that names it, and reaches one", async () => {
-  // Statically: the handler's comparison names the address (the OAuth metadata's /mcp forms share their base's).
+  // Statically: the handler's comparison names the address. The OAuth metadata's /mcp forms
+  // (/.well-known/oauth-protected-resource/mcp, /.well-known/oauth-authorization-server/mcp) share their base's.
   const sources = readdirSync(new URL("../worker/", import.meta.url)).filter(name => name.endsWith(".ts") && name !== "routes.ts")
     .map(name => readFileSync(new URL(`../worker/${name}`, import.meta.url), "utf8")).join("\n");
   const unnamed = listed.map(route => route.path).filter(path => !sources.includes(`"${path.replace(/^(\/\.well-known\/.*)\/mcp$/, "$1")}"`));
@@ -229,13 +230,17 @@ test("a maintenance request over its body limit is refused before the namespace 
   const { env, reads } = environment();
   const token = "t".repeat(32);
   Object.assign(env, { AGENT_LEGACY_MAINTENANCE: "on", MAINTENANCE_INVENTORY_TOKEN: token, MAINTENANCE_CLEANUP_TOKEN: token });
+  // A body valid apart from its size: without the padding, the same body reaches the namespace.
+  const valid = { id: "a".repeat(64), expected: "b".repeat(64), allowance: 1 };
+  const post = (path: string, body: unknown) => handle(new Request(origin + path, {
+    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }), env);
   for (const path of ["/__maintenance/inventory", "/__maintenance/cleanup"]) {
-    const response = await handle(new Request(origin + path, {
-      method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id: "a".repeat(64), pad: "x".repeat(5 * 1024) }),
-    }), env);
-    assert.equal(response.status, 400, path);
-    assert.equal(reads(), 0, `${path} touched nothing`);
+    const before = reads();
+    assert.equal((await post(path, { ...valid, pad: "x".repeat(5 * 1024) })).status, 400, path);
+    assert.equal(reads(), before, `${path} touched nothing`);
+    await post(path, valid);
+    assert.equal(reads(), before + 1, `${path} without the padding reaches the namespace`);
   }
 });
 
