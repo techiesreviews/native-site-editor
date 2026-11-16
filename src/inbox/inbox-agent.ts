@@ -64,6 +64,8 @@ export function createInboxAgent(ports: {
         // The request is in the list once the menu tells it; a list without it after that is a dismissal elsewhere (its pin, another tab).
         let seen = false;
         stop = watch(requests => {
+          // The agent went away while this waited (Disconnect MCP, another site): no answer comes.
+          if (!link.connected()) { finish(() => reject(new Error("The agent is no longer connected.")), false); return; }
           const request = requests.find(found => found.id === id);
           if (!request) {
             if (seen) finish(() => reject(new Error("The request was dismissed.")), false);

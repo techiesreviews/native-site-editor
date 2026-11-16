@@ -178,6 +178,11 @@ test.describe("new checks (TOOLS-253)", () => {
     await row(page, /^Heading skips a level/).getByRole("button", { name: /^Use H3/ }).click();
     await expect(inbox(page).getByRole("button", { name: /^Heading skips a level/ })).toHaveCount(0);
     await expect.poll(() => homeSource(page)).toContain(`<h3 data-key="skipped">Opening hours</h3>`);
+    // One Undo puts the heading back and its row waits again.
+    await banner(page).getByRole("button", { name: "Undo", exact: true }).click();
+    await expect.poll(() => homeSource(page)).toContain(`<h4 data-key="skipped">Opening hours</h4>`);
+    await inboxButton(page).click();
+    await expect(row(page, /^Heading skips a level/).getByRole("button", { name: /^Use H3/ })).toBeVisible();
     await row(page, /^Video without subtitles/).getByRole("button", { name: /^No speech/ }).click();
     await expect(inbox(page).getByRole("button", { name: /^Video without subtitles/ })).toHaveCount(0);
     await expect.poll(() => homeSource(page)).toContain(`<video src="/images/fit.mp4" controls data-key="fit" data-no-speech="">`);
@@ -197,8 +202,7 @@ test.describe("new checks (TOOLS-253)", () => {
     await inboxButton(page).click();
     await row(page, /^Picture without a description, Site header/).getByRole("button", { name: /^Decorative/ }).click();
     await expect(inbox(page).getByRole("button", { name: /^Picture without a description, Site header/ })).toHaveCount(0);
-    await expect.poll(() => effectiveSource(page, baseURL, "components/site-header/site-header.html")).toMatch(/<img (alt="" )?class="logo" src="\/images\/placeholder\.svg"[^>]*>/);
-    expect(await effectiveSource(page, baseURL, "components/site-header/site-header.html")).toContain(`alt=""`);
+    await expect.poll(() => effectiveSource(page, baseURL, "components/site-header/site-header.html")).toContain(`alt=""`);
   });
 
   test("an item's row goes to its spot: the unnamed link selected, its Name field asking for one", async ({ page, baseURL }) => {

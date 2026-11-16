@@ -161,7 +161,8 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
   const pictures = read.pictures.map(picture => ({ ...picture,
     waits: rules.picture(file, picture.src ?? "", picture.alt) === "missing", media: picture.src ? rules.file(file, picture.src) : undefined }));
   const seen = new Set<string>();
-  // In a shared part, what a page may give instead (a slot's fallback) is judged on the pages that give it.
+  // In a shared part, what a page may give instead (a slot's fallback) is not listed in the part; judging it on each
+  // page that uses the part is a follow-up (site-quality ticket 41).
   const own = (element: { slotted: boolean }) => !shared || !element.slotted;
   for (const picture of pictures) {
     const { at, shown, waits, hidden, media } = picture;

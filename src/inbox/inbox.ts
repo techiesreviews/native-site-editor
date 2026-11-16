@@ -181,9 +181,10 @@ export function createInboxList(ports: InboxPorts) {
     // A row's spot (`at`) and the page text it was found in are part of it: drawn rows act on the items they hold.
     const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}\n${item.shared?.pages.join(" ") ?? ""}`).join("\n\n");
     // Rows drawn on another session (a reload with the same items) act on it no more: they are drawn again.
-    const same = keys === shownKeys && checked === shownChecked && session === shownSession && next.every((item, n) => item.found === items[n]?.found);
+    // A row whose Accept was undone before this check is ready again: drawn again even when the items are the same.
+    const ready = fixes.keep(next);
+    const same = !ready && keys === shownKeys && checked === shownChecked && session === shownSession && next.every((item, n) => item.found === items[n]?.found);
     items = next;
-    fixes.keep(next);
     if (same) return;
     shownSession = session;
     shownKeys = keys;

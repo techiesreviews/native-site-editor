@@ -648,3 +648,17 @@ test("the bar includes the cardControls port's controls only outside sections an
     }
   }
 });
+
+// TOOLS-253: the edit bar reads a link's name as the Inbox does (src/inbox/site-items.ts), so the two agree.
+test("a link asks for a name only when nothing names it: an empty label asks; a title or a described picture inside names it", () => {
+  const nameFor = (link: string, named = false) => {
+    const f = fixture({ page: `<main>${link}</main>` });
+    const control = drawBar(f, f.target.node, { locateNativeElementRange: html => rangeOf(html, "a"), nativeNamedDescendant: () => named }, undefined, "a")("Name");
+    return control?.kind === "address" ? control.warning : undefined;
+  };
+  assert.equal(nameFor(`<a href="/" aria-label=""></a>`), "Needs a name");
+  assert.equal(nameFor(`<a href="/"></a>`), "Needs a name");
+  assert.equal(nameFor(`<a href="/" title="Cart"></a>`), undefined);
+  assert.equal(nameFor(`<a href="/" aria-labelledby="x"></a>`), undefined);
+  assert.equal(nameFor(`<a href="/"><img src="x" alt="Shop"></a>`, true), undefined);
+});

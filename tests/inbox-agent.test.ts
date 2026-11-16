@@ -82,3 +82,19 @@ test("each fix asks for its own words", () => {
   assert.match(suggestionPrompt({ ...logo, kind: "link", fix: "name", shared: undefined }), /no name a screen reader can read/);
   assert.match(suggestionPrompt({ ...logo, kind: "link", fix: "words", words: "click here", shared: undefined }), /only says “click here”/);
 });
+
+test("an agent that goes away while the suggestion waits ends it at once, not at the timeout", async () => {
+  let connected = true;
+  const listeners: ((requests: readonly PinRequest[]) => void)[] = [];
+  const agent = createInboxAgent({
+    link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: () => undefined }),
+    element: async () => element,
+    watch: heard => { listeners.push(heard); heard([]); return () => undefined; },
+    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+  });
+  const words = agent.suggest(logo);
+  await new Promise(done => setTimeout(done));
+  connected = false;
+  listeners[0]([]);
+  await assert.rejects(words, /no longer connected/);
+});
