@@ -12,7 +12,8 @@
 //   shows; otherwise GitHub's snapshot opens the plain way (nothing is checked against the copy).
 // - listing (src/repository-list.ts openWarm): has the repository as it was: installed, the site stays; lacks it,
 //   or it was renamed or moved: the plain listing runs and says so; fails or never answers: the menu says it could
-//   not load, the site stays; a newer listing began meanwhile: it installs nothing; a list installed meanwhile
+//   not load, the site stays; the latest listing's onboarding hint is adopted, whichever way the site then opens;
+//   a newer listing began meanwhile: it installs nothing and adopts no hint; a list installed meanwhile
 //   (Refresh, the menu's own read): that list stands, and the kept repository is checked against it as above.
 // - branch list (src/workspace-boot.ts chooseRepository): has the branch: the selector fills; lacks it: the plain
 //   open runs and says the branch is gone; fails or never answers (src/read-retry.ts gives up, a failure): its
@@ -54,7 +55,8 @@ function open(factory: Factory | undefined = globalThis.indexedDB) {
     try {
       const request = factory.open(DATABASE, 1);
       request.onupgradeneeded = () => request.result.createObjectStore(STORE);
-      request.onsuccess = () => resolve(request.result);
+      // A newer version or a delete elsewhere waits for no open connection of this page.
+      request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
       request.onerror = () => resolve(undefined);
     } catch { resolve(undefined); }
   }));

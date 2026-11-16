@@ -99,6 +99,8 @@ export interface WorkspaceBootPorts {
   offerFinishStarter(repo: Repository, partial: PartialStart): void;
 }
 
+// How long the boot waits for this browser's kept copy before it opens the plain way (src/warm-copy.ts).
+export const WARM_READ_MS = 500;
 // How long a failed branch list waits for a guessed snapshot (the only read with a bound).
 export const GUESS_AFTER_FAILED_LIST_MS = 5000;
 
@@ -433,7 +435,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     warmRead = undefined;
     const link = readWorkspaceUrl();
     const target = link ?? (location.hash ? undefined : readWorkspace(login));
-    const copy = target && await read;
+    // A storage that never answers (an open blocked elsewhere) holds the boot back no longer than this.
+    const copy = target && read && await Promise.race([read, new Promise<undefined>((done) => setTimeout(done, WARM_READ_MS))]);
     return copy && warmFor(copy, { login, source: ports.source(), repoId: target.repoId, branch: target.branch }) ? copy : undefined;
   }
   /**

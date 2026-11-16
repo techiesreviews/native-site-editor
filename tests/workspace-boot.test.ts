@@ -1,6 +1,6 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceBoot, GUESS_AFTER_FAILED_LIST_MS, type WorkspaceBootPorts } from "../src/workspace-boot.ts";
+import { createWorkspaceBoot, GUESS_AFTER_FAILED_LIST_MS, WARM_READ_MS, type WorkspaceBootPorts } from "../src/workspace-boot.ts";
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import { writeBootMemory, type BootMemory } from "../src/boot-memory.ts";
@@ -894,3 +894,19 @@ test("the copy keeps when this tab learned its head, never when it was written; 
     else Reflect.deleteProperty(globalThis, "indexedDB");
   }
 }));
+
+test("a kept copy whose storage never answers holds the boot back no longer than its bound", async () => {
+  const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB(undefined, () => new Promise<void>(() => {}));
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    const f = fixture({ remember: false });
+    f.boot.startGuess();
+    const started = Date.now();
+    assert.equal(await f.boot.takeWarmCopy("lex"), undefined);
+    assert.ok(Date.now() - started < WARM_READ_MS + 400, "the plain open goes on");
+  } finally {
+    if (saved) Object.defineProperty(globalThis, "indexedDB", saved);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+});

@@ -47,7 +47,7 @@ export function planRepositoryOpen(input: {
   return { kind: "choose" };
 }
 
-/** A repository listing and its onboarding hint, adopted together (adoptOnboarding) only when installed. */
+/** A repository listing and its onboarding hint; the hint is adopted (adoptOnboarding) only from the latest listing. */
 export interface Listed { repositories: Repository[]; onboarding?: Onboarding }
 
 export interface BootMenu {
@@ -196,7 +196,7 @@ export function createBootController(ports: BootPorts) {
         if (!current()) return;
         if (copy) {
           const held = () => ports.source() === source && ports.session() === session;
-          // The hint goes with the list: adopted only if that list is installed (src/repository-list.ts openWarm).
+          // The hint goes with the list: adopted only while it is the latest listing (src/repository-list.ts openWarm).
           await ports.loadRepositories(undefined, { ...hooks, warm: { copy, listing: reads.takeRepositories(sessionResponse, held).then((prefetched) => {
             const repositories = prefetched?.value.repositories ?? session.repositories ?? undefined;
             return repositories && { repositories, onboarding: prefetched?.value.onboarding };
