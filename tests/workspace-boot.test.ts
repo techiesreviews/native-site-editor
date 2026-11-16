@@ -935,3 +935,20 @@ test("the preview's base text is kept only when it hashes to the snapshot's blob
     else Reflect.deleteProperty(globalThis, "indexedDB");
   }
 }));
+
+test("a kept copy's late branch list without its branch, after the same site reopened, restarts nothing", async () => {
+  const f = fixture({ remember: false, native: true });
+  await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+  const late = f.pending("branches")[0];
+  // The same repository and branch open again, the plain way, and succeed.
+  const again = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("snapshot")[0].answer.resolve(KEPT_SNAPSHOT);
+  f.pending("branches")[1].answer.resolve(["main"]);
+  await again;
+  await flush();
+  const reads = f.reads.length;
+  late.answer.resolve(["other"]);
+  await flush();
+  assert.equal(f.reads.length, reads, "no snapshot or branch read again");
+  assert.equal(f.ports.appStore.snapshot.value, KEPT_SNAPSHOT);
+});
