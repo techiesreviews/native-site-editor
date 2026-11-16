@@ -1,0 +1,1 @@
+{"screen":"inbox","name":"F-inbox-06","steps":["on phone click exactly \"Menu\"","click exactly \"Inbox\"","wait for \"Heading skips a level\"","record open 600","click \"Use H3\"","record fixed 800","press Escape","record close 400"]}

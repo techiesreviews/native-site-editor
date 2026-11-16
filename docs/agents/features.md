@@ -1287,6 +1287,22 @@ its number unused.
 - Spec: `tests/native-save/native-inbox.spec.ts`
 - Steps: none yet (phone only; a feature try also runs at 1280 px, where the Menu is not shown)
 
+### F-inbox-06 Links, headings and videos in the Inbox
+- Try: On a site where Home has a link that only says "click here", a link that is only an icon, a heading that skips a level (H2 to H4) and a video without subtitles, open the Inbox. Click each row; then choose Use H3 on the heading's row and No speech on the video's.
+- Good: Each is one row with its icon, what needs doing ("Link without a name", "Link that only says “click here”", "Heading skips a level", "Video without subtitles") and where. Its actions sit on a strip under the row, inside the panel at 340 px: Fix with AI on the links, the edit bar's one-press Use H3 on the heading (no AI there), No speech on the video (no AI there). A row goes to its spot like any other, with the edit bar on what is missing. Use H3 and No speech turn busy, then the row goes by itself; each is one Undo step. A link whose words come from a shared part's slot is judged on the page that gives them. No toast. Light and dark (S1, S3, S4).
+- Files: `src/inbox/site-items.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/inbox/inbox-item.ts`, `src/inbox/inbox-fixes.ts`, `scripts/agents/shots/scenarios.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-inbox.spec.ts`
+- Steps: `scripts/agents/shots/features/F-inbox-06.json`
+
+### F-inbox-07 Fix with AI, Fix all with AI and shared parts in the Inbox
+- Try: With a picture without a description inside the shared header, open the Inbox and click its row. With no agent connected, look at Fix with AI and Fix all with AI. Connect an agent (Connect to MCP), choose Fix with AI on a picture, change the words, Accept. Then choose Fix all with AI and Accept all.
+- Good: The shared part's row reads "Site header · changes N pages" in the component violet; its click opens the header in Edit component mode on a page that uses it, the note "Site header is a shared part. A change here shows on all N pages that use it." in its bar, and the picture selected with its Alt text missing. With no agent connected, each Fix with AI and Fix all with AI says so on itself, greyed (the row still goes to its spot to fix it by hand). With an agent: the button reads Thinking… while the agent is asked (one request per row through the agent channel, its pin let go once answered); the suggestion shows in the row in a field to change, with Accept ("Accept on N pages" in a shared part) and Not now; nothing changes until Accept, which writes the words as one Undo step and reads Accepted until the row goes. A suggestion that fails says "No suggestion · Try again" on its button. Fix all with AI asks for every picture and link at once; then it becomes Accept all, saying how many pages all of them change ("Accept all on 3 pages"); empty or still vague words are refused on their row. No toast. Light and dark (S1, S3, S4).
+- Files: `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/inbox/inbox-fixes.ts`, `src/inbox/inbox-agent.ts`, `src/agent-replies.ts`, `src/agent-menu-host.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-inbox.spec.ts`, `tests/inbox-fixes.test.ts`, `tests/inbox-agent.test.ts`
+- Steps: `scripts/agents/shots/features/F-inbox-07.json` (no agent connected; the suggestion flow needs one)
+
 ## Command palette
 
 ### F-palette-01 Go to a page or file
