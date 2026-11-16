@@ -144,7 +144,10 @@ export function createInboxFixes(ports: {
      * change undone, or not enough) is ready again. */
     keep(items: readonly InboxItem[]) {
       const keys = new Set(items.map(item => item.key));
-      for (const [key, state] of [...states]) if (!keys.has(key) || state.status === "accepted") states.delete(key);
+      let dropped = false;
+      for (const [key, state] of [...states]) if (!keys.has(key) || state.status === "accepted") { states.delete(key); dropped ||= keys.has(key); }
+      /** Whether a row still listed changed back, so the list must be drawn again. */
+      return dropped;
     },
   };
 }
