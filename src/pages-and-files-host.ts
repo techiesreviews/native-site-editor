@@ -66,7 +66,7 @@ export interface ExplorerHost {
 }
 
 export interface PagesAndFilesPorts {
-  /** The shared host modules (src/host-modules.ts), read at call time. */
+  // The shared host modules (src/host-modules.ts), read at call time.
   notices: Pick<Notices, "status" | "clearError" | "errorMessage" | "announce">;
   session: Pick<Session, "begin" | "current" | "currentLoad" | "stampOf" | "draftScope">;
   repo: Pick<Repo, "api" | "entryAt" | "findEntry" | "readFile" | "readFiles">;
