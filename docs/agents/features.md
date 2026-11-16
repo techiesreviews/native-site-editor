@@ -97,10 +97,10 @@ its number unused.
 
 ### F-setup-09 Sign out
 - Try: Open the project menu and press Sign out.
-- Good: Back to the sign-in screen; the next visit does not continue to GitHub by itself and forgets the remembered site and this browser's copy of it.
-- Files: `src/components/repository-menu.ts`, `src/repository-list.ts`, `src/boot-memory.ts`, `src/warm-copy.ts`
+- Good: Back to the sign-in screen; the next visit does not continue to GitHub by itself and forgets the remembered site and this browser's copy of it. On a phone (U4) the menu's rows and its Reload are 44 px to tap (TOOLS-269).
+- Files: `src/components/repository-menu.ts`, `src/components/repository-menu.css`, `src/repository-list.ts`, `src/boot-memory.ts`, `src/warm-copy.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-boot-memory.spec.ts`, `tests/native-save/native-warm-open.spec.ts`
+- Spec: `tests/native-save/native-boot-memory.spec.ts`, `tests/native-save/native-warm-open.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-setup-09.json`
 
 ## Repositories and branches
@@ -115,18 +115,18 @@ its number unused.
 
 ### F-repo-02 Find a repository
 - Try: With six or more repositories, type part of a name in Find a repository in the project menu.
-- Good: The list narrows as you type, grouped by owner with your own account first.
-- Files: `src/components/repository-menu.ts`
+- Good: The list narrows as you type, grouped by owner with your own account first. On a phone (U4) the search box is 44 px tall (TOOLS-269).
+- Files: `src/components/repository-menu.ts`, `src/components/repository-menu.css`
 - Phone: yes
-- Spec: none
+- Spec: `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-repo-02.json`
 
 ### F-repo-03 Add repositories on GitHub
 - Try: Press Add repositories in the project menu, choose repositories on GitHub's access page and come back.
-- Good: The list refreshes by itself with the new repositories; nothing else changes.
-- Files: `src/components/repository-menu.ts`, `src/repository-list.ts`
+- Good: The list refreshes by itself with the new repositories; nothing else changes. On a phone (U4) Add repositories and Install on another account are 44 px tall (TOOLS-269).
+- Files: `src/components/repository-menu.ts`, `src/components/repository-menu.css`, `src/repository-list.ts`
 - Phone: yes
-- Spec: none
+- Spec: `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-repo-03.json`
 
 ### F-repo-04 Switch GitHub account
@@ -139,18 +139,18 @@ its number unused.
 
 ### F-repo-05 Switch branch
 - Try: Open the project menu, open Branches and pick another branch, by pointer or keyboard.
-- Good: The new branch's page shows with none of the old page in between; work held on the old branch finishes there.
-- Files: `src/components/repository-menu.ts`, `src/components/flyout.ts`, `src/workspace-session.ts`
+- Good: The new branch's page shows with none of the old page in between; work held on the old branch finishes there. On a phone (U4) the branch rows are 44 px tall, so the Branches flyout is taller and covers more of the list under it (Lex accepted, TOOLS-269).
+- Files: `src/components/repository-menu.ts`, `src/components/repository-menu.css`, `src/components/flyout.ts`, `src/workspace-session.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-branch-menu.spec.ts`
+- Spec: `tests/native-save/native-branch-menu.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-repo-05.json`
 
 ### F-repo-06 Refresh from GitHub
 - Try: In Branches press Refresh from GitHub after a commit made on GitHub.
-- Good: The branch is read again on the same page; a GitHub that never answers shows the failed panel with a Try again button, which repeats the open, rather than a blank screen.
-- Files: `src/components/repository-menu.ts`, `src/github-reads.ts`, `src/read-retry.ts`
+- Good: The branch is read again on the same page; a GitHub that never answers shows the failed panel with a Try again button, which repeats the open, rather than a blank screen. On a phone (U4) Refresh from GitHub is 44 px to tap, in the same place (TOOLS-269).
+- Files: `src/components/repository-menu.ts`, `src/components/repository-menu.css`, `src/github-reads.ts`, `src/read-retry.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-github-silent.spec.ts`
+- Spec: `tests/native-save/native-github-silent.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-repo-06.json`
 
 ### F-repo-07 Fast reopen
@@ -953,18 +953,18 @@ its number unused.
 
 ### F-code-01 Code editor
 - Try: Select an element; the code pane opens its file with the caret after its start tag.
-- Good: Full editing, syntax colours in light and dark, the head and sections folded at first.
-- Files: `src/components/code-editor.ts`, `src/components/monaco.ts`, `src/controllers/code-panes-controller.ts`
+- Good: Full editing, syntax colours in light and dark, the head and sections folded at first. On a phone (U4) Page structure's Add above it is 44 px tall (TOOLS-269).
+- Files: `src/components/code-editor.ts`, `src/components/monaco.ts`, `src/controllers/code-panes-controller.ts`, `src/page-builder/add-panel.css`
 - Phone: yes
-- Spec: `tests/native-save/native-editor-features.spec.ts`
+- Spec: `tests/native-save/native-editor-features.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-code-01.json`
 
 ### F-code-02 Linked styles pane
 - Try: Select a heading and look at the second pane.
-- Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply.
-- Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`
+- Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply. On a phone (U4) a chip is 44 px to tap and 28 px to see (TOOLS-269).
+- Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`, `src/style.css`
 - Phone: yes
-- Spec: `tests/native-save/native-selector.spec.ts`
+- Spec: `tests/native-save/native-selector.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-code-02.json`
 
 ### F-code-03 CSS help
@@ -1043,10 +1043,10 @@ its number unused.
 
 ### F-history-04 Whole-site history
 - Try: In History choose Whole site and unfold a commit.
-- Good: Every commit lists its files; a file opens as it was then.
-- Files: `src/components/commit-history.ts`
+- Good: Every commit lists its files; a file opens as it was then. On a phone (U4) the file rows and a commit's ⋯ are 44 px to tap, so the file list is about 1.5 times longer (Lex accepted, TOOLS-269).
+- Files: `src/components/commit-history.ts`, `src/components/commit-history.css`
 - Phone: yes
-- Spec: `tests/native-save/native-history.spec.ts`
+- Spec: `tests/native-save/native-history.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-history-04.json`
 
 ### F-history-05 Drafts survive a reload
