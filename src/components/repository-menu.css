@@ -165,7 +165,7 @@
 .repository-menu__search {
   display: block;
   width: 100%;
-  height: var(--size-control);
+  height: max(var(--size-control), var(--size-tap));
   margin: 2px 0 6px;
   padding: 0 8px;
   border: 1px solid var(--control-line);
@@ -374,7 +374,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: var(--size-control);
+  min-height: max(var(--size-control), var(--size-tap));
   padding: 4px 8px;
   border: 0;
   border-radius: var(--radius);
@@ -393,9 +393,28 @@
 
 /* An Icon button (src/ui/icon-button/icon-button.css) in the heading: small, and pulled into the corner. */
 .repository-menu__heading-button {
-  width: var(--size-icon);
-  height: var(--size-icon);
+  width: max(var(--size-icon), var(--size-tap));
+  height: max(var(--size-icon), var(--size-tap));
   margin: -4px -4px -4px 0;
+}
+
+/* The branches flyout's rows and its Refresh from GitHub: as tall as a finger on a phone. */
+.repository-menu__branches .repository-menu__branch-item {
+  min-height: max(var(--size-control), var(--size-tap));
+}
+.repository-menu__branches .flyout__icon-button {
+  width: max(var(--size-icon), var(--size-tap));
+  height: max(var(--size-icon), var(--size-tap));
+}
+
+/* On a phone (theme.css's --size-tap switch) the 44 px icons keep their place: each heading is one 44 px line. */
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  .repository-menu__heading-button {
+    margin: -6px -14px -6px 0;
+  }
+  .repository-menu__branches .flyout__icon-button {
+    margin: -4px -10px -4px 0;
+  }
 }
 
 .repository-menu__add,
@@ -412,7 +431,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: var(--size-control);
+  min-height: max(var(--size-control), var(--size-tap));
   padding: 4px 8px;
   font-size: var(--type-base);
 }
