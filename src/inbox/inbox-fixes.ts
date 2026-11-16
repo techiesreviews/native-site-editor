@@ -147,7 +147,6 @@ export function createInboxFixes(ports: {
     },
   };
 }
-export type InboxFixes = ReturnType<typeof createInboxFixes>;
 
 const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeValue = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");

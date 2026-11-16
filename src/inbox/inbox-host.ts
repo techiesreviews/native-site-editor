@@ -8,11 +8,16 @@ import type { AppStore } from "../app-store";
 import { lazyModule } from "../lazy-module";
 import type { NativeNodeRequest } from "../components/native-preview";
 import type { MediaWorkspaceContext } from "../page-builder/media-workspace";
+import type { NativeSite } from "../../shared/native-project";
+import type { GuardedEdits } from "../guarded-edit";
+import type { InboxAgentLink } from "./inbox-agent";
 
 export interface InboxPorts {
   readonly appStore: Pick<AppStore, "snapshot" | "drafts" | "openFile">;
   /** The open site's page files, in the order of its addresses; none without a site. */
   pages(): readonly string[];
+  /** The open site: its pages and its shared parts (components), whose templates are checked too (TOOLS-253). */
+  site(): NativeSite | undefined;
   /** A file's text now (drafts first). */
   source(path: string): string | undefined;
   /** The site's text index has read every page. */
@@ -36,6 +41,12 @@ export interface InboxPorts {
   pageDetails(page: string): void;
   /** The site's Media, for a picture's Decorative (as Media's own Decorative writes it). */
   media(): Promise<MediaWorkspaceContext>;
+  /** The connected agent, which Fix with AI asks for a suggestion (TOOLS-253). */
+  agent(): InboxAgentLink | undefined;
+  /** An accepted fix, No speech and a heading's one press are written as one Undo step. */
+  readonly edits: Pick<GuardedEdits, "run">;
+  /** Edit component mode on a shared part, framing `instance` on its page, with `notes` in its bar. */
+  editComponent(tag: string, instance: { path: string; node: number[] } | undefined, notes: readonly string[]): Promise<unknown>;
   error(error: unknown): void;
 }
 

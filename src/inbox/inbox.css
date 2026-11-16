@@ -77,14 +77,15 @@
 .inbox__list { display: grid; margin: 0; padding: 0; list-style: none; }
 .inbox__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-xs);
   border-radius: var(--radius);
 }
-/* The rows and Decorative are the Button part's quiet tone (src/ui/button/button.css), set through its hooks on its
-   own layer: a row is see-through until hovered and lays out its icon, what and where; Decorative is the compact
-   size. */
+/* A thin line between rows, as in the prototype (TOOLS-253): each row's strip sits under it. */
+.inbox__row + .inbox__row {
+  margin-block-start: var(--space-4xs);
+  box-shadow: 0 -1px 0 color-mix(in oklch, var(--text) 8%, transparent);
+}
+/* The rows and the strips' actions are the Button part (src/ui/button/button.css), set through its hooks on its own
+   layer: a row is see-through until hovered and lays out its icon, what and where; an action is the compact size. */
 @layer components {
   .inbox__item.button {
     --btn-background: transparent;
@@ -94,7 +95,7 @@
     --btn-padding-block: var(--space-2xs);
     --btn-padding-inline: var(--space-xs);
   }
-  .inbox__wave.button {
+  .inbox__act.button {
     --btn-min-block-size: var(--size-icon);
     --btn-padding-block: 0;
     --btn-padding-inline: var(--space-xs);
@@ -102,15 +103,19 @@
     --btn-font-size: var(--type-small);
     --btn-font-weight: 400;
   }
-  /* Busy: the part's plain disabled look (it keeps the keyboard, so it is aria-disabled, not disabled). */
-  .inbox__wave.button[aria-disabled="true"] {
+  .inbox__ai.button { --btn-font-weight: 500; }
+  /* Busy or unavailable: the part's plain disabled look (it keeps the keyboard, so it is aria-disabled, not disabled). */
+  .inbox__act.button[aria-disabled="true"] {
     --btn-background: var(--btn-disabled-background, var(--surface-subtle));
     --btn-hover-background: var(--btn-background);
     --btn-text-color: var(--btn-disabled-text-color, var(--muted));
+    cursor: default;
   }
-  /* Touch: the row and Decorative are 44 px targets (U6). */
+  /* Accepted: done, in the success colour. */
+  .inbox__done.button[aria-disabled="true"] { --btn-text-color: var(--success-fg); }
+  /* Touch: the rows and their actions are 44 px targets (U6). */
   @media (hover: none), (pointer: coarse), (width <= 768px) {
-    .inbox__item.button, .inbox__wave.button { --btn-min-block-size: var(--size-touch); }
+    .inbox__item.button, .inbox__act.button { --btn-min-block-size: var(--size-touch); }
   }
 }
 .inbox__item {
@@ -125,10 +130,33 @@
 .inbox__item > :is(b, small) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inbox__item > b { font-weight: 500; }
 .inbox__item > small { color: var(--muted); font-size: var(--type-small); }
-.inbox__wave {
-  margin-inline-end: var(--space-2xs);
+/* A shared part's note: where it sits and how many pages a fix changes, in the editor's component violet. */
+.inbox__shared { color: var(--component-text); font-weight: 500; }
+.inbox__shared > svg { display: inline-block; margin-inline: 0 var(--space-4xs); vertical-align: -2px; }
+/* The strip of actions under a row, and the suggestion box, start under its words: past the row's padding, icon and gap. */
+.inbox__actions, .inbox__suggest { margin: 0 var(--space-xs) var(--space-xs) calc(2 * var(--space-xs) + var(--space-m)); }
+.inbox__actions, .inbox__buttons { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
+.inbox__act { gap: var(--space-3xs); white-space: nowrap; }
+.inbox__act > svg { margin-inline: 0; }
+.inbox__ai > svg { color: var(--component-text); }
+.inbox__done > svg { color: currentcolor; }
+.inbox__suggest {
+  display: grid;
+  gap: var(--space-2xs);
+  padding: var(--space-xs);
+  border-radius: var(--radius);
+  background: var(--surface-card);
 }
-.inbox__item:focus-visible, .inbox__wave:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.inbox__suggest > small { color: var(--muted); font-size: var(--type-small); }
+.inbox__field { inline-size: 100%; min-block-size: var(--size-compact); }
+.inbox__field[aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--agent-question-strong); }
+/* Fix all with AI and Accept all, over the list. */
+.inbox__all { display: flex; padding: 0 var(--space-xs) var(--space-xs); }
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  /* 16 px words in a field on touch, so the phone does not zoom in. */
+  .inbox__field { min-block-size: var(--size-touch); font-size: max(16px, var(--type-base)); }
+}
+.inbox__item:focus-visible, .inbox__act:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 
 .inbox__empty {
   display: flex;
