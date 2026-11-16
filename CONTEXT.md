@@ -170,7 +170,7 @@ Something the user asks connected agents to do about an element of the preview, 
 The numbered marker on the element of an agent request in the preview, showing whether it waits, is being worked on, asks the user a question (orange), or was done or answered (grey). An editor overlay, never part of the page.
 
 **Inbox**:
-The place in the top bar, behind one icon, that collects what needs the user: site improvements (a picture without a description, a page without a title), agent questions and finished asks, and the setup checklist. A dot shows something waits; items go away by themselves once fixed. Built today: a picture without a description (with Decorative) and a page without a title, on every page; agent questions and the setup checklist join later (site quality map, slices 43 and 44).
+The place in the top bar, behind one icon, that collects what needs the user: site improvements (a picture without a description, a page without a title), agent questions and finished asks, and the setup checklist. A dot shows something waits; items go away by themselves once fixed. Built today: a picture without a description (with Decorative), a page without a title, a link with no name or with words that say nothing, a skipped heading level (with the one-press fix) and a video without subtitles (with No speech), on every page and in shared parts (a shared part's item says how many pages a fix changes). Fix with AI asks the connected agent for a suggestion that the user changes or accepts, one row at a time or all at once (Fix all with AI, Accept all); agent questions and the setup checklist join later (site quality map, slices 43 and 44).
 _Avoid_: notifications, to-do list, alerts
 
 **Synced session**:
