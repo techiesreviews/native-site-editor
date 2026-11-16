@@ -2,6 +2,8 @@
 // one loose port per function. Each is one object in main.ts, made once and handed to every
 // host that needs it; a host names the members it uses (a Pick) when it uses only some.
 // A test fakes a module once, not each of its functions.
+// The workspace screen's parts (`panels`, src/workspace-mount.ts) are a shared module with no type here:
+// each host declares the parts it reads, as narrow as it uses them, so its tests fake no more of the DOM.
 
 import type { Directory, Snapshot, TreeEntry } from "../shared/types";
 import type { ApiReceipt } from "./boot-api-response";

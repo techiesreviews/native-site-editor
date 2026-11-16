@@ -8,11 +8,18 @@ const HOSTS = [
   { file: "src/pages-and-files-host.ts", ports: "PagesAndFilesPorts", ceiling: 30 },
   { file: "src/workspace-boot.ts", ports: "WorkspaceBootPorts", ceiling: 30 },
 ];
-const SHARED = ["notices", "session", "repo", "view", "panels", "preview"];
-// Members of a shared module: a host takes them through the module, never as a loose port of their own.
+const SHARED = ["notices", "session", "repo", "view", "panels", "preview", "textIndex"];
+// Members of a shared module or a host handed over whole: a host takes them through it, never as a loose port of their own.
 const MODULE_MEMBERS = ["status", "settleStatus", "clearError", "errorMessage", "announce", "workspaceSession", "nextLoad", "currentLoad", "stampOf", "draftScope",
   "api", "apiResponse", "readFile", "readFiles", "entryAt", "findEntry", "fileGeneration", "setCurrentPage", "showDirectory", "openNewDraft", "openEntry", "mountSource",
-  "restoreFile", "loadSnapshot", "updateAgentContext", "updateCurrentPageLabel", "updatePreview", "content", "files", "explorerDropdown", "siteActions", "branchSelect"];
+  "restoreFile", "loadSnapshot", "updateAgentContext", "updateCurrentPageLabel", "updatePreview", "updateNativePreview", "updateNativePreviewSources",
+  "nativeRouteForPath", "nativeRouteInfo", "nativeTitles", "nativeFallbackPage", "nativeModeActive", "nativeComponentTagForPath",
+  "afterNativePaint", "ensureNativeTextIndex", "startNativeTextIndex", "flushPendingNativePageTitles", "clearPendingTitles",
+  "mediaController", "readMediaText", "mediaOrigins", "uploadFilesTo", "discardUpload",
+  "cards", "nativeNavigationTarget", "writeNativePageMeta", "refreshNativeRoutes", "openNativePageSettings", "openNativeNavigation",
+  "takeStartingPoint", "writeStartingPoint", "readPartialStart", "offerFinishStarter", "removeFinishStarter",
+  "nativeSite", "nativeSourcesRequest", "nativePaintedRequest", "nativePaintedPaths", "baseText",
+  "content", "files", "refreshButton", "branchSelect", "repositorySelect", "repositoryMenu", "explorerDropdown", "siteActions"];
 
 function portNames(source: string, file: string, name: string): string[] {
   const tree = parse(source, file);
@@ -21,18 +28,22 @@ function portNames(source: string, file: string, name: string): string[] {
   return declared.members.map((item) => item.name?.getText(tree) ?? "");
 }
 
+// What is wrong with a host's ports: a shared module it does not take, a module member taken loose, or more ports than its ceiling.
+function problems(names: string[], ceiling: number): string[] {
+  return [
+    ...SHARED.filter((shared) => !names.includes(shared)).map((shared) => `no ${shared}`),
+    ...names.filter((item) => MODULE_MEMBERS.includes(item)).map((item) => `loose ${item}`),
+    ...(names.length > ceiling ? [`${names.length} ports, above ${ceiling}`] : []),
+  ];
+}
+
 for (const host of HOSTS) {
   test(`${host.ports} takes the shared host modules whole and stays within ${host.ceiling} ports`, () => {
-    const names = portNames(readFileSync(new URL(`../${host.file}`, import.meta.url), "utf8"), host.file, host.ports);
-    for (const shared of SHARED) assert.ok(names.includes(shared), `${host.ports} takes ${shared}`);
-    assert.deepEqual(names.filter((item) => MODULE_MEMBERS.includes(item)), [], `${host.ports} takes these through a module`);
-    assert.ok(names.length <= host.ceiling, `${host.ports} has ${names.length} ports, above ${host.ceiling}`);
+    assert.deepEqual(problems(portNames(readFileSync(new URL(`../${host.file}`, import.meta.url), "utf8"), host.file, host.ports), host.ceiling), []);
   });
 }
 
-test("a loose port that belongs to a shared module, and a ports list over its ceiling, are named", () => {
-  const source = "export interface P { notices: N; session: S; repo: R; view: V; panels: X; preview: Y; status(m: string): void; readFile(): void; extra: 1 }";
-  const names = portNames(source, "p.ts", "P");
-  assert.deepEqual(names.filter((item) => MODULE_MEMBERS.includes(item)), ["status", "readFile"]);
-  assert.equal(names.length, 9);
+test("a missing shared module, a loose port that belongs to a module, and a ports list over its ceiling, are named", () => {
+  const source = "export interface P { notices: N; session: S; repo: R; view: V; panels: X; preview: Y; status(m: string): void; afterNativePaint(): void; uploadFilesTo(): void }";
+  assert.deepEqual(problems(portNames(source, "p.ts", "P"), 8), ["no textIndex", "loose status", "loose afterNativePaint", "loose uploadFilesTo", "9 ports, above 8"]);
 });

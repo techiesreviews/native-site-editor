@@ -80,7 +80,7 @@ const appStore = createAppStore(editorModule.sourceStore());
 // What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
-const session: Session = { ...workspaceSession, nextLoad, currentLoad, stampOf, draftScope };
+const session: Session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), nextLoad, currentLoad, stampOf, draftScope };
 // Tickets 33, am-11 (src/agent-presence.ts): the agents at work on the site's pages, drawn while their workspace is.
 const agentPresence = createAgentPresence({
   pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),

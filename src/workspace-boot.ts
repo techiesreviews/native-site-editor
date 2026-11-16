@@ -29,7 +29,7 @@ type Box = Pick<HTMLElement, "replaceChildren">;
 type Picker = { disabled: boolean; value: string };
 
 export interface WorkspaceBootPorts {
-  /** The shared host modules (src/host-modules.ts), read at call time. */
+  // The shared host modules (src/host-modules.ts), read at call time.
   notices: Pick<Notices, "status" | "settleStatus" | "clearError" | "errorMessage">;
   session: Pick<Session, "nextLoad" | "draftScope">;
   repo: Pick<Repo, "api" | "apiResponse" | "readFile" | "entryAt">;
