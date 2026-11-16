@@ -13,7 +13,12 @@ export function tellReplies(requests: readonly PinRequest[]) {
   for (const listener of [...listeners]) listener(requests);
 }
 
-/** `listener` hears the requests now and each time they change; the returned call stops it. */
+/** The agent connection changed: each listener hears the requests again, to look at the connection too. */
+export function connectionChanged() {
+  for (const listener of [...listeners]) listener(told);
+}
+
+/** `listener` hears the requests now, each time they change and each time the connection does; the returned call stops it. */
 export function watchReplies(listener: Listener) {
   listeners.add(listener);
   listener(told);

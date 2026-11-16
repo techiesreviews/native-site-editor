@@ -20,7 +20,7 @@ import { withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
 import type { createSetupHost } from "./setup-host";
 import { workingPart } from "./working-part";
-import { tellReplies } from "./agent-replies";
+import { connectionChanged, tellReplies } from "./agent-replies";
 import type { createWorkspaceMount } from "./workspace-mount";
 import type { createAgentPresence } from "./agent-presence";
 
@@ -114,7 +114,12 @@ export function agentMenuOptions(ports: AgentMenuPorts, agentCommands: Pick<Retu
     agents: agentPresence,
     reload: snapshot => agentCommands.reload(snapshot),
     // Ask agent shows in the edit bar while an agent is connected.
-    onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
+    onConnection: (connected) => {
+      setupController.noteAgent(connected);
+      if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value);
+      // A Fix with AI waiting for its reply ends once the agent goes away (TOOLS-253).
+      connectionChanged();
+    },
     // A pin an agent works on wears its colour, the one its outline and dots have (ticket am-13), and a pin a wait
     // took the agent presence names for it (ticket am-45: the taker, when it works or is alone on its connection).
     // Only those: asking for a colour gives an agent its place in the order of arrival, which those of earlier
