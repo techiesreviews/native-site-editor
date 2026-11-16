@@ -47,6 +47,9 @@ export function planRepositoryOpen(input: {
   return { kind: "choose" };
 }
 
+/** A repository listing and its onboarding hint, adopted together (adoptOnboarding) only when installed. */
+export interface Listed { repositories: Repository[]; onboarding?: Onboarding }
+
 export interface BootMenu {
   setRepositories(list: Repository[], message?: string): void;
 }
@@ -70,7 +73,7 @@ export interface BootPorts {
   adoptSession(session: SessionInfo): void;
   /** Resume the link, mount the workspace and start the agent. */
   enterWorkspace(): void;
-  loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: { copy: WarmCopy; listing: Promise<Repository[] | undefined> } }): Promise<void>;
+  loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: { copy: WarmCopy; listing: Promise<Listed | undefined> } }): Promise<void>;
   /** The site this browser showed last, when it is the one this boot opens for `login` (src/warm-copy.ts). */
   warmCopy(login: string): Promise<WarmCopy | undefined>;
   renderLogin(mode?: LoginMode): void;
@@ -97,6 +100,11 @@ export function createBootController(ports: BootPorts) {
   let boots = 0;
   let sessionTag: string | null | undefined;
 
+  /** The listing and its hint, the hint not adopted (a list that may lose to a newer one; adoptOnboarding). */
+  async function readList(refresh = false): Promise<Listed> {
+    const response = await ports.readRepositories(refresh);
+    return { repositories: response.value, onboarding: response.onboarding };
+  }
   /** Read the array endpoint and its onboarding hint without expanding the session. */
   async function fetchList(refresh = false): Promise<Repository[]> {
     const response = await ports.readRepositories(refresh);
@@ -188,9 +196,10 @@ export function createBootController(ports: BootPorts) {
         if (!current()) return;
         if (copy) {
           const held = () => ports.source() === source && ports.session() === session;
+          // The hint goes with the list: adopted only if that list is installed (src/repository-list.ts openWarm).
           await ports.loadRepositories(undefined, { ...hooks, warm: { copy, listing: reads.takeRepositories(sessionResponse, held).then((prefetched) => {
-            if (prefetched) onboarding = prefetched.value.onboarding;
-            return prefetched?.value.repositories ?? session.repositories ?? undefined;
+            const repositories = prefetched?.value.repositories ?? session.repositories ?? undefined;
+            return repositories && { repositories, onboarding: prefetched?.value.onboarding };
           }) } });
         } else {
           const prefetched = installed ? undefined : await reads.takeRepositories(sessionResponse);
@@ -262,6 +271,9 @@ export function createBootController(ports: BootPorts) {
     /** The adopted signed-in session's correlation tag (src/boot-reads.ts). */
     sessionTag: () => sessionTag,
     fetchList,
+    readList,
+    /** A list read with readList was installed: its hint is the one now. */
+    adoptOnboarding(hint: Onboarding | undefined) { onboarding = hint; },
     ensureList,
     recover,
     needsRecovery,

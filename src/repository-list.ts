@@ -8,7 +8,7 @@ import type { Repository } from "../shared/types";
 import type { AppStore } from "./app-store";
 import { forgetSignedIn } from "./auto-signin";
 import { forgetBootMemory } from "./boot-memory";
-import { planRepositoryOpen, type createBootController } from "./controllers/boot-controller";
+import { planRepositoryOpen, type createBootController, type Listed } from "./controllers/boot-controller";
 import type { createSetupHost } from "./setup-host";
 import { clearWizard, readWizard } from "./setup-wizard";
 import { button, node } from "./ui/dom";
@@ -18,7 +18,7 @@ import { forgetWarmCopy, type WarmCopy } from "./warm-copy";
 
 type Setup = ReturnType<typeof createSetupHost>;
 /** A repeat visit's kept copy (src/warm-copy.ts), shown before `listing` (the session's listing; undefined: read it) answers. */
-export interface WarmOpen { copy: WarmCopy; listing: Promise<Repository[] | undefined> }
+export interface WarmOpen { copy: WarmCopy; listing: Promise<Listed | undefined> }
 type Box = Pick<HTMLElement, "replaceChildren">;
 
 export interface RepositoryListPorts {
@@ -31,7 +31,7 @@ export interface RepositoryListPorts {
   setupEntry: Pick<Setup["setupEntry"], "dismissed" | "open" | "active">;
   setupController: Pick<Setup["setupController"], "start">;
   // Host state from here to siteActions: read (the repositories and the file selection counter written) at call time.
-  readonly boot: Pick<ReturnType<typeof createBootController>, "loading" | "ready" | "failed" | "listed" | "fetchList" | "refreshPending" | "takeRefresh" | "recover">;
+  readonly boot: Pick<ReturnType<typeof createBootController>, "loading" | "ready" | "failed" | "listed" | "fetchList" | "readList" | "adoptOnboarding" | "refreshPending" | "takeRefresh" | "recover">;
   readonly user: { login: string } | null | undefined;
   repositories: Repository[];
   fileGeneration: number;
@@ -203,9 +203,12 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       return false;
     };
     const installedMeanwhile = () => ports.repositories !== kept;
-    void listed.then((list) => list ?? ports.boot.fetchList(ports.boot.refreshPending())).then((list) => {
-      if (!current()) return;
+    void listed.then((answer) => answer ?? (current() ? ports.boot.readList(ports.boot.refreshPending()) : undefined)).then((answer) => {
+      if (!answer || !current()) return;
       if (installedMeanwhile()) { holds(ports.repositories); return; }
+      // The latest listing: its hint is the one now, whichever way the site then opens.
+      ports.boot.adoptOnboarding(answer.onboarding);
+      const list = answer.repositories;
       if (!holds(list)) return;
       ports.repositories = list;
       ports.boot.ready();

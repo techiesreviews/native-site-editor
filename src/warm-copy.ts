@@ -56,7 +56,6 @@ function open(factory: Factory | undefined = globalThis.indexedDB) {
       request.onupgradeneeded = () => request.result.createObjectStore(STORE);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(undefined);
-      request.onblocked = () => resolve(undefined);
     } catch { resolve(undefined); }
   }));
   return opened;

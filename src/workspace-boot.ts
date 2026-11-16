@@ -419,8 +419,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   let keeping: ReturnType<typeof setTimeout> | undefined;
   effect(() => {
     clearTimeout(keeping);
-    const shown = appStore.snapshot.value, page = appStore.openFile.value;
-    if (shown && page !== null) keeping = setTimeout(() => keepShown(true), 1000);
+    const shown = appStore.snapshot.value;
+    void appStore.openFile.value;
+    if (shown) keeping = setTimeout(() => keepShown(true), 1000);
     (keeping as { unref?: () => void } | undefined)?.unref?.();
   });
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keepShown(false, true); });
