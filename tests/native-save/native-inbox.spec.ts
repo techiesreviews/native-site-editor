@@ -130,6 +130,76 @@ test.describe("desktop", () => {
   });
 });
 
+// TOOLS-253: the four new checks, a shared part's note, and the strip under each row. Seeded per browser session
+// through the fake GitHub: the header gets a picture without a description (a shared part on Home and About), and
+// Home a link with no name, a "click here" link, a skipped heading and a video without subtitles. No agent is
+// connected here, so Fix with AI says so on itself (the suggestion flow runs with a fake agent in tests/inbox-fixes.test.ts).
+const seedHome = (home: string) => home.replace(`<h2 data-key="filler-title">Scroll to verify</h2>`, `<h2 data-key="filler-title">Scroll to verify</h2>
+    <h4 data-key="skipped">Opening hours</h4>
+    <p data-key="more">See <a href="/about/" data-key="vague">click here</a> or <a href="/about/" data-key="arrow"><svg width="12" height="12"><path d="M2 6h8"/></svg></a>.</p>
+    <video src="/images/fit.mp4" controls data-key="fit"></video>`);
+async function seed(page: Page, baseURL: string | undefined) {
+  await page.goto(`${baseURL}/`);
+  const commit = async (path: string, content: string) => expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+  const read = async (path: string) => (await page.request.get(`${baseURL}/__demo/file?path=${path}`)).text();
+  await commit("components/site-header/site-header.html", (await read("components/site-header/site-header.html")).replace(`<a class="brand" href="/" data-key="brand">Native Studio</a>`, `<img class="logo" src="/images/placeholder.svg" width="24" height="24" data-key="logo"><a class="brand" href="/" data-key="brand">Native Studio</a>`));
+  await commit("index.html", seedHome(await read("index.html")));
+  await open(page, baseURL);
+}
+const row = (page: Page, what: RegExp) => inbox(page).getByRole("listitem").filter({ has: page.getByRole("button", { name: what }) });
+
+test.describe("new checks (TOOLS-253)", () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test("each new kind is listed once with its strip; a shared part's row says how many pages it changes; no agent shows on the buttons", async ({ page, baseURL }) => {
+    await seed(page, baseURL);
+    await inboxButton(page).click();
+    await expect(inbox(page).getByRole("button", { name: /^Link without a name, Home page$/ })).toBeVisible();
+    await expect(inbox(page).getByRole("button", { name: /^Link that only says “click here”, Home page$/ })).toBeVisible();
+    await expect(inbox(page).getByRole("button", { name: /^Heading skips a level, Home page$/ })).toBeVisible();
+    await expect(inbox(page).getByRole("button", { name: /^Video without subtitles, Home page$/ })).toBeVisible();
+    const shared = inbox(page).getByRole("button", { name: "Picture without a description, Site header · changes 2 pages" });
+    await expect(shared).toHaveText(/Picture without a description\s*Site header · changes 2 pages/);
+    // Fix with AI on the pictures and links, saying on itself that no agent is connected; the manual fixes stay.
+    await expect(row(page, /^Link without a name/).getByRole("button", { name: /^Fix with AI: no agent connected/ })).toHaveAttribute("aria-disabled", "true");
+    await expect(inbox(page).getByRole("button", { name: /^Fix with AI: no agent connected/ })).toHaveCount(4);
+    await expect(inbox(page).getByRole("button", { name: "Fix all with AI: no agent connected" })).toHaveAttribute("aria-disabled", "true");
+    await expect(row(page, /^Heading skips a level/).getByRole("button", { name: /^Use H3/ })).toBeVisible();
+    await expect(row(page, /^Heading skips a level/).getByRole("button", { name: /Fix with AI/ })).toHaveCount(0);
+    await expect(row(page, /^Video without subtitles/).getByRole("button", { name: /^No speech/ })).toBeVisible();
+    await expect(row(page, /^Video without subtitles/).getByRole("button", { name: /Fix with AI/ })).toHaveCount(0);
+    await expect(row(page, /^Picture without a description, Site header/).getByRole("button", { name: /^Decorative/ })).toBeVisible();
+  });
+
+  test("Use H3 and No speech fix their rows from the Inbox, as one Undo step each", async ({ page, baseURL }) => {
+    await seed(page, baseURL);
+    await inboxButton(page).click();
+    await row(page, /^Heading skips a level/).getByRole("button", { name: /^Use H3/ }).click();
+    await expect(inbox(page).getByRole("button", { name: /^Heading skips a level/ })).toHaveCount(0);
+    await expect.poll(() => homeSource(page)).toContain(`<h3 data-key="skipped">Opening hours</h3>`);
+    await row(page, /^Video without subtitles/).getByRole("button", { name: /^No speech/ }).click();
+    await expect(inbox(page).getByRole("button", { name: /^Video without subtitles/ })).toHaveCount(0);
+    await expect.poll(() => homeSource(page)).toContain(`<video src="/images/fit.mp4" controls data-key="fit" data-no-speech="">`);
+  });
+
+  test("a shared part's row opens the part where it stands, says it changes every page that uses it, and selects the picture", async ({ page, baseURL }) => {
+    await seed(page, baseURL);
+    await inboxButton(page).click();
+    await inbox(page).getByRole("button", { name: "Picture without a description, Site header · changes 2 pages" }).click();
+    await expect(inbox(page)).toBeHidden();
+    await expect(page.getByRole("button", { name: /^Note: Site header is a shared part\. A change here shows on all 2 pages that use it\./ })).toBeVisible({ timeout: 15_000 });
+    await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
+  });
+
+  test("an item's row goes to its spot: the unnamed link selected, its Name field asking for one", async ({ page, baseURL }) => {
+    await seed(page, baseURL);
+    await inboxButton(page).click();
+    await inbox(page).getByRole("button", { name: /^Link without a name/ }).click();
+    await expect(inbox(page)).toBeHidden();
+    await expect(bar(page).getByRole("button", { name: "Needs a name", exact: true })).toBeVisible();
+  });
+});
+
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -153,5 +223,19 @@ test.describe("phone", () => {
     const box = (await inbox(page).boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(390);
+  });
+
+  test("the new rows' strips fit the phone's panel, with 44 px actions (TOOLS-253)", async ({ page, baseURL }) => {
+    await seed(page, baseURL);
+    await banner(page).getByRole("button", { name: "Menu", exact: true }).click();
+    await page.getByRole("dialog", { name: "Menu", exact: true }).getByRole("button", { name: "Inbox", exact: true }).click();
+    await expect(inbox(page)).toBeVisible();
+    const box = (await inbox(page).boundingBox())!;
+    for (const action of await inbox(page).locator(".inbox__act").all()) {
+      const at = (await action.boundingBox())!;
+      expect(at.height).toBeGreaterThanOrEqual(44);
+      expect(at.x + at.width).toBeLessThanOrEqual(box.x + box.width);
+    }
+    expect(await inbox(page).evaluate(panel => panel.scrollWidth <= panel.clientWidth)).toBe(true);
   });
 });
