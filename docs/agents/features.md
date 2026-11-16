@@ -415,10 +415,10 @@ its number unused.
 
 ### F-canvas-08 Add panel
 - Try: Press Add (or a + between sections) and click or drag a section or component.
-- Good: Live thumbnails of whole sections; a click adds after the selected section, the panel closes after adding (B12).
-- Files: `src/page-builder/add-panel.ts`, `src/page-builder/add-catalog.ts`, `src/page-builder/thumbnail.ts`, `src/components/insert-controls.ts`
+- Good: Live thumbnails of whole sections; a click adds after the selected section, the panel closes after adding (B12). On a phone (U4) Page structure's Add is 44 px tall, clear of the sheet's handle (TOOLS-269).
+- Files: `src/page-builder/add-panel.ts`, `src/page-builder/add-panel.css`, `src/page-builder/add-catalog.ts`, `src/page-builder/thumbnail.ts`, `src/components/insert-controls.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-add-panel.spec.ts`
+- Spec: `tests/native-save/native-add-panel.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-canvas-08.json`
 
 ### F-canvas-09 Add a list item or card
@@ -953,15 +953,15 @@ its number unused.
 
 ### F-code-01 Code editor
 - Try: Select an element; the code pane opens its file with the caret after its start tag.
-- Good: Full editing, syntax colours in light and dark, the head and sections folded at first. On a phone (U4) Page structure's Add above it is 44 px tall (TOOLS-269).
-- Files: `src/components/code-editor.ts`, `src/components/monaco.ts`, `src/controllers/code-panes-controller.ts`, `src/page-builder/add-panel.css`
+- Good: Full editing, syntax colours in light and dark, the head and sections folded at first.
+- Files: `src/components/code-editor.ts`, `src/components/monaco.ts`, `src/controllers/code-panes-controller.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-editor-features.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
+- Spec: `tests/native-save/native-editor-features.spec.ts`
 - Steps: `scripts/agents/shots/features/F-code-01.json`
 
 ### F-code-02 Linked styles pane
 - Try: Select a heading and look at the second pane.
-- Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply. On a phone (U4) a chip is 44 px to tap and 28 px to see (TOOLS-269).
+- Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply. On a phone (U4) a chip is 44 px to tap and 28 px to see, and both panes' titles are one 44 px line, so their code starts level (as in Lex's approved prototype, TOOLS-269).
 - Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`, `src/style.css`
 - Phone: yes
 - Spec: `tests/native-save/native-selector.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`

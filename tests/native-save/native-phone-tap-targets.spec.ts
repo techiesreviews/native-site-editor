@@ -103,6 +103,19 @@ for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
     await open(page, baseURL);
     big(await projectMenu(page));
     big(await branchFlyout(page));
+    // The bigger icons keep their corners: each reaches the right edge of its panel, and neither panel scrolls sideways.
+    const edges = await page.evaluate(() => {
+      const panel = document.querySelector("#repository-actions")!, flyout = document.querySelector("#branch-menu")!;
+      const right = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().right;
+      return {
+        reload: right(".repository-menu__heading-button") - panel.getBoundingClientRect().right,
+        refresh: right("#refresh") - flyout.getBoundingClientRect().right,
+        sideways: [panel.scrollWidth - panel.clientWidth, flyout.scrollWidth - flyout.clientWidth],
+      };
+    });
+    expect(Math.abs(edges.reload)).toBeLessThanOrEqual(1);
+    expect(Math.abs(edges.refresh)).toBeLessThanOrEqual(1);
+    expect(edges.sideways).toEqual([0, 0]);
   });
 
   test("Page structure's Add is 44 px; the style chip is 44 px to tap and 28 px to see", async ({ page, baseURL }) => {
@@ -110,6 +123,22 @@ for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
     const sizes = await structureAndCode(page);
     big({ add: sizes.add, chip: sizes.chip });
     expect(sizes.chipLook).toBe(28);
+    const layout = await page.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const chip = document.querySelector("#secondary-rules .code-pane__rule")!, band = chip.getBoundingClientRect();
+      return {
+        // A finger on the clear band above or below the pill still lands on the chip, clear of the code's resize grip.
+        band: [band.top + 1, band.bottom - 1].every((y) => document.elementFromPoint(band.x + band.width / 2, y)?.closest(".code-pane__rule") === chip),
+        titles: [...document.querySelectorAll(".code-pane__title")].map((title) => Math.round(title.getBoundingClientRect().height)),
+        codeTops: [Math.round(rect("#content").top), Math.round(rect("#content-secondary").top)],
+        addBelowHandle: rect("#add-panel-toggle").top >= rect("#sheet-handle").bottom,
+      };
+    });
+    expect(layout.band).toBe(true);
+    // Both code panes' titles are as tall, so the code starts level.
+    expect(layout.titles[0]).toBe(layout.titles[1]);
+    expect(layout.codeTops[0]).toBe(layout.codeTops[1]);
+    expect(layout.addBelowHandle).toBe(true);
   });
 
   test("Whole-site history's file rows and a commit's ⋯ are 44 px to tap", async ({ page, baseURL }) => {
