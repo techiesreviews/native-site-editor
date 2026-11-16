@@ -378,7 +378,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (!phone.matches && topBar.isConnected) return;
       phone.removeEventListener("change", onPhone);
       if (!topBar.isConnected) return;
-      void import("./components/top-bar-phone").then((module) => topBar.isConnected && module.mountTopBarPhone(ports)).catch(notices.errorMessage);
+      void import("./components/top-bar-phone").then((module) => topBar.isConnected && module.mountTopBarPhone({ app: ports.app, appStore: ports.appStore,
+        page: { siteSettings: pageBuilder.openNativeSiteSettings }, errorMessage: notices.errorMessage })).catch(notices.errorMessage);
     };
     phone.addEventListener("change", onPhone);
     onPhone();
