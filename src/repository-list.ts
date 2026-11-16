@@ -12,7 +12,7 @@ import { planRepositoryOpen, type createBootController } from "./controllers/boo
 import type { createSetupHost } from "./setup-host";
 import { clearWizard, readWizard } from "./setup-wizard";
 import { button, node } from "./ui/dom";
-import type { SessionStamp } from "./workspace-session";
+import { sameRepository, type SessionStamp } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, type WorkspaceLocation } from "./workspace-state";
 import { forgetWarmCopy, type WarmCopy } from "./warm-copy";
 
@@ -199,7 +199,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     const holds = (list: Repository[]) => {
       const repo = list.find((item) => item.id === copy.repo.id);
       if (repo && keptAsIs(repo, copy.repo)) return true;
-      if (appStore.repository.value?.id === copy.repo.id) void loadRepositories(list);
+      if (sameRepository({ repoId: appStore.repository.value?.id }, { repoId: copy.repo.id })) void loadRepositories(list);
       return false;
     };
     const installedMeanwhile = () => ports.repositories !== kept;
