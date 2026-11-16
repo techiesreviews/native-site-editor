@@ -2,6 +2,13 @@
 // Each suggestion is one request about the item's element (as Ask agent sends one, src/controllers/agent-controller.ts),
 // asking for the words only and no change; its reply's words are the suggestion, and the request is let go once
 // answered, so no pin is left on the page. Loaded with the Inbox's list; tested in tests/inbox-agent.test.ts.
+//
+// How a suggestion settles, checked in this order each time the menu tells its requests (or the connection changes):
+//   1. a reply with words: the suggestion, and the request is let go;
+//   2. a reply that asks back: fails, and the request stays on its pin for the user to answer;
+//   3. the request gone after it was seen (dismissed on its pin, or another site opened): fails;
+//   4. no agent connected any more: fails;
+//   5. SUGGESTION_WAIT_MS with none of these: fails, and the request is let go.
 import type { AgentElement } from "../../shared/agent";
 import type { PinRequest } from "../components/agent-pins";
 import { watchReplies } from "../agent-replies";
@@ -64,19 +71,15 @@ export function createInboxAgent(ports: {
         // The request is in the list once the menu tells it; a list without it after that is a dismissal elsewhere (its pin, another tab).
         let seen = false;
         stop = watch(requests => {
-          // The agent went away while this waited (Disconnect MCP, another site): no answer comes.
-          if (!link.connected()) { finish(() => reject(new Error("The agent is no longer connected.")), false); return; }
           const request = requests.find(found => found.id === id);
-          if (!request) {
-            if (seen) finish(() => reject(new Error("The request was dismissed.")), false);
-            return;
-          }
-          seen = true;
-          const reply = request.reply;
-          if (!reply) return;
+          if (request) seen = true;
+          const reply = request?.reply;
           // A question back stays on its pin for the user to answer there.
-          if (reply.status === "question") { finish(() => reject(new Error("The agent asked a question on its pin.")), false); return; }
-          finish(() => resolve(reply.message), true);
+          if (reply?.status === "question") { finish(() => reject(new Error("The agent asked a question on its pin.")), false); return; }
+          if (reply) { finish(() => resolve(reply.message), true); return; }
+          if (!request && seen) { finish(() => reject(new Error("The request was dismissed.")), false); return; }
+          // The agent went away while this waited (Disconnect MCP): no answer comes.
+          if (!link.connected()) finish(() => reject(new Error("The agent is no longer connected.")), false);
         });
         if (settled) stop();
       });

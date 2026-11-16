@@ -98,3 +98,37 @@ test("an agent that goes away while the suggestion waits ends it at once, not at
   listeners[0]([]);
   await assert.rejects(words, /no longer connected/);
 });
+
+test("an answer that arrives as the agent goes away is still the suggestion", async () => {
+  let connected = true;
+  const listeners: ((requests: readonly PinRequest[]) => void)[] = [];
+  const dismissed: string[] = [];
+  const agent = createInboxAgent({
+    link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: (id) => { dismissed.push(id); } }),
+    element: async () => element,
+    watch: heard => { listeners.push(heard); heard([]); return () => undefined; },
+    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+  });
+  const words = agent.suggest(logo);
+  await new Promise(done => setTimeout(done));
+  connected = false;
+  listeners[0]([{ id: "req-1", text: "", state: "done", createdAt: 1, repoId: 1, element, reply: { status: "done", message: "Logo", at: 2 } }]);
+  assert.equal(await words, "Logo");
+  assert.deepEqual(dismissed, ["req-1"]);
+});
+
+test("the menu's connection change alone ends a waiting suggestion (agent-replies)", async () => {
+  const replies = await import("../src/agent-replies.ts");
+  let connected = true;
+  const agent = createInboxAgent({
+    link: () => ({ connected: () => connected, ask: async () => ({ id: "req-9" }), dismiss: () => undefined }),
+    element: async () => element,
+    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+  });
+  const words = agent.suggest(logo);
+  await new Promise(done => setTimeout(done));
+  connected = false;
+  // Disconnect MCP: the request list stays the same, only the connection changes.
+  replies.connectionChanged();
+  await assert.rejects(words, /no longer connected/);
+});
