@@ -297,7 +297,10 @@ pre:focus-visible {
   .code-pane__rule {
     box-sizing: border-box;
     align-items: center;
+    justify-content: center;
     block-size: var(--size-tap);
+    /* A short selector (p, h1) is as wide as a finger too. */
+    min-inline-size: var(--size-tap);
     padding-block: 0;
     padding-inline: calc(var(--space-xs) + var(--space-4xs));
     border-block: calc((var(--size-tap) - var(--size-compact)) / 2) solid transparent;

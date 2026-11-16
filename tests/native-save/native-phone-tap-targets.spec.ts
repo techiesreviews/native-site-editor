@@ -135,6 +135,8 @@ for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
         titles: [...document.querySelectorAll(".code-pane__title")].map((title) => Math.round(title.getBoundingClientRect().height)),
         codeTops: [Math.round(rect("#content").top), Math.round(rect("#content-secondary").top)],
         addBelowHandle: rect("#add-panel-toggle").top >= rect("#sheet-handle").bottom,
+        // A short selector's chip (p, h1) is never narrower than the finger either.
+        chipMinimum: getComputedStyle(chip).minInlineSize,
       };
     });
     expect(layout.band).toBe(true);
@@ -142,6 +144,7 @@ for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
     expect(layout.titles[0]).toBe(layout.titles[1]);
     expect(layout.codeTops[0]).toBe(layout.codeTops[1]);
     expect(layout.addBelowHandle).toBe(true);
+    expect(layout.chipMinimum).toBe("44px");
   });
 
   test("Whole-site history's file rows and a commit's ⋯ are 44 px to tap", async ({ page, baseURL }) => {
