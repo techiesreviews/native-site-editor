@@ -317,3 +317,15 @@ test("the project menu's own list, landing first without the kept repository, ta
   // The kept site is closed: no project is open.
   await expect(page.getByRole("button", { name: /^Choose a project/ })).toBeVisible();
 });
+
+test("a listing with the kept repository renamed opens it again the plain way, by its new name", async ({ page }) => {
+  await page.route("**/api/repositories*", async (route) => {
+    const response = await route.fetch();
+    const listed = (await response.json()) as { id: number; name: string; full_name: string }[];
+    await route.fulfill({ response, json: listed.map((repo) => repo.id === 501 ? { ...repo, name: "renamed", full_name: "native-demo-user/renamed" } : repo) });
+  });
+  const renamed = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/snapshot" && new URL(request.url()).searchParams.get("repo") === "native-demo-user/renamed");
+  await page.reload();
+  await renamed;
+  await expect(page.getByRole("button", { name: /^renamed/ }).first()).toBeVisible({ timeout: 15_000 });
+});

@@ -12,6 +12,7 @@ import type { WorkspaceLocation } from "../src/workspace-state.ts";
 import { readWizard, WIZARD_KEY } from "../src/setup-wizard.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 import type { WarmCopy } from "../src/warm-copy.ts";
+import type { Listed } from "../src/controllers/boot-controller.ts";
 
 // Just enough DOM for the welcome panel (node and button, src/ui/dom.ts).
 class FakeElement {
@@ -63,11 +64,11 @@ function store() {
 const repo = (id: number): Repository => ({ id, name: `site-${id}`, full_name: `lex/site-${id}`, private: false, default_branch: "main", owner: { login: "lex", type: "User" } });
 const A = repo(1), B = repo(2), C = repo(3);
 
-type Options = { user?: { login: string }; dismissed?: boolean; recover?: boolean };
+type Options = { user?: { login: string }; dismissed?: boolean; recover?: boolean; onboarding?: "install" | "create" };
 function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Promise<Repository[]> = async () => listed, options: Options = {}) {
   const session = createWorkspaceSession(), local = store();
   const shown = { content: [] as (FakeElement | string)[], files: [] as (FakeElement | string)[] };
-  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0, remembered: 0 };
+  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0, remembered: 0, hints: [] as ("install" | "create" | undefined)[] };
   const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [], started: number[] = [], warmed: (WarmCopy | undefined)[] = [];
   const menu: { listed?: Repository[]; message?: string } = {};
   const content = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
@@ -89,6 +90,8 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     boot: {
       loading: () => { calls.loading++; }, ready: () => { calls.ready++; }, failed: () => { calls.failed++; }, listed: () => { calls.listed++; },
       fetchList: (refresh = false) => { calls.fetchList++; return fetchList(refresh); },
+      readList: async (refresh = false) => { calls.fetchList++; return { repositories: await fetchList(refresh), onboarding: options.onboarding }; },
+      adoptOnboarding: (hint?: "install" | "create") => { calls.hints.push(hint); },
       refreshPending: () => false, takeRefresh: () => false, recover: async () => options.recover ?? false,
     },
     user: "user" in options ? options.user : { login: "lex" },
@@ -366,8 +369,10 @@ test("a refresh with no repository open lists again without touching the address
 const keptCopy = (kept: Repository = A): WarmCopy => ({ login: "lex", source: "https://editor.test/", repo: kept, branch: "main",
   snapshot: { commit: "c".repeat(40), branch: "main", entries: [], tree: [] }, files: [] });
 function deferredList() {
-  let resolve!: (value: Repository[] | undefined) => void, reject!: (error: unknown) => void;
-  const promise = new Promise<Repository[] | undefined>((yes, no) => { resolve = yes; reject = no; });
+  let answer!: (value: Listed | undefined) => void, reject!: (error: unknown) => void;
+  const promise = new Promise<Listed | undefined>((yes, no) => { answer = yes; reject = no; });
+  // A listing as the session's read answers it: its repositories and onboarding hint.
+  const resolve = (repositories: Repository[] | undefined, onboarding?: "install" | "create") => answer(repositories && { repositories, onboarding });
   return { promise, resolve, reject };
 }
 const settle = () => new Promise<void>((done) => setImmediate(done));
@@ -444,7 +449,7 @@ test("a kept copy's listing: a newer listing begun at any of its waits leaves on
   const replays = await forEachAwait(
     (race) => {
       const f = fixture([C]);
-      const listing = race.port("listing", async () => [A, B])();
+      const listing = race.port("listing", async (): Promise<Listed> => ({ repositories: [A, B] }))();
       const done = f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing } }).then(() => listing).then(settle);
       return { f, done };
     },
@@ -482,4 +487,18 @@ test("a list the menu installed before the kept copy's listing lands is checked 
     assert.equal(f.calls.loading, 2, `${settleListing}: the plain listing runs`);
     assert.deepEqual(f.ports.repositories, [B]);
   }
+});
+
+test("a kept copy's listing adopts its onboarding hint only while it is the latest listing", async () => {
+  const f = fixture([C]), listing = deferredList();
+  await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+  await f.list.loadRepositories([C]);
+  listing.resolve([A], "install");
+  await settle();
+  assert.deepEqual(f.calls.hints, [], "the superseded listing's hint is not adopted");
+  const g = fixture([A]), current = deferredList();
+  await g.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: current.promise } });
+  current.resolve([A], "create");
+  await settle();
+  assert.deepEqual(g.calls.hints, ["create"]);
 });

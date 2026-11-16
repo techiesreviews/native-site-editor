@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createBootController, planRepositoryOpen, type BootMenu, type BootPorts } from "../src/controllers/boot-controller.ts";
+import { createBootController, planRepositoryOpen, type BootMenu, type BootPorts, type Listed } from "../src/controllers/boot-controller.ts";
 import type { ApiReceipt } from "../src/boot-api-response.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { Repository, SessionInfo } from "../shared/types.ts";
@@ -30,11 +30,11 @@ function fixture(href = "https://editor.test/") {
   const sessions: ReturnType<typeof deferred<ApiReceipt<SessionInfo>>>[] = [];
   const lists: { refresh: boolean; early?: Promise<Response>; read: ReturnType<typeof deferred<ApiReceipt<Repository[]>>> }[] = [];
   const sessionEarly: (Promise<Response> | undefined)[] = [];
-  const loads: { prefetched?: Repository[]; started?: number; warm?: { copy: WarmCopy; listing: Promise<Repository[] | undefined> } }[] = [];
+  const loads: { prefetched?: Repository[]; started?: number; warm?: { copy: WarmCopy; listing: Promise<Listed | undefined> } }[] = [];
   let warm: WarmCopy | undefined;
   const errors: unknown[] = [];
   const drafts = deferred<void>();
-  let loadImpl: (prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: { copy: WarmCopy; listing: Promise<Repository[] | undefined> } }) => Promise<void> = async (prefetched, hooks) => {
+  let loadImpl: (prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void; warm?: { copy: WarmCopy; listing: Promise<Listed | undefined> } }) => Promise<void> = async (prefetched, hooks) => {
     workspace.next(undefined);
     const at = workspace.begin();
     hooks?.onStarted(at);
@@ -94,7 +94,7 @@ test("both reads start before the session resolves and a matching tag is adopted
   assert.deepEqual(f.log.slice(2, 6), ["drafts", "enter", "warm lex", "load"]);
 });
 
-test("a kept copy for the account opens before the listing answers; the listing and its onboarding follow (TOOLS-242)", async () => {
+test("a kept copy for the account opens before the listing answers; the listing follows with its onboarding hint (TOOLS-242)", async () => {
   const f = fixture(), copy = keptCopy(1);
   f.setWarm(copy);
   const started = f.controller.start();
@@ -104,7 +104,11 @@ test("a kept copy for the account opens before the listing answers; the listing 
   assert.equal(f.loads[0].prefetched, undefined);
   assert.equal(f.loads[0].warm?.copy, copy);
   f.lists[0].read.resolve(receipt([repo(1), repo(2)], "t1", "create"));
-  assert.deepEqual((await f.loads[0].warm?.listing)?.map(item => item.id), [1, 2]);
+  const listed = await f.loads[0].warm?.listing;
+  assert.deepEqual(listed?.repositories.map(item => item.id), [1, 2]);
+  assert.equal(listed?.onboarding, "create");
+  assert.equal(f.controller.onboarding(), undefined, "the hint is adopted only with its list installed");
+  f.controller.adoptOnboarding(listed?.onboarding);
   assert.equal(f.controller.onboarding(), "create");
 });
 
@@ -115,7 +119,7 @@ test("a kept copy's listing with another session's tag falls back to the session
   f.lists[0].read.resolve(receipt([repo(1)], "other", "install"));
   f.sessions[0].resolve(receipt(signedIn([repo(3)])));
   await started;
-  assert.deepEqual((await f.loads[0].warm?.listing)?.map(item => item.id), [3]);
+  assert.deepEqual((await f.loads[0].warm?.listing)?.repositories.map(item => item.id), [3]);
   assert.equal(f.controller.onboarding(), undefined);
 });
 
