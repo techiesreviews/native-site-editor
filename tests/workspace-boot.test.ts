@@ -1,6 +1,6 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceBoot, GUESS_AFTER_FAILED_LIST_MS, WARM_READ_MS, type WorkspaceBootPorts } from "../src/workspace-boot.ts";
+import { createWorkspaceBoot, GUESS_AFTER_FAILED_LIST_MS, type WorkspaceBootPorts } from "../src/workspace-boot.ts";
 import { createAppStore } from "../src/app-store.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import { writeBootMemory, type BootMemory } from "../src/boot-memory.ts";
@@ -10,7 +10,7 @@ import type { ApiReceipt } from "../src/boot-api-response.ts";
 import type { FilesResult, Repository, Snapshot } from "../shared/types.ts";
 import { ReadUnansweredError } from "../src/read-retry.ts";
 import type { EarlyReads } from "../src/boot-reads.ts";
-import { readWarmCopy, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
+import { readWarmCopy, WARM_READ_MS, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 

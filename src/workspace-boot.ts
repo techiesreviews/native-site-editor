@@ -21,7 +21,7 @@ import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, sameBranch, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
-import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
+import { MAX_TEXT_LENGTH, provenTexts, readWarmCopy, WARM_READ_MS, warmFor, writeWarmCopy, type WarmCopy } from "./warm-copy";
 
 // `retry`: the open this file is part of, offered as Try again when its read gets no answer.
 type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void };
@@ -99,8 +99,6 @@ export interface WorkspaceBootPorts {
   offerFinishStarter(repo: Repository, partial: PartialStart): void;
 }
 
-// How long the boot waits for this browser's kept copy before it opens the plain way (src/warm-copy.ts).
-export const WARM_READ_MS = 500;
 // How long a failed branch list waits for a guessed snapshot (the only read with a bound).
 export const GUESS_AFTER_FAILED_LIST_MS = 5000;
 

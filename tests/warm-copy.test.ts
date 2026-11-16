@@ -142,3 +142,11 @@ test("a kept time from the future counts as now; one that is not a time counts a
   assert.equal(asWarmCopy(damaged)?.at, undefined);
   assert.equal(asWarmCopy({ ...copy(), at: 1234 })?.at, 1234);
 });
+
+test("after another context's version change closes the connection, the next keep opens the storage again", async () => {
+  const fake = fakeIndexedDB();
+  await writeWarmCopy(copy(), fake.factory);
+  fake.versionChange();
+  await writeWarmCopy(copy({ branch: "next", snapshot: { ...copy().snapshot, branch: "next" } }), fake.factory);
+  assert.equal((await readWarmCopy(fake.factory))?.branch, "next");
+});
