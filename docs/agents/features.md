@@ -961,7 +961,7 @@ its number unused.
 
 ### F-code-02 Linked styles pane
 - Try: Select a heading and look at the second pane.
-- Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply. On a phone (U4) a chip is 44 px to tap and 28 px to see, and both panes' titles are one 44 px line, so their code starts level (as in Lex's approved prototype, TOOLS-269).
+- Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply. On a phone (U4) a chip is 44 px to tap and 28 px to see, and both panes' titles are tall enough for it, so their code starts level (as in Lex's approved prototype, TOOLS-269).
 - Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`, `src/style.css`
 - Phone: yes
 - Spec: `tests/native-save/native-selector.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`

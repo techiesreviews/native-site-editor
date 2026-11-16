@@ -111,8 +111,11 @@ for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
         reload: right(".repository-menu__heading-button") - panel.getBoundingClientRect().right,
         refresh: right("#refresh") - flyout.getBoundingClientRect().right,
         sideways: [panel.scrollWidth - panel.clientWidth, flyout.scrollWidth - flyout.clientWidth],
+        headings: [".repository-menu__heading-button", "#refresh"].map((selector) => Math.round(document.querySelector(selector)!.parentElement!.getBoundingClientRect().height)),
       };
     });
+    // Each heading with a bigger icon is one 44 px line.
+    expect(edges.headings).toEqual([44, 44]);
     expect(Math.abs(edges.reload)).toBeLessThanOrEqual(1);
     expect(Math.abs(edges.refresh)).toBeLessThanOrEqual(1);
     expect(edges.sideways).toEqual([0, 0]);
