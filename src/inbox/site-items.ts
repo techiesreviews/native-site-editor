@@ -60,11 +60,12 @@ export function pictureVerdict(alt: string | undefined, state: Verdict | undefin
   return state === "missing" || (!alt && state !== "decorative") ? "missing" : state ?? "described";
 }
 
-interface PagePicture { at: number; src: string | undefined; alt: string | undefined; shown: string; hidden: boolean }
+/** `slotted`: in a shared part, content a page may replace (a slot's fallback, or a link around a slot), so not listed there. */
+interface PagePicture { at: number; src: string | undefined; alt: string | undefined; shown: string; hidden: boolean; slotted: boolean }
 
-interface PageLink { at: number; href: string; words: string; named: boolean; plain: boolean }
+interface PageLink { at: number; href: string; words: string; named: boolean; plain: boolean; slotted: boolean }
 interface PageHeading { at: number; level: number; words: string }
-interface PageVideo { at: number; src: string; waits: boolean }
+interface PageVideo { at: number; src: string; waits: boolean; slotted: boolean }
 interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[]; links: readonly PageLink[]; headings: readonly PageHeading[]; videos: readonly PageVideo[] }
 
 /** Link words that do not say where a link goes (research 01's words rules), compared lower case with spaces folded. */
@@ -77,6 +78,11 @@ const attribute = (source: string, element: SourceElement, name: string) => star
 function wordsOf(source: string, element: SourceElement) {
   if (!element.close) return "";
   return decodeHtmlEntities(source.slice(element.tag.end, element.close.start).replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+/** Whether a page may give this part of a shared part instead: it sits in a <slot> (its fallback) or holds one. */
+function slotted(element: SourceElement) {
+  for (let up = element.parent; up; up = up.parent) if (up.name.toLowerCase() === "slot") return true;
+  return [...descendants(element.children)].some(inner => inner.name.toLowerCase() === "slot");
 }
 /** Whether something inside `element` names it: a non-empty aria-label, or a picture's non-empty alt (the edit bar's rule). */
 function namedInside(source: string, element: SourceElement) {
@@ -115,7 +121,7 @@ function readPage(file: string, source: string): PageRead {
     const { tag } = element;
     const src = startTagAttribute(source, tag, "src")?.value.trim();
     const shown = src || startTagAttribute(source, tag, "srcset")?.value.trim() || pictureSource(source, element);
-    return shown ? [{ at: tag.start, src, alt: startTagAttribute(source, tag, "alt")?.value, shown, hidden: inInactiveTemplate(source, element) }] : [];
+    return shown ? [{ at: tag.start, src, alt: startTagAttribute(source, tag, "alt")?.value, shown, hidden: inInactiveTemplate(source, element), slotted: slotted(element) }] : [];
   });
   const shown = elements.filter(element => !inInactiveTemplate(source, element));
   const links = shown.flatMap(element => {
@@ -125,7 +131,7 @@ function readPage(file: string, source: string): PageRead {
       || attribute(source, element, "title")?.trim() || namedInside(source, element));
     // Plain: the link holds only its words, so new words can replace them.
     const plain = element.children.every(child => child.type === "text");
-    return [{ at: element.tag.start, href: attribute(source, element, "href") ?? "", words, named, plain }];
+    return [{ at: element.tag.start, href: attribute(source, element, "href") ?? "", words, named, plain, slotted: slotted(element) }];
   });
   const headings = shown.flatMap(element => {
     const match = /^h([1-6])$/i.exec(element.name);
@@ -136,7 +142,7 @@ function readPage(file: string, source: string): PageRead {
     const tracks = [...descendants(element.children)].some(inner => inner.name.toLowerCase() === "track" && /^(subtitles|captions)$/i.test(attribute(source, inner, "kind")?.trim() ?? ""));
     // A muted video says nothing to hear; "No speech" marks one with sound but no words.
     const silent = attribute(source, element, "muted") !== undefined || attribute(source, element, "data-no-speech") !== undefined;
-    return [{ at: element.tag.start, src: attribute(source, element, "src")?.trim() ?? "", waits: !tracks && !silent }];
+    return [{ at: element.tag.start, src: attribute(source, element, "src")?.trim() ?? "", waits: !tracks && !silent, slotted: slotted(element) }];
   });
   const page = { source, titled: hasTitle(source, elements), pictures, links, headings, videos };
   read.set(file, page);
@@ -155,8 +161,11 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
   const pictures = read.pictures.map(picture => ({ ...picture,
     waits: rules.picture(file, picture.src ?? "", picture.alt) === "missing", media: picture.src ? rules.file(file, picture.src) : undefined }));
   const seen = new Set<string>();
-  for (const { at, shown, waits, hidden, media } of pictures) {
-    if (!waits || hidden) continue;
+  // In a shared part, what a page may give instead (a slot's fallback) is judged on the pages that give it.
+  const own = (element: { slotted: boolean }) => !shared || !element.slotted;
+  for (const picture of pictures) {
+    const { at, shown, waits, hidden, media } = picture;
+    if (!waits || hidden || !own(picture)) continue;
     const key = `picture\n${file}\n${media ?? shown}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -169,6 +178,7 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
     const nth = count.get(link.href) ?? 0;
     count.set(link.href, nth + 1);
     const key = `link\n${file}\n${link.href}\n${nth}`;
+    if (!own(link)) continue;
     if (!link.named) items.push({ key, kind: "link", what: "Link without a name", ...common, at: link.at, fix: "name", found: source });
     else if (link.words && vagueWords(link.words))
       items.push({ key, kind: "link", what: `Link that only says “${link.words}”`, ...common, at: link.at, words: link.words, found: source, ...(link.plain ? { fix: "words" as const } : {}) });
@@ -177,7 +187,7 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
   for (const video of read.videos) {
     const nth = videos.get(video.src) ?? 0;
     videos.set(video.src, nth + 1);
-    if (video.waits) items.push({ key: `video\n${file}\n${video.src}\n${nth}`, kind: "video", what: "Video without subtitles", ...common, at: video.at, wave: "No speech", found: source });
+    if (video.waits && own(video)) items.push({ key: `video\n${file}\n${video.src}\n${nth}`, kind: "video", what: "Video without subtitles", ...common, at: video.at, wave: "No speech", found: source });
   }
   return items;
 }
