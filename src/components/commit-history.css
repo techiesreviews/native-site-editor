@@ -45,6 +45,11 @@
   width: var(--size-icon);
   height: var(--size-icon);
 }
+/* A commit's ⋯ is as big as a finger on a phone; Refresh stays small. */
+.commit-history .commit-history__more.icon-button {
+  width: max(var(--size-icon), var(--size-tap));
+  height: max(var(--size-icon), var(--size-tap));
+}
 .commit-history__refresh:focus-visible,
 .commit-history__more:focus-visible {
   outline: var(--focus-ring);
@@ -179,6 +184,16 @@
     opacity: 1;
   }
 }
+/* On a phone (theme.css's --size-tap switch) the 44 px ⋯ sits in the row's corner, clear of its words. */
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  .commit-history__more {
+    top: 0;
+    right: 0;
+  }
+  .commit-history__view {
+    padding-right: 48px;
+  }
+}
 .commit-history__subject {
   overflow-wrap: anywhere;
 }
@@ -247,7 +262,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: var(--size-compact);
+  min-height: max(var(--size-compact), var(--size-tap));
   padding: 0 8px;
   border: 0;
   border-radius: var(--radius);

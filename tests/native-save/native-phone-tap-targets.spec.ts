@@ -9,7 +9,8 @@ test.beforeEach(({ page }) => page.setDefaultTimeout(15_000));
 
 const box = async (locator: Locator) => {
   await expect(locator).toBeVisible();
-  const { width, height } = (await locator.boundingBox())!;
+  // Measured where the element is when asked: a list drawn again in between has a new one.
+  const { width, height } = await locator.evaluate((element) => { const rect = element.getBoundingClientRect(); return { width: rect.width, height: rect.height }; });
   return { width: Math.round(width), height: Math.round(height) };
 };
 const menu = (page: Page) => page.locator("#repository-actions");
@@ -63,7 +64,10 @@ async function structureAndCode(page: Page) {
     add: await box(add),
     chip: await box(chip),
     // The pill a person sees: the chip without the clear band round it that takes the finger.
-    chipLook: await chip.evaluate((element) => element.clientHeight),
+    chipLook: await chip.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return Math.round(element.getBoundingClientRect().height - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth));
+    }),
   };
 }
 
@@ -82,8 +86,9 @@ async function historyFiles(page: Page) {
   };
 }
 
-test.describe("phone, 390 px", () => {
-  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+// 390 px is the phone the prototype draws; Lex's own phone is not named, so the narrowest and widest common ones too.
+for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
+  test.use({ viewport: { width, height: 844 }, hasTouch: true });
 
   const big = (sizes: Record<string, { width: number; height: number }>) => {
     for (const [name, size] of Object.entries(sizes)) {

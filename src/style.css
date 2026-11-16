@@ -282,6 +282,18 @@ pre:focus-visible {
 .code-pane__rule--overridden .code-pane__rule-selector {
   text-decoration: line-through;
 }
+/* On a phone (theme.css's --size-tap switch) a chip is 44 px to tap and 28 px to see: a clear band above and below the
+   pill takes the finger, and the title's own padding makes room for it, so the title is one 44 px line. */
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  .code-pane__rules {
+    margin-block: -6px;
+  }
+  .code-pane__rule {
+    padding: 5px 10px;
+    border-block: calc((var(--size-tap) - 28px) / 2) solid transparent;
+    background-clip: padding-box;
+  }
+}
 .code-pane > .workspace-content {
   flex: 1;
 }
