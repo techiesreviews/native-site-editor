@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forgetPages, heldPages, pictureVerdict, siteFile, siteItems, type InboxPage } from "../src/inbox/site-items.ts";
+import { forgetPages, heldPages, pictureVerdict, siteFile, siteItems, type InboxPage, type InboxPart } from "../src/inbox/site-items.ts";
 
 // The edit bar's verdict stands in: an absent alt or an unmarked empty one is not described yet.
 const rules = {
@@ -128,4 +128,84 @@ test("pages no longer listed are let go: a switched site's pages leave memory (T
   // No site open, or another loading: the Inbox lets go of them all (src/inbox/inbox.ts never lists then).
   forgetPages();
   assert.equal(heldPages(), 0);
+});
+
+// ---- TOOLS-253: the four new checks (site-quality ticket 41) ----
+
+const part = (file: string, tag: string, source: string, pages: string[], name = tag): InboxPart => ({ file, tag, name, pages, source });
+
+test("a picture inside a shared part without a description is one item, with the part's name and every page it changes", () => {
+  const header = `<header><img src="/images/logo.svg"><a href="/">Home</a></header>`;
+  const items = siteItems([page("index.html", `${head("Home")}<site-header></site-header></body>`)], rules,
+    [part("components/site-header/site-header.html", "site-header", header, ["index.html", "about/index.html"], "Site header")]);
+  assert.deepEqual(items.map(({ kind, what, where, page, media, wave, shared, fix }) => ({ kind, what, where, page, media, wave, shared, fix })), [
+    { kind: "picture", what: "Picture without a description", where: "Site header", page: "components/site-header/site-header.html", media: "images/logo.svg",
+      wave: "Decorative", fix: "alt", shared: { tag: "site-header", name: "Site header", pages: ["index.html", "about/index.html"] } },
+  ]);
+  assert.equal(items[0].at, header.indexOf("<img"));
+  assert.equal(items[0].found, header);
+});
+
+test("a picture on a page offers Fix with AI for its description", () => {
+  const [item] = siteItems([page("index.html", `${head("Home")}<img src="/images/team.jpg"></body>`)], rules);
+  assert.equal(item.fix, "alt");
+  assert.equal(item.shared, undefined);
+});
+
+test("a link with no name is an item; text, a label, a title or a described picture inside name it", () => {
+  const source = `${head("Home")}<a href="/new/"><svg viewBox="0 0 16 16"><path d="M3 8h10"/></svg></a>`
+    + `<a href="/a/">Bikes</a><a href="/b/" aria-label="Back"></a><a href="/c/" title="Cart"></a><a href="/d/"><img src="/images/x.svg" alt="Shop"></a><a id="top"></a></body>`;
+  const items = siteItems([page("index.html", source)], rules);
+  assert.deepEqual(items.map(({ kind, what, where, fix, at }) => ({ kind, what, where, fix, at })), [
+    { kind: "link", what: "Link without a name", where: "Home page", fix: "name", at: source.indexOf(`<a href="/new/">`) },
+  ]);
+});
+
+test("a link whose words say nothing (click here, read more) is an item that carries its words", () => {
+  const source = `${head("Home")}<p>See <a href="/bikes/">click here</a> and <a href="/blog/"> Read  more </a>, or <a href="/shop/">the shop</a>.</p></body>`;
+  const items = siteItems([page("index.html", source)], rules);
+  assert.deepEqual(items.map(({ kind, what, fix, words, at }) => ({ kind, what, fix, words, at })), [
+    { kind: "link", what: "Link that only says “click here”", fix: "words", words: "click here", at: source.indexOf(`<a href="/bikes/">`) },
+    { kind: "link", what: "Link that only says “Read more”", fix: "words", words: "Read more", at: source.indexOf(`<a href="/blog/">`) },
+  ]);
+  assert.equal(new Set(items.map(item => item.key)).size, 2);
+});
+
+test("a vague link whose words sit inside other markup is listed without Fix with AI (its words are not one text to replace)", () => {
+  const [item] = siteItems([page("index.html", `${head("Home")}<a href="/x/"><span>here</span></a></body>`)], rules);
+  assert.equal(item.kind, "link");
+  assert.equal(item.fix, undefined);
+});
+
+test("a heading that skips a level is an item with today's one-press fix and no Fix with AI", () => {
+  const source = `${head("Home")}<h1>Bikes</h1><h2>Workshop</h2><h4>Opening hours</h4><h2>Shop</h2><h3>Fine</h3></body>`;
+  const items = siteItems([page("index.html", source)], rules);
+  assert.deepEqual(items.map(({ kind, what, where, level, fix, at }) => ({ kind, what, where, level, fix, at })), [
+    { kind: "heading", what: "Heading skips a level", where: "Home page", level: { from: 4, to: 3 }, fix: undefined, at: source.indexOf("<h4>") },
+  ]);
+});
+
+test("a video without subtitles is an item with No speech; one with subtitles, a muted one or one marked no speech is not", () => {
+  const source = `${head("Home")}<video src="/media/fit.mp4" controls></video><video src="/media/b.mp4" controls><track kind="subtitles" src="/media/b.vtt"></video>`
+    + `<video src="/media/c.mp4" controls><track kind="captions" src="/media/c.vtt"></video><video src="/media/loop.mp4" autoplay muted loop></video><video src="/media/d.mp4" controls data-no-speech></video></body>`;
+  const items = siteItems([page("index.html", source)], rules);
+  assert.deepEqual(items.map(({ kind, what, wave, fix, at }) => ({ kind, what, wave, fix, at })), [
+    { kind: "video", what: "Video without subtitles", wave: "No speech", fix: undefined, at: source.indexOf("<video") },
+  ]);
+  assert.equal(items[0].found, source);
+});
+
+test("links and videos in a shared part carry its note too; headings in a part are judged on the page, not in the part", () => {
+  const card = `<article><h4>Title</h4><a href="/more/">read more</a></article>`;
+  const items = siteItems([page("index.html", `${head("Home")}<h2>Cards</h2><project-card></project-card></body>`)], rules,
+    [part("components/project-card/project-card.html", "project-card", card, ["index.html"], "Project card")]);
+  assert.deepEqual(items.map(({ kind, where, shared }) => ({ kind, where, pages: shared?.pages })), [
+    { kind: "link", where: "Project card", pages: ["index.html"] },
+  ]);
+});
+
+test("each new item's key stays the same while its cause does, so a fix's state follows it across checks", () => {
+  const before = siteItems([page("index.html", `${head("Home")}<a href="/x/">click here</a><h2>A</h2><h4>B</h4></body>`)], rules);
+  const after = siteItems([page("index.html", `${head("Home")}<p>New words above.</p><a href="/x/">click here</a><h2>A</h2><h4>B</h4></body>`)], rules);
+  assert.deepEqual(after.map(item => item.key), before.map(item => item.key));
 });

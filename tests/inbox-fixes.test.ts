@@ -1,0 +1,213 @@
+// Fix with AI and Fix all with AI in the Inbox (TOOLS-253): the connected agent suggests, nothing changes until the
+// user accepts (one by one, or Accept all), any suggestion can be edited first, and the words land as the page's own
+// edits. A fake agent stands in for the connected one.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createInboxFixes, fixEdits, type InboxAgent, type InboxFix } from "../src/inbox/inbox-fixes.ts";
+import type { InboxItem } from "../src/inbox/inbox-item.ts";
+
+const page = `<!doctype html><html><head><title>Home</title></head><body><img src="/images/team.jpg"><a href="/new/"><svg></svg></a><p><a href="/bikes/">click here</a></p><h2>A</h2><h4>Opening hours</h4><video src="/m/fit.mp4" controls></video></body></html>`;
+const header = `<header><img src="/images/logo.svg"><a href="/">Home</a></header>`;
+const at = (source: string, needle: string) => source.indexOf(needle);
+
+const picture: InboxItem = { key: "picture\nindex.html\nimages/team.jpg", kind: "picture", what: "Picture without a description", where: "Home page", page: "index.html", at: at(page, "<img"), fix: "alt", found: page };
+const unnamed: InboxItem = { key: "link\nindex.html\n/new/\n0", kind: "link", what: "Link without a name", where: "Home page", page: "index.html", at: at(page, `<a href="/new/">`), fix: "name", found: page };
+const vague: InboxItem = { key: "link\nindex.html\n/bikes/\n0", kind: "link", what: "Link that only says “click here”", where: "Home page", page: "index.html", at: at(page, `<a href="/bikes/">`), fix: "words", words: "click here", found: page };
+const heading: InboxItem = { key: "heading\nindex.html\nOpening hours\n0", kind: "heading", what: "Heading skips a level", where: "Home page", page: "index.html", at: at(page, "<h4>"), level: { from: 4, to: 3 }, found: page };
+const video: InboxItem = { key: "video\nindex.html\n/m/fit.mp4\n0", kind: "video", what: "Video without subtitles", where: "Home page", page: "index.html", at: at(page, "<video"), wave: "No speech", found: page };
+const logo: InboxItem = { key: "picture\ncomponents/site-header/site-header.html\nimages/logo.svg", kind: "picture", what: "Picture without a description", where: "Site header",
+  page: "components/site-header/site-header.html", at: at(header, "<img"), fix: "alt", found: header,
+  shared: { tag: "site-header", name: "Site header", pages: ["index.html", "about/index.html", "shop/index.html"] } };
+
+/** A fake connected agent: it answers each item from `answers` when `release` is called (a missing answer fails). */
+function fakeAgent(answers: Record<string, string | Error>, connected = true) {
+  const asked: InboxItem[] = [];
+  const waiting: (() => void)[] = [];
+  const agent: InboxAgent = {
+    connected: () => connected,
+    suggest(item) {
+      asked.push(item);
+      return new Promise((resolve, reject) => waiting.push(() => {
+        const answer = answers[item.key];
+        if (answer instanceof Error || answer === undefined) reject(answer ?? new Error("No answer"));
+        else resolve(answer);
+      }));
+    },
+  };
+  return { agent, asked, release: async () => { for (const go of waiting.splice(0)) go(); await new Promise(done => setTimeout(done)); } };
+}
+
+function setup(agent: InboxAgent | undefined) {
+  const written: InboxFix[][] = [];
+  let changes = 0;
+  const errors: unknown[] = [];
+  const fixes = createInboxFixes({
+    agent: () => agent,
+    write: async (list) => { written.push(list.map(fix => ({ ...fix }))); },
+    changed: () => { changes++; },
+    error: error => errors.push(error),
+  });
+  return { fixes, written, errors, changes: () => changes };
+}
+
+test("Fix with AI asks the agent, shows Thinking, then the suggestion, and nothing is written until Accept", async () => {
+  const fake = fakeAgent({ [picture.key]: "  “Three riders at the workshop door” \n" });
+  const { fixes, written } = setup(fake.agent);
+  const asking = fixes.suggest(picture);
+  assert.equal(fixes.state(picture.key)?.status, "thinking");
+  assert.deepEqual(fake.asked.map(item => item.key), [picture.key]);
+  await fake.release();
+  await asking;
+  // The agent's words, one line, quotes and spaces trimmed.
+  assert.deepEqual(fixes.state(picture.key), { status: "suggested", draft: "Three riders at the workshop door" });
+  assert.equal(written.length, 0);
+  assert.equal(await fixes.accept(picture), true);
+  assert.deepEqual(written, [[{ item: picture, words: "Three riders at the workshop door" }]]);
+  assert.equal(fixes.state(picture.key)?.status, "accepted");
+});
+
+test("the user edits the suggestion before accepting; empty or still vague words are refused on the row", async () => {
+  const fake = fakeAgent({ [vague.key]: "See the bikes in stock" });
+  const { fixes, written } = setup(fake.agent);
+  const asking = fixes.suggest(vague);
+  await fake.release();
+  await asking;
+  fixes.edit(vague.key, "read more");
+  assert.equal(await fixes.accept(vague), false);
+  assert.equal(fixes.state(vague.key)?.invalid, true);
+  fixes.edit(vague.key, "   ");
+  assert.equal(await fixes.accept(vague), false);
+  fixes.edit(vague.key, "Bikes in stock now");
+  assert.equal(fixes.state(vague.key)?.invalid, undefined);
+  assert.equal(await fixes.accept(vague), true);
+  assert.deepEqual(written, [[{ item: vague, words: "Bikes in stock now" }]]);
+});
+
+test("Not now puts the row back as it was; a failed suggestion says so on the button and can be asked again", async () => {
+  const fake = fakeAgent({ [unnamed.key]: new Error("The agent did not answer.") });
+  const { fixes, errors } = setup(fake.agent);
+  const asking = fixes.suggest(unnamed);
+  await fake.release();
+  await asking;
+  assert.equal(fixes.state(unnamed.key)?.status, "failed");
+  // The failure stays on the row's button, never a toast.
+  assert.deepEqual(errors, []);
+  const again = fakeAgent({ [unnamed.key]: "See all new arrivals" });
+  const second = setup(again.agent);
+  const asked = second.fixes.suggest(unnamed);
+  await again.release();
+  await asked;
+  second.fixes.dismiss(unnamed.key);
+  assert.equal(second.fixes.state(unnamed.key), undefined);
+});
+
+test("with no agent connected nothing is asked and the button says so on itself", async () => {
+  const fake = fakeAgent({}, false);
+  const { fixes } = setup(fake.agent);
+  assert.equal(fixes.connected(), false);
+  await fixes.suggest(picture);
+  assert.equal(fake.asked.length, 0);
+  assert.equal(fixes.state(picture.key), undefined);
+  assert.equal(setup(undefined).fixes.connected(), false);
+});
+
+test("a shared part's suggestion is accepted on every page that shows it, and says so", async () => {
+  const fake = fakeAgent({ [logo.key]: "Fjord Cycles logo" });
+  const { fixes, written } = setup(fake.agent);
+  assert.equal(fixes.acceptLabel(logo), "Accept on 3 pages");
+  assert.equal(fixes.acceptLabel(picture), "Accept");
+  const asking = fixes.suggest(logo);
+  await fake.release();
+  await asking;
+  assert.equal(await fixes.accept(logo), true);
+  assert.deepEqual(written, [[{ item: logo, words: "Fjord Cycles logo" }]]);
+});
+
+test("Fix all with AI asks for every item it can fix at once; headings and videos are left to their own fixes", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders", [unnamed.key]: "See all new arrivals", [logo.key]: "Fjord Cycles logo" });
+  const { fixes } = setup(fake.agent);
+  const items = [picture, unnamed, vague, heading, video, logo];
+  assert.deepEqual(fixes.all(items), { status: "ready", count: 4 });
+  const asking = fixes.suggestAll(items);
+  assert.deepEqual(fake.asked.map(item => item.key), [picture.key, unnamed.key, vague.key, logo.key]);
+  assert.deepEqual(fixes.all(items), { status: "thinking", count: 4 });
+  await fake.release();
+  await asking;
+  // One suggestion failed (no answer for the vague link): its row says so; the others wait for Accept.
+  assert.equal(fixes.state(vague.key)?.status, "failed");
+  // Pages in total: the home page and the header's three (the home page among them) are three pages.
+  assert.deepEqual(fixes.all(items), { status: "suggested", count: 3, pages: 3 });
+  assert.equal(fixes.acceptAllLabel(items), "Accept all on 3 pages");
+});
+
+test("Accept all writes every suggestion, edited ones as edited, as one change; a failed one is left waiting", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders", [unnamed.key]: "See all new arrivals", [logo.key]: "Fjord Cycles logo" });
+  const { fixes, written } = setup(fake.agent);
+  const items = [picture, unnamed, vague, logo];
+  const asking = fixes.suggestAll(items);
+  await fake.release();
+  await asking;
+  fixes.edit(unnamed.key, "All new bikes");
+  assert.equal(await fixes.acceptAll(items), true);
+  assert.deepEqual(written, [[
+    { item: picture, words: "Three riders" },
+    { item: unnamed, words: "All new bikes" },
+    { item: logo, words: "Fjord Cycles logo" },
+  ]]);
+  assert.deepEqual([picture, unnamed, logo].map(item => fixes.state(item.key)?.status), ["accepted", "accepted", "accepted"]);
+  assert.equal(fixes.state(vague.key)?.status, "failed");
+  assert.deepEqual(fixes.all(items), { status: "accepted", count: 3 });
+});
+
+test("Accept all refuses while a row's words are empty, marking that row, and writes nothing", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders", [unnamed.key]: "See all new arrivals" });
+  const { fixes, written } = setup(fake.agent);
+  const items = [picture, unnamed];
+  const asking = fixes.suggestAll(items);
+  await fake.release();
+  await asking;
+  fixes.edit(picture.key, "");
+  assert.equal(await fixes.acceptAll(items), false);
+  assert.equal(fixes.state(picture.key)?.invalid, true);
+  assert.equal(written.length, 0);
+});
+
+test("a refused write puts the rows back to their suggestions and tells why", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders" });
+  const errors: unknown[] = [];
+  const fixes = createInboxFixes({ agent: () => fake.agent, write: async () => { throw new Error("The page changed. Nothing was changed."); }, changed() {}, error: error => errors.push(error) });
+  const asking = fixes.suggest(picture);
+  await fake.release();
+  await asking;
+  assert.equal(await fixes.accept(picture), false);
+  assert.equal(fixes.state(picture.key)?.status, "suggested");
+  assert.equal((errors[0] as Error).message, "The page changed. Nothing was changed.");
+});
+
+test("rows that leave the list forget their suggestion; an answer for a row gone is dropped", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders" });
+  const { fixes } = setup(fake.agent);
+  const asking = fixes.suggest(picture);
+  fixes.keep([]);
+  await fake.release();
+  await asking;
+  assert.equal(fixes.state(picture.key), undefined);
+});
+
+test("the words land as the page's own markup: a description, a link's name, a link's words, a heading's level, No speech", () => {
+  const apply = (source: string, edits: { start: number; end: number; text: string }[]) =>
+    [...edits].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+  const plan = (item: InboxItem, words: string, source = page) => {
+    const result = fixEdits(item, words, source);
+    assert.ok(!("refuse" in result), JSON.stringify(result));
+    return apply(source, result);
+  };
+  assert.match(plan(picture, `Riders & "friends"`), /<img src="\/images\/team\.jpg" alt="Riders &amp; &quot;friends&quot;">/);
+  assert.match(plan(unnamed, "See all new arrivals"), /<a href="\/new\/" aria-label="See all new arrivals"><svg><\/svg><\/a>/);
+  assert.match(plan(vague, "Bikes <in> stock"), /<a href="\/bikes\/">Bikes &lt;in&gt; stock<\/a>/);
+  assert.match(plan(heading, "3"), /<h3>Opening hours<\/h3>/);
+  assert.match(plan(video, ""), /<video src="\/m\/fit\.mp4" controls data-no-speech=""><\/video>/);
+  assert.match(plan(logo, "Fjord Cycles logo", header), /<img src="\/images\/logo\.svg" alt="Fjord Cycles logo">/);
+  // The element is no longer where the row found it: nothing is planned.
+  assert.ok("refuse" in fixEdits(picture, "x", page.replace("<img", "<p")));
+});
