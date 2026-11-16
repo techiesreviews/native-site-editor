@@ -191,7 +191,7 @@
     right: 0;
   }
   .commit-history__view {
-    padding-right: 48px;
+    padding-right: calc(var(--size-tap) + var(--space-3xs));
   }
 }
 .commit-history__subject {
