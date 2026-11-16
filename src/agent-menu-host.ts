@@ -20,6 +20,7 @@ import { withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
 import type { createSetupHost } from "./setup-host";
 import { workingPart } from "./working-part";
+import { tellReplies } from "./agent-replies";
 import type { createWorkspaceMount } from "./workspace-mount";
 import type { createAgentPresence } from "./agent-presence";
 
@@ -121,6 +122,8 @@ export function agentMenuOptions(ports: AgentMenuPorts, agentCommands: Pick<Retu
     onRequests: (requests) => {
       agentPresence.questions(requests);
       pinRequests(requests);
+      // The Inbox's Fix with AI waits for its requests' replies (TOOLS-253).
+      tellReplies(requests);
     },
     onQuestions: (count) => workspace.repositoryMenu?.setQuestions(count),
     // An agent's own question (ask_user, ticket am-15): pinned on an element of a page, the one shown when it names none.
