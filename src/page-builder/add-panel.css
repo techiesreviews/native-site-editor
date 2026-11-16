@@ -365,5 +365,6 @@
 
 .structure-add { margin: 0; min-height: max(30px, var(--size-tap)); padding: 0 8px; font-size: var(--type-small); }
 @media (hover: none), (pointer: coarse), (width <= 768px) {
-  .structure-add { padding: 0 calc(var(--space-s) + var(--space-4xs)) 0 var(--space-s); font-size: var(--type-base); }
+  /* 44 px to tap; it reaches into its heading's 4 px padding, so the heading stays one 44 px line. */
+  .structure-add { margin-block: calc(-1 * var(--space-3xs)); padding: 0 calc(var(--space-s) + var(--space-4xs)) 0 var(--space-s); font-size: var(--type-base); }
 }
