@@ -133,3 +133,12 @@ test("a keep still opening the storage when another tab signs out writes nothing
     else Reflect.deleteProperty(globalThis, "indexedDB");
   }
 });
+
+test("a kept time from the future counts as now; one that is not a time counts as none", () => {
+  const future = asWarmCopy({ ...copy(), at: Date.now() + 3_600_000 });
+  assert.ok(future?.at !== undefined && future.at <= Date.now());
+  // A damaged record, as storage may hold one: its time is a word.
+  const damaged: Partial<WarmCopy> = JSON.parse(JSON.stringify({ ...copy(), at: "soon" }));
+  assert.equal(asWarmCopy(damaged)?.at, undefined);
+  assert.equal(asWarmCopy({ ...copy(), at: 1234 })?.at, 1234);
+});

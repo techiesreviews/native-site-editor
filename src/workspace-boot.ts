@@ -32,7 +32,7 @@ type Picker = { disabled: boolean; value: string };
 
 export interface WorkspaceBootPorts {
   appStore: AppStore;
-  savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted" | "checkHead" | "headSettled">;
+  savePublish: Pick<ReturnType<typeof createSavePublishController>, "trustedHead" | "seeHead" | "resetDeleted" | "checkDeleted" | "isDeleted" | "checkHead" | "headSettled" | "headSeen">;
   repositoryIndex: Pick<RepositoryIndex, "clear" | "seed" | "entry">;
   cleanSources: Pick<CleanSourceCache, "load" | "peek">;
   filesTreeController: { reset(): void; render(): void };
@@ -337,8 +337,16 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       // Taken over by a newer check (a push notice, a save): its outcome stands; once no check is under way, this
       // one asks again, cancelling none (twice in a row at most, then on the next look).
       if (commit === null) {
-        if (takenOver >= 2) onNextWake(() => { if (at.holds()) checkKept(at, branch); });
-        else void savePublish.headSettled().then(() => { if (at.holds()) checkKept(at, branch, takenOver + 1); });
+        void savePublish.headSettled().then(() => {
+          if (!at.holds()) return;
+          if (takenOver < 2) { checkKept(at, branch, takenOver + 1); return; }
+          // Taken over a third time: no answer of its own, said as such; asked again on the next look.
+          if (typeof document !== "undefined" && document.visibilityState === "visible") {
+            keptSaid = { at, text: `Could not check GitHub for newer changes on ${branch}. Refresh to check.` };
+            ports.settleStatus(keptSaid.text);
+          }
+          onNextWake(() => { if (at.holds()) checkKept(at, branch); });
+        });
         return;
       }
       if (!commit) {
@@ -394,7 +402,9 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     const signature = `${repo.id} ${branch} ${snapshot.commit} ${files.length} ${length}`;
     if (signature === kept && !force) return;
     kept = signature;
-    void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files, at: Date.now() });
+    // When this tab learned the snapshot's commit as the head, when it did: never later than that.
+    const seen = savePublish.headSeen();
+    void writeWarmCopy({ login, source: ports.source(), repo, branch, snapshot, files, ...(seen?.commit === snapshot.commit ? { at: seen.at } : {}) });
   }
   // The site as it shows now, once painted (`wait`: after the paint under way, once): a save or an outside change
   // folded in since its first paint.

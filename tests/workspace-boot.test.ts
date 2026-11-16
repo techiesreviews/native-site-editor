@@ -78,7 +78,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
     appStore: createAppStore(createDraftStore()),
     savePublish: { trustedHead: () => heads.at(-1), seeHead: (commit: string) => { heads.push(commit); }, resetDeleted: () => {}, checkDeleted: async () => {}, isDeleted: () => false,
       checkHead: (force?: boolean) => { headChecks.push(Boolean(force)); return headAnswers.length > 1 ? headAnswers.shift()! : headAnswers[0]; },
-      headSettled: () => settled() },
+      headSettled: () => settled(), headSeen: () => undefined as { commit: string; at: number } | undefined },
     repositoryIndex: new RepositoryIndex(),
     cleanSources: {
       load: (_repo: string, revision: string, readText: () => Promise<string>) => {
@@ -844,6 +844,7 @@ test("a head check taken over by a newer one asks again once that one settled, c
   await g.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
   await flush();
   assert.equal(g.headChecks.length, 3, "taken over three times: no more until the tab is next shown");
+  assert.equal(g.shown.status, "Could not check GitHub for newer changes on main. Refresh to check.", "and it says so");
 }));
 
 test("a head check taken over by a newer one that settled without the head shown asks again once it is done", () => withDocument(async () => {
@@ -871,3 +872,25 @@ test("a recently kept copy's head is trusted as of when it was kept, so a laggin
   await flush();
   assert.deepEqual(heads[0], [sha(9), 1234]);
 });
+
+test("the copy keeps when this tab learned its head, never when it was written; none when the head learned is another", () => withDocument(async (page) => {
+  const savedFactory = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+  const { factory } = fakeIndexedDB();
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
+  try {
+    for (const [seen, keptAt] of [[{ commit: sha(9), at: 1000 }, 1000], [{ commit: sha(8), at: 1000 }, undefined], [undefined, undefined]] as const) {
+      const f = fixture({ remember: false, native: true });
+      f.ports.savePublish.headSeen = () => seen;
+      await f.boot.chooseRepository({ repoId: 501, branch: "main" }, kept());
+      await flush();
+      page.visibilityState = "hidden";
+      page.dispatchEvent(new Event("visibilitychange"));
+      await flush();
+      assert.equal((await readWarmCopy(factory))?.at, keptAt, JSON.stringify(seen));
+      page.visibilityState = "visible";
+    }
+  } finally {
+    if (savedFactory) Object.defineProperty(globalThis, "indexedDB", savedFactory);
+    else Reflect.deleteProperty(globalThis, "indexedDB");
+  }
+}));
