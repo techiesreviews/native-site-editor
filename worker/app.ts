@@ -26,7 +26,7 @@ import {
   resourceMetadataUrl,
   type OAuthRecord,
 } from "./oauth";
-import { MAX_PUBLISH_REQUEST_BYTES, publish } from "./publish";
+import { publish } from "./publish";
 import { requestBytes, uploadBlob } from "./blobs";
 import { commitFiles, fileAtRevision, history, restore } from "./history";
 import { changeStatus } from "./change-status";
@@ -36,6 +36,7 @@ import { StartingPointError, commitStartingPoint, startingPointFiles, startingSi
 import { GitHub, HttpError, type RepositoryCache } from "./github";
 import { SIGNED_OUT, isDailyQuotaError, nextUtcMidnight, type AgentQuotaBody } from "../shared/agent-failure";
 import { SIGN_IN_ERRORS, signInErrorCode } from "../shared/sign-in-error";
+import { EditorUpdatedError, MethodNotAllowedError, bodyLimit, guard, type Rule } from "./routes";
 
 /** The editor session ended; the answer carries a code so the browser asks to sign in again. */
 class SignedOutError extends HttpError {
@@ -385,13 +386,14 @@ export async function handle(
           {
             error: message,
             ...(quota ? { error: message, code: "daily-quota", resetAt: nextUtcMidnight(Date.now()) } satisfies AgentQuotaBody : {}),
-            ...(error instanceof SignedOutError ? { code: error.code } : {}),
+            ...(error instanceof SignedOutError || error instanceof EditorUpdatedError ? { code: error.code } : {}),
             ...(error instanceof HttpError && error.conflicts
               ? { conflicts: error.conflicts, gone: error.gone ?? [] }
               : {}),
           },
           status,
         );
+    if (error instanceof MethodNotAllowedError) response.headers.set("Allow", error.allow);
   }
   // Preserve the runtime's WebSocket endpoint on a successful upgrade.
   if (response.status === 101) return response;
@@ -415,31 +417,22 @@ export async function handle(
   return secured;
 }
 
-// Ticket 07 rollback: stale tabs still cost Worker requests until reloaded, never DO work.
-const OBSOLETE_AGENT_ROUTES = new Set([
-  "/api/agent/hub", "/api/agent/context", "/api/agent/drafts", "/api/agent/claim",
-  "/api/agent/ack", "/api/agent/pause", "/api/agent/ask", "/api/agent/answer", "/api/agent/dismiss",
-]);
-
 /** The live room access check (ADR 0003): editor sign-in to a repository the GitHub connection
  * lists, or an agent connection pinned to this repository and branch. Encryption keeps strangers
  * from reading edits; this keeps them from joining at all. A synced session's guests come in by its own route
- * (`/api/live/guest`, slice 30) into that session's room only.
- * A plain request (no upgrade) gets the same answer, so a tab can tell "refused" from "network" (426 when allowed). */
-async function liveRoomAccess(request: Request, env: Env, url: URL, fetcher: typeof fetch, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess; agent?: LiveAgent }> {
-  if (request.headers.has("Authorization")) {
-    if (!agentControls(env).relay) throw new HttpError(403, AGENTS_PAUSED);
-    const connection = await authenticateAgent(request, env, fetcher);
+ * (`/api/live/guest`, slice 30) into that session's room only. The route table's guard already refused another
+ * site's upgrade and checked the sign-in (`who`). A plain request (no upgrade) gets the same answer, so a tab can tell
+ * "refused" from "network" (426 when allowed). */
+async function liveRoomAccess(env: Env, fetcher: typeof fetch, who: SignedIn, fullName: string, branch: string): Promise<{ repoId: number; access: LiveAccess; agent?: LiveAgent }> {
+  const connection = who.agent;
+  if (connection) {
     // GitHub names are case-insensitive; the repository id is the identity (authenticateAgent checked it).
     if (connection.workspace.repo.toLowerCase() !== fullName.toLowerCase() || connection.workspace.branch !== branch)
       throw new HttpError(403, "This agent connection is for another repository or branch.");
     const { repoId } = connection.workspace;
     return { repoId, access: "agent", agent: { id: connection.id, sessionId: connection.grant.sessionId, generation: connection.grant.generation, repoId, branch } };
   }
-  // Only a socket can carry the room's traffic to another site's page: plain requests learn a status, nothing more.
-  if (request.headers.has("Upgrade") && request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
-  const user = await session(request, env);
-  if (!user) throw new SignedOutError(401, "Connect GitHub to join a live room.");
+  const user = who.user as Session;
   const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, fullName);
   return { repoId: repo.id, access: "editor" };
 }
@@ -475,14 +468,13 @@ async function liveSessionKeys(env: Env) {
  * the token alone (`/api/live/visit`), through the preview Worker's service binding, so their pages never reach this
  * origin. A plain visit request learns whether the preview runs (204), not now (409), or is over (410). Turning it off
  * (POST `/api/live/preview/off`, with the proof) closes every socket and refuses the link until it would have ended.
+ * `user`: the signed-in editor, on the routes whose rule asks for one (never a visit).
  */
-async function previewRoute(request: Request, env: Env, url: URL, fetcher: typeof fetch): Promise<Response> {
+async function previewRoute(request: Request, env: Env, url: URL, fetcher: typeof fetch, user: Session): Promise<Response> {
   const keys = await liveSessionKeys(env), address = previewOrigin(env);
   const path = url.pathname;
   if (path === "/api/live/preview" && request.method === "POST") {
-    const user = await session(request, env);
-    if (!user) throw new SignedOutError(401, "Connect GitHub to share a preview.");
-    const data = await requestJson(request, 4096);
+    const data = await requestJson(request, bodyLimit(request));
     if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a repository and branch.");
     const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, String(data?.repo ?? ""));
     if (!keys || !address) throw new HttpError(503, "Preview links are not set up on this editor.");
@@ -501,27 +493,22 @@ async function previewRoute(request: Request, env: Env, url: URL, fetcher: typeo
   if (previewTokenEnds(token) <= Date.now()) throw new HttpError(410, "This preview link has ended.");
   const nonce = token.slice(0, 32), ends = previewTokenEnds(token);
   const store = env.SESSIONS.get(env.SESSIONS.idFromName(await livePreviewObjectName(nonce)));
-  // Lex's own calls: signed in, from this editor, with access to the repository and the proof the share call gave his tab.
+  // Lex's own calls: signed in, from this editor (the route table's guard checked both), with access to the repository
+  // and the proof the share call gave his tab.
   const owner = async (repoName: string, proof: string) => {
-    const user = await session(request, env);
-    if (!user) throw new SignedOutError(401, "Connect GitHub to share a preview.");
     const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, repoName);
     if (!PREVIEW_HOST.test(proof) || !sameHex(proof, await keys.previewHost(nonce, user.login, repo.id))) throw new HttpError(403, "This preview link is someone else's.");
   };
   if (path === "/api/live/preview/off") {
-    if (request.method !== "POST") throw new HttpError(405, "Use POST.");
-    const data = await requestJson(request, 4096);
+    const data = await requestJson(request, bodyLimit(request));
     await owner(String(data?.repo ?? ""), String(data?.host ?? ""));
     const done = await store.fetch(new Request("https://session.internal/live/preview-off", { method: "POST", headers: { [LiveRooms.identityHeader]: JSON.stringify({ ends }) } }));
     if (!done.ok) throw new HttpError(502, "The preview link could not be turned off.");
     return new Response(null, { status: 204 });
   }
-  if (request.method !== "GET") throw new HttpError(405, "Use GET.");
+  // Only a socket carries the room's traffic: the guard refused another site's upgrade. Visitors come through the
+  // preview Worker, whose forwarded requests carry no Origin, or from a page on its address; serving, from the editor.
   const hosting = path === "/api/live/preview";
-  // Only a socket carries the room's traffic: a page of another site learns a status, nothing more. Visitors come
-  // through the preview Worker, whose forwarded requests carry no Origin; a browser may come only from that Worker's address.
-  const from = request.headers.get("Origin");
-  if (request.headers.has("Upgrade") && from !== null && from !== (hosting ? url.origin : address)) throw new HttpError(403, "Invalid request origin.");
   if (hosting) {
     if (["repo", "host"].some(key => url.searchParams.getAll(key).length !== 1)) throw new HttpError(400, "Choose a repository.");
     await owner(url.searchParams.get("repo") ?? "", url.searchParams.get("host") ?? "");
@@ -550,6 +537,27 @@ export async function liveAgentAllowed(env: Env, agent: LiveAgent): Promise<bool
     listed.generation === agent.generation && listed.createdAt + AGENT_PERMISSION_LIFETIME > Date.now();
 }
 
+type AgentConnection = Awaited<ReturnType<typeof authenticateAgent>>;
+interface SignedIn {
+  user?: Session;
+  agent?: AgentConnection;
+}
+/**
+ * Who the route's rule (worker/routes.ts) says must be signed in, checked right after the guard and before the
+ * handler: the editor's session, or an agent connection (an editor-or-agent route takes one when the request carries
+ * it). A route whose rule asks for the editor's sign-in always has `user`.
+ */
+async function signIn(request: Request, env: Env, fetcher: typeof fetch, rule: Rule): Promise<SignedIn> {
+  if (rule.signIn === "agent" || (rule.signIn === "editor-or-agent" && request.headers.has("Authorization"))) {
+    if (!agentControls(env).relay) throw new HttpError(403, AGENTS_PAUSED);
+    return { agent: await authenticateAgent(request, env, fetcher) };
+  }
+  if (rule.signIn !== "editor" && rule.signIn !== "editor-or-agent") return {};
+  const user = await session(request, env);
+  if (!user) throw new SignedOutError(401, rule.signedOut ?? "Connect GitHub to continue.");
+  return { user };
+}
+
 async function route(
   request: Request,
   env: Env,
@@ -558,14 +566,14 @@ async function route(
   ctx?: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<Response> {
   const path = url.pathname;
-  if (OBSOLETE_AGENT_ROUTES.has(path)) return Response.json({
-    error: "This editor was updated. Reload this tab to keep using agents.", code: "editor-updated",
-  }, { status: 410, headers: { "Cache-Control": "no-store" } });
+  // The door: the route table (worker/routes.ts) lists every route with its methods, where a browser request may
+  // come from and its body limit, and refuses anything else before any work. The editor's static files pass.
+  const admitted = guard(request, url, { editor: () => editorOrigin(env, url.origin), preview: () => previewOrigin(env) });
+  if (!admitted) return env.ASSETS.fetch(request);
   if (!agentControls(env).relay) {
     if (path === "/mcp") {
       const { pausedMcp } = await import("./mcp");
-      const body = request.method === "POST" ? await requestJson(request, 3 * 1024 * 1024) : undefined;
-      return pausedMcp(body);
+      return pausedMcp(await requestJson(request, bodyLimit(request)));
     }
     if (["/api/agent/relay", "/api/agent/connect", "/api/agent/rebind", "/api/agent/connections"].includes(path))
       return agentsPaused();
@@ -580,14 +588,10 @@ async function route(
       html,
       fetcher,
     });
-  // Every changing request of the editor's own pages comes from its own address: one guard for all of them, so a new
-  // route cannot forget it. GitHub's deliveries and the agents' sign-in, above, carry no editor Origin.
-  if ((path.startsWith("/api/") || path.startsWith("/auth/")) && request.method !== "GET" && request.method !== "HEAD" &&
-    request.headers.get("Origin") !== url.origin)
-    throw new HttpError(403, "Invalid request origin.");
+  const who = await signIn(request, env, fetcher, admitted.rule);
+  // The signed-in editor, on the routes whose rule asks for one: signIn refused the request without it.
+  const user = who.user as Session;
   if (path === "/auth/logout") {
-    if (request.method !== "POST")
-      throw new HttpError(405, "Use POST to disconnect.");
     // Signing out of one account moves to the next one still signed in.
     const id = cookie(request, "session");
     if (id) await endSessionGrants(env, id, () => store(env, id, "DELETE"));
@@ -614,9 +618,7 @@ async function route(
       : new Response(null, { status: 204, headers });
   }
   if (path === "/api/accounts/switch") {
-    if (request.method !== "POST")
-      throw new HttpError(405, "Use POST to switch accounts.");
-    const data = await requestJson(request, 1024);
+    const data = await requestJson(request, bodyLimit(request));
     const login = typeof data?.login === "string" ? data.login.toLowerCase() : "";
     for (const id of accountIds(request)) {
       const user = await loadSession(env, id);
@@ -630,29 +632,7 @@ async function route(
     }
     throw new HttpError(404, "That account's sign-in ended. Add it again.");
   }
-  if (
-    (path.startsWith("/api/") || path.startsWith("/auth/")) &&
-    request.method !== "GET" &&
-    !(
-      (path === "/api/publish" ||
-        path === "/api/blob" ||
-        path === "/api/restore" ||
-        path === "/api/repositories" ||
-        path === "/auth/setup/unlock" ||
-        path === "/api/accounts/switch" ||
-        path === "/api/live/share" ||
-        path === "/api/live/preview" ||
-        path === "/api/live/preview/off" ||
-        path.startsWith("/api/publish/") ||
-        path.startsWith("/api/agent/")) &&
-      request.method === "POST"
-    )
-  )
-    throw new HttpError(405, "Method not allowed.");
-
   if (path.startsWith("/auth/setup")) {
-    if (url.origin !== editorOrigin(env, url.origin))
-      throw new HttpError(403, "Owner setup uses the editor's own address (EDITOR_ORIGIN).");
     if (!hasOwnerSetup(env) && path !== "/auth/setup.js")
       throw new HttpError(404, "Owner setup is not enabled.");
     if (path === "/auth/setup.js")
@@ -745,20 +725,12 @@ async function route(
       // Straight on to installing the App, which also signs the owner in.
       return redirect(owner ? "/auth/install" : "/auth/setup", [setCookie(url, "setup", "", 0)]);
     }
-    throw new HttpError(404, "Owner setup endpoint not found.");
   }
 
   if (path === "/mcp") {
-    if (
-      request.headers.has("Origin") &&
-      request.headers.get("Origin") !== url.origin
-    )
-      throw new HttpError(403, "Invalid request origin.");
-    const connection = await authenticateAgent(request, env, fetcher);
-    if (request.method !== "POST")
-      return new Response(null, { status: 405, headers: { Allow: "POST" } });
+    const connection = who.agent as AgentConnection;
     // A write carries a whole file (up to AGENT_TEXT_LIMIT), escaped as JSON.
-    const body = await requestJson(request, 3 * 1024 * 1024);
+    const body = await requestJson(request, bodyLimit(request));
     // The first request of a connection marks it used; an MCP client names
     // itself in `initialize`.
     await markGrantUsed(
@@ -777,16 +749,9 @@ async function route(
     return handleMcp(request, connection, env, body, ctx);
   }
   if (path === "/api/agent/relay") {
-    // Cheap refusals happen before even the sign-in DO is read.
-    if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
-      throw new HttpError(400, "Use a WebSocket upgrade.");
-    if (request.headers.get("Origin") !== url.origin)
-      throw new HttpError(403, "Invalid request origin.");
     const branch = url.searchParams.get("branch");
     if (["repo", "branch", "tabId", "generation"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch))
       throw new HttpError(400, "Choose a repository and branch.");
-    const user = await session(request, env);
-    if (!user) throw new SignedOutError(401, "Connect GitHub to use agent context.");
     const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, url.searchParams.get("repo") ?? "");
     const scope = AgentRelay.readScope({ workspace: { account: user.login, repoId: repo.id, branch }, tabId: url.searchParams.get("tabId"), generation: Number(url.searchParams.get("generation")) });
     if (!scope) throw new HttpError(400, "Choose an editor tab and owner generation.");
@@ -797,12 +762,11 @@ async function route(
     );
   }
   if (path === "/api/live/room") {
-    if (request.method !== "GET") throw new HttpError(405, "Use GET.");
     const branch = url.searchParams.get("branch"), file = url.searchParams.get("file"), rejoin = url.searchParams.get("rejoin");
     if (["repo", "branch", "file"].some(key => url.searchParams.getAll(key).length !== 1) || url.searchParams.getAll("rejoin").length > 1 ||
       !validAgentBranch(branch) || !liveRoomFile(file) || (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)))
       throw new HttpError(400, "Choose a repository, branch and file.");
-    const { repoId, access, agent } = await liveRoomAccess(request, env, url, fetcher, url.searchParams.get("repo") ?? "", branch);
+    const { repoId, access, agent } = await liveRoomAccess(env, fetcher, who, url.searchParams.get("repo") ?? "", branch);
     // Allowed in: a plain request learns only that (426), apart from the final 400, 401 and 403 above.
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") throw new HttpError(426, "Use a WebSocket upgrade.");
     // Fresh headers: no cookie or bearer credential crosses into the room.
@@ -816,33 +780,26 @@ async function route(
   // tab holds the room open with both; a guest joins with the link's token alone. A made-up token is refused here,
   // before any relay instance wakes. Each session has its own instance and room, named from the token, so a link never
   // reaches a site's file rooms. The room key stays after `#` in the link: neither route sees it.
-  if (path === "/api/live/preview" || path === "/api/live/preview/off" || path === "/api/live/visit") return previewRoute(request, env, url, fetcher);
+  if (path === "/api/live/preview" || path === "/api/live/preview/off" || path === "/api/live/visit") return previewRoute(request, env, url, fetcher, user);
   if (path === "/api/live/share" || path === "/api/live/guest") {
     const sharing = path === "/api/live/share";
     const keys = await liveSessionKeys(env);
     if (sharing && request.method === "POST") {
-      const user = await session(request, env);
-      if (!user) throw new SignedOutError(401, "Connect GitHub to share this site.");
-      const data = await requestJson(request, 4096);
+      const data = await requestJson(request, bodyLimit(request));
       if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a repository and branch.");
       const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, String(data?.repo ?? ""));
       if (!keys) throw new HttpError(503, "This editor is not set up yet.");
       const nonce = hexOf(crypto.getRandomValues(new Uint8Array(16)));
       return json({ session: nonce + await keys.guest(nonce), host: await keys.host(nonce, user.login, repo.id) });
     }
-    if (request.method !== "GET") throw new HttpError(405, "Use GET.");
     const token = url.searchParams.get("session") ?? "", rejoin = url.searchParams.get("rejoin");
     if (url.searchParams.getAll("session").length !== 1 || !LIVE_SESSION_TOKEN.test(token) || url.searchParams.getAll("rejoin").length > 1 ||
       (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)) || !keys || !sameHex(token.slice(32), await keys.guest(token.slice(0, 32))))
       throw new HttpError(400, "This edit link is not valid.");
-    // Only a socket carries the room's traffic: another site's page learns a status, nothing more.
-    if (request.headers.has("Upgrade") && request.headers.get("Origin") !== url.origin) throw new HttpError(403, "Invalid request origin.");
     if (sharing) {
       const branch = url.searchParams.get("branch"), host = url.searchParams.get("host") ?? "";
       if (["repo", "branch", "host"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch) || !LIVE_SESSION_HOST.test(host))
         throw new HttpError(400, "Choose a repository and branch.");
-      const user = await session(request, env);
-      if (!user) throw new SignedOutError(401, "Connect GitHub to share this site.");
       const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, url.searchParams.get("repo") ?? "");
       // Only the tab that started the session holds it: another sign-in with the link stays a guest at most.
       if (!sameHex(host, await keys.host(token.slice(0, 32), user.login, repo.id))) throw new HttpError(403, "This session is someone else's.");
@@ -861,11 +818,9 @@ async function route(
     return store.fetch(new Request("https://session.internal/live/join", { headers: { Upgrade: "websocket", ...headers } }));
   }
   if (path.startsWith("/api/agent/")) {
-    const user = await session(request, env);
-    if (!user) throw new SignedOutError(401, "Connect GitHub to use agent context.");
     const sessionId = cookie(request, "session")!;
-    if ((path === "/api/agent/connect" || path === "/api/agent/rebind") && request.method === "POST") {
-      const data = await requestJson(request, 4096);
+    if (path === "/api/agent/connect" || path === "/api/agent/rebind") {
+      const data = await requestJson(request, bodyLimit(request));
       if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a valid branch.");
       const previous = path === "/api/agent/rebind" ? await getGrant(env, String(data?.id ?? "")) : undefined;
       if (previous && (previous.sessionId !== sessionId || previous.login !== user.login))
@@ -897,14 +852,14 @@ async function route(
       });
     }
     // Explicit connection checks only; old bundles' polling uses the obsolete /hub route.
-    if (path === "/api/agent/connections" && request.method === "GET") {
+    if (path === "/api/agent/connections") {
       const hub = await getHub(env, sessionId);
       // A permission past its 8 hours is gone even while the sign-in lasts: the tab forgets its site.
       const grants = (hub?.grants ?? []).filter(grant => grant.createdAt + AGENT_PERMISSION_LIFETIME > Date.now());
       return json({ grants, controls: { watch: agentControls(env).watch } });
     }
-    if (path === "/api/agent/revoke" && request.method === "POST") {
-      const data = await requestJson(request, 4096);
+    if (path === "/api/agent/revoke") {
+      const data = await requestJson(request, bodyLimit(request));
       const ids: string[] = data?.all
         ? ((await getHub(env, sessionId))?.grants ?? [])
             .filter((grant) => (data.repoId === undefined || grant.repoId === data.repoId) && (data.branch === undefined || grant.branch === data.branch))
@@ -922,7 +877,6 @@ async function route(
       }
       return json({ ok: true, revoked: ids.length });
     }
-    throw new HttpError(404, "Agent endpoint not found.");
   }
   if (path === "/auth/login") {
     const app = await config(env);
@@ -1120,14 +1074,9 @@ async function route(
     }, { headers: request.method === "GET" ? await bootSessionHeaders(user) : undefined });
   }
   if (path === "/api/publish") {
-    if (request.method !== "POST")
-      throw new HttpError(405, "Use POST to publish.");
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
       throw new HttpError(415, "Send a JSON publish request.");
-    const user = await session(request, env);
-    if (!user)
-      throw new HttpError(401, "Connect GitHub to publish your changes.");
-    const data = await requestJson(request, MAX_PUBLISH_REQUEST_BYTES);
+    const data = await requestJson(request, bodyLimit(request));
     const github = sessionGitHub(user, env, fetcher);
     const repo = await github.authorizeRepository(
       user.login,
@@ -1137,35 +1086,26 @@ async function route(
   }
   if (path.startsWith("/api/publish/")) {
     // Publish to a host (worker/hosts.ts): Pages, Cloudflare and Spacefast pipelines.
-    const user = await session(request, env);
-    if (!user) throw new HttpError(401, "Connect GitHub to publish your site.");
     return json(
       await publishHosts(request, url, sessionGitHub(user, env, fetcher), user.login, fetcher, readAuthorizationMaxAge),
     );
   }
-  if (path === "/api/blob" && request.method !== "GET" && request.method !== "HEAD") {
+  if (path === "/api/blob" && request.method === "POST") {
     // An uploaded file's bytes, made a blob for the publish that follows.
     if (request.headers.get("Content-Type") !== "application/octet-stream")
       throw new HttpError(415, "Send the file's bytes.");
-    const user = await session(request, env);
-    if (!user)
-      throw new HttpError(401, "Connect GitHub to publish your changes.");
     const github = sessionGitHub(user, env, fetcher);
     const repo = await github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
     );
-    const bytes = await requestBytes(request);
+    const bytes = await requestBytes(request, bodyLimit(request));
     return json(await uploadBlob(github, repo, bytes, url.searchParams.get("sha") ?? undefined));
   }
   if (path === "/api/restore") {
-    if (request.method !== "POST")
-      throw new HttpError(405, "Use POST to restore.");
     if (!request.headers.get("Content-Type")?.startsWith("application/json"))
       throw new HttpError(415, "Send a JSON restore request.");
-    const user = await session(request, env);
-    if (!user) throw new HttpError(401, "Connect GitHub to restore this file.");
-    const data = await requestJson(request, 4096);
+    const data = await requestJson(request, bodyLimit(request));
     const github = sessionGitHub(user, env, fetcher);
     const repo = await github.authorizeRepository(
       user.login,
@@ -1174,13 +1114,10 @@ async function route(
     return json(await restore(github, repo, data));
   }
   if (path.startsWith("/api/")) {
-    const user = await session(request, env);
-    if (!user)
-      throw new HttpError(401, "Connect GitHub to browse your repositories.");
     const github = sessionGitHub(user, env, fetcher);
     // Get started: a new, empty repository on the signed-in account.
     if (path === "/api/repositories" && request.method === "POST") {
-      const data = await requestJson(request, 4096);
+      const data = await requestJson(request, bodyLimit(request));
       const point = data?.startingPoint === "starter" || data?.startingPoint === "blank" ? data.startingPoint : undefined;
       if (data?.startingPoint !== undefined && !point) throw new HttpError(400, "Choose the Starter site or a blank page.");
       const repository = await github.createRepository(user.login, {
@@ -1232,22 +1169,6 @@ async function route(
       const name = (url.searchParams.get("name") ?? "").trim().slice(0, 100);
       return json({ files: await starterProvider(env, fetcher)(name || "My site") });
     }
-    if (
-      ![
-        "/api/branches",
-        "/api/snapshot",
-        "/api/head",
-        "/api/tree",
-        "/api/file",
-        "/api/files",
-        "/api/blob",
-        "/api/history",
-        "/api/file-at",
-        "/api/commit",
-        "/api/change-status",
-      ].includes(path)
-    )
-      throw new HttpError(404, "Endpoint not found.");
     const repo = await timed(request, "auth", github.authorizeRepository(
       user.login,
       url.searchParams.get("repo") ?? "",
@@ -1303,11 +1224,10 @@ async function route(
           (url.searchParams.get("shas") ?? "").split(",").filter(Boolean),
         ),
       }, { headers: await bootSessionHeaders(user) });
-    return json({
-      content: await github.file(repo, url.searchParams.get("sha") ?? ""),
-    });
+    if (path === "/api/file")
+      return json({
+        content: await github.file(repo, url.searchParams.get("sha") ?? ""),
+      });
   }
-  if (path.startsWith("/auth/"))
-    throw new HttpError(404, "Unknown sign-in action.");
-  return env.ASSETS.fetch(request);
+  throw new HttpError(501, `${path} is listed in worker/routes.ts without a handler.`);
 }

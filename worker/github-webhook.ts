@@ -9,13 +9,12 @@ import { LiveRooms, liveRoomObjectName } from "./agent-relay";
 import { validAgentBranch } from "./agent-context";
 import { HttpError } from "./github";
 import { readBoundedBytes } from "./http";
+import { bodyLimit } from "./routes";
 import { configuredApp } from "./owner-setup";
 import type { Env } from "./app";
 
 /** Where the App's webhook points: the editor's own origin (README, "Push notices for an existing App"). */
 export const GITHUB_WEBHOOK_PATH = "/api/github/webhook";
-/** GitHub caps a delivery's payload at 25 MB. */
-const DELIVERY_LIMIT = 25 * 1024 * 1024;
 const COMMIT = /^[a-f\d]{40}$/;
 const NO_COMMIT = "0".repeat(40);
 
@@ -53,10 +52,9 @@ export function readPush(payload: unknown): { repoId: number; branch: string; co
  * told of the push. A replayed signed delivery only has those tabs check the branch head again.
  */
 export async function githubWebhook(request: Request, env: Env): Promise<Response> {
-  if (request.method !== "POST") throw new HttpError(405, "Use POST.");
   const secret = await webhookSecret(env);
   if (!secret) throw new HttpError(401, "This editor has no webhook secret, so it refuses every delivery.");
-  const body = await readBoundedBytes(request, DELIVERY_LIMIT) as Uint8Array<ArrayBuffer>;
+  const body = await readBoundedBytes(request, bodyLimit(request)) as Uint8Array<ArrayBuffer>;
   if (!await signedBy(secret, body, request.headers.get("X-Hub-Signature-256")))
     throw new HttpError(401, "This delivery is not signed with the editor's webhook secret.");
   if (request.headers.get("X-GitHub-Event") !== "push") return new Response(null, { status: 204 });

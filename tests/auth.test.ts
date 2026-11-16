@@ -295,8 +295,9 @@ test("repository cache persistence failure keeps a successful GitHub listing sig
 
 test("every changing browser route refuses another site's request before anything else, signed in or not (TOOLS-264 S4)", async () => {
   const { env } = environment();
-  const routes = ["/auth/logout", "/auth/setup/unlock", "/api/accounts/switch", "/api/publish", "/api/publish/abc", "/api/blob", "/api/restore",
-    "/api/repositories", "/api/live/share", "/api/live/preview", "/api/live/preview/off", "/api/agent/connect", "/api/agent/rebind", "/api/some-new-route"];
+  // A route the table does not list is refused (404) before this check: tests/worker-route-table.test.ts (TOOLS-267).
+  const routes = ["/auth/logout", "/auth/setup/unlock", "/api/accounts/switch", "/api/publish", "/api/publish/secrets", "/api/blob", "/api/restore",
+    "/api/repositories", "/api/live/share", "/api/live/preview", "/api/live/preview/off", "/api/agent/connect", "/api/agent/rebind"];
   for (const path of routes)
     for (const from of [{ Origin: "https://evil.example" }, {}] as Record<string, string>[]) {
       const response = await handle(new Request(origin + path, { method: "POST", headers: { ...from, "Content-Type": "application/json" }, body: "{}" }), env);

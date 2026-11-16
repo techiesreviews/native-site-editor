@@ -50,7 +50,9 @@ test("all 32 combinations independently gate routes before DO work, retain grant
     MAINTENANCE_INVENTORY_TOKEN: secret, MAINTENANCE_CLEANUP_TOKEN: secret };
   const grant = await createGrant(env, { sessionId, login: "lex", repoId: repo.id, repo: repo.full_name, branch: "main", via: "token", expiresAt: Date.now() + 86_400_000 });
   const send = (path: string, method = "POST", body?: unknown, signed = true) => handle(new Request(origin + path, {
-    method, headers: { Origin: origin, ...(signed ? { Cookie: cookie } : {}), Authorization: `Bearer ${grant.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    method, headers: { Origin: origin, ...(signed ? { Cookie: cookie } : {}), Authorization: `Bearer ${grant.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
+      // The relay takes only an upgrade, as a tab opens it (worker/routes.ts).
+      ...(path === "/api/agent/relay" ? { Upgrade: "websocket" } : {}) },
     ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
   }), env, (input, init) => fakeGitHub(new Request(input, init), h.github));
   const rpc = (method: string, params: object) => send("/mcp", "POST", { jsonrpc: "2.0", id: 1, method, params });

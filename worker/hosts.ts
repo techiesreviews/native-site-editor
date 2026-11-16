@@ -1,7 +1,7 @@
 // Publishing to a host: the JSON endpoints under `/api/publish/` that the
-// editor's Publish panel uses (docs/publishing-hosts.md). Same-origin, session
-// authorized; the POSTs have app.ts's Origin check; every endpoint authorizes
-// the repository through `authorizeRepository`.
+// editor's Publish panel uses (docs/publishing-hosts.md). Each is listed in the
+// route table (worker/routes.ts) with its method, Origin rule, sign-in and body
+// limit; every endpoint authorizes the repository through `authorizeRepository`.
 //
 // The repository is the site, so there is nothing to build here: GitHub Pages
 // serves the branch, or a workflow in the repository uploads its files to
@@ -11,6 +11,7 @@
 import type { Repository } from "../shared/types";
 import { changeStatus } from "./change-status";
 import { requestJson } from "./http";
+import { bodyLimit } from "./routes";
 import { GitHub, HttpError } from "./github";
 import { sealSecret } from "./sealed-box";
 import {
@@ -587,8 +588,8 @@ export function pipelineAnswer(repo: Repository, provider: unknown) {
 // ---------------------------------------------------------------------------
 
 /**
- * Handles `/api/publish/*` for a signed-in user (app.ts checked the session
- * and, for POST, the Origin). Returns the JSON answer.
+ * Handles `/api/publish/*` for a signed-in user (the route table's guard checked
+ * the method and, for POST, the Origin; app.ts the session). Returns the JSON answer.
  */
 export async function publishHosts(
   request: Request,
@@ -598,46 +599,34 @@ export async function publishHosts(
   fetcher: typeof fetch,
   readMaxAge: number,
 ): Promise<unknown> {
-  const path = url.pathname.slice("/api/publish/".length).replace(/\/$/, "");
+  const path = url.pathname;
   const post = request.method === "POST";
-  const routes: Record<string, "GET" | "POST"> = {
-    status: "GET",
-    pipeline: "GET",
-    pages: "POST",
-    "pages/domain": "POST",
-    "pages/domain/health": "GET",
-    secrets: "POST",
-    "cloudflare/verify": "POST",
-    "cloudflare/secrets": "POST",
-    "spacefast/secrets": "POST",
-  };
-  const method = routes[path];
-  if (!method) throw new HttpError(404, "Endpoint not found.");
-  if (request.method !== method) throw new HttpError(405, method === "POST" ? "Use POST." : "Use GET.");
-  const data: Record<string, any> = post ? (await requestJson(request, 8192)) ?? {} : {};
+  const data: Record<string, any> = post ? (await requestJson(request, bodyLimit(request))) ?? {} : {};
   if (post && (typeof data !== "object" || Array.isArray(data))) throw new HttpError(400, "Invalid JSON request.");
   // No repository is needed to check a Cloudflare token.
-  if (path === "cloudflare/verify") return verifyCloudflare(fetcher, data);
+  if (path === "/api/publish/cloudflare/verify") return verifyCloudflare(fetcher, data);
   const fullName = typeof data.repo === "string" ? data.repo : url.searchParams.get("repo") ?? "";
   const repo = await github.authorizeRepository(login, fullName, post ? 0 : readMaxAge);
   const branch = typeof data.branch === "string" ? data.branch : url.searchParams.get("branch") ?? repo.default_branch;
   switch (path) {
-    case "status":
+    case "/api/publish/status":
       return publishStatus(github, repo, branch);
-    case "pipeline":
+    case "/api/publish/pipeline":
       return pipelineAnswer(repo, url.searchParams.get("provider"));
-    case "pages":
+    case "/api/publish/pages":
       return enablePages(github, repo, branch);
-    case "pages/domain":
+    case "/api/publish/pages/domain":
       return setPagesDomain(github, repo, data);
-    case "pages/domain/health":
+    case "/api/publish/pages/domain/health":
       return pagesDomainHealth(github, repo);
-    case "cloudflare/secrets":
+    case "/api/publish/cloudflare/secrets":
       return storePipelineSecrets(github, repo, { ...data, provider: "cloudflare" });
-    case "spacefast/secrets":
+    case "/api/publish/spacefast/secrets":
       return storePipelineSecrets(github, repo, { ...data, provider: "spacefast" });
-    default:
+    case "/api/publish/secrets":
       return storePipelineSecrets(github, repo, data);
+    default:
+      throw new HttpError(501, `${path} is listed in worker/routes.ts without a handler.`);
   }
 }
 
