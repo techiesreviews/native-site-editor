@@ -188,16 +188,25 @@ export function createRepositoryList(ports: RepositoryListPorts) {
   // The kept copy opens at once, its repository alone in the selector. The listing comes behind it: one that still
   // has the repository as it was is installed; one without it opens the plain way, which says so, and one with it
   // renamed, moved or otherwise changed opens it again the plain way; one that fails says so, the site staying open.
+  // A list installed meanwhile (Refresh, the menu's own read) stands instead, and the kept repository is checked
+  // against it the same way once the listing settles.
   async function openWarm(listing: number, { copy, listing: listed }: WarmOpen) {
     const kept = ports.repositories = [copy.repo];
     repositoryOptions();
     ports.repositorySelect.value = String(copy.repo.id);
-    // Superseded by a newer listing, or by any list installed meanwhile (Refresh, the menu's own read).
-    const current = () => listing === listings && ports.repositories === kept;
+    const current = () => listing === listings;
+    // Whether `list` still has the kept repository as it was; if not, and it is still open, the plain way opens.
+    const holds = (list: Repository[]) => {
+      const repo = list.find((item) => item.id === copy.repo.id);
+      if (repo && keptAsIs(repo, copy.repo)) return true;
+      if (appStore.repository.value?.id === copy.repo.id) void loadRepositories(list);
+      return false;
+    };
+    const installedMeanwhile = () => ports.repositories !== kept;
     void listed.then((list) => list ?? ports.boot.fetchList(ports.boot.refreshPending())).then((list) => {
       if (!current()) return;
-      const repo = list.find((item) => item.id === copy.repo.id);
-      if (!repo || !keptAsIs(repo, copy.repo)) { void loadRepositories(list); return; }
+      if (installedMeanwhile()) { holds(ports.repositories); return; }
+      if (!holds(list)) return;
       ports.repositories = list;
       ports.boot.ready();
       ports.repositoryMenu?.setRepositories(list);
@@ -208,6 +217,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       ports.repositorySelect.disabled = false;
     }).catch((error: unknown) => {
       if (!current()) return;
+      if (installedMeanwhile()) { holds(ports.repositories); return; }
       // The boot stays loading, not failed: opening the menu then lists the repositories, and nothing reopens the site.
       ports.repositoryMenu?.setRepositories([], "Repositories could not be loaded. Use Reload to try again.");
       errorMessage(error);

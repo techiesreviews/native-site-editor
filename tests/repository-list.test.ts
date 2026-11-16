@@ -407,6 +407,8 @@ test("a listing without the kept repository, or with it renamed, opens the plain
   for (const listed of [[B], [{ ...A, full_name: "lex/renamed", name: "renamed" }], [{ ...A, default_branch: "trunk" }]]) {
     const f = fixture(listed), listing = deferredList();
     await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+    // The kept site is open (the fake chooseRepository opens nothing itself).
+    f.ports.appStore.repository.value = A;
     listing.resolve(listed);
     await settle();
     assert.equal(f.calls.loading, 2, `${JSON.stringify(listed)}: the plain listing runs`);
@@ -466,4 +468,18 @@ test("a kept copy's listing landing after Refresh installed a newer list writes 
   listing.resolve([A]);
   await settle();
   assert.deepEqual(f.ports.repositories, [A, B], "the older reply does not remove B");
+});
+
+test("a list the menu installed before the kept copy's listing lands is checked too: without the kept repository, the plain way opens", async () => {
+  for (const settleListing of ["answers", "fails"] as const) {
+    const f = fixture([B]), listing = deferredList();
+    await f.list.loadRepositories(undefined, { onStarted: () => {}, warm: { copy: keptCopy(), listing: listing.promise } });
+    f.ports.appStore.repository.value = A;
+    // The menu's own read (src/controllers/boot-controller.ts ensureList, through the host's applyList).
+    f.ports.repositories = [B];
+    if (settleListing === "answers") listing.resolve([B]); else listing.reject(new Error("GitHub is down"));
+    await settle();
+    assert.equal(f.calls.loading, 2, `${settleListing}: the plain listing runs`);
+    assert.deepEqual(f.ports.repositories, [B]);
+  }
 });
