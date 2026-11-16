@@ -527,8 +527,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     return { snapshot, token };
   }
 
+  // Repository choices begun: a kept copy's late branch list acts only for its own choice.
+  let choices = 0;
   /** `warm`: the copy this browser kept (takeWarmCopy), shown at once when it is this repository and branch. */
   async function chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy) {
+    const choice = ++choices;
     ports.mediaHistoryHome.clear();
     const at = ports.nextLoad();
     ports.fileGeneration++;
@@ -607,7 +610,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         const fill = (read: Promise<string[]>): Promise<void> => read.then((branches) => {
           if (!current()) return;
           // A kept copy of a branch GitHub no longer has opens again the plain way, which says so.
-          if (warmed && branches.length && !branches.includes(branch)) { void chooseRepository(resume); return; }
+          if (warmed && branches.length && !branches.includes(branch)) { if (choice === choices) void chooseRepository(resume); return; }
           ports.options(ports.branchSelect, [...new Set([branch, ...branches])].map((name) => ({ value: name, label: `⑂ ${name}` })));
           ports.branchSelect.value = branch;
           ports.branchSelect.disabled = false;
