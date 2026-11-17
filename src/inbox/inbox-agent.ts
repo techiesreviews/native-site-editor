@@ -11,7 +11,8 @@
 //   4. no agent connected any more: after DISCONNECT_GRACE_MS (a reply the menu was still saving as the agent left
 //      arrives in it and wins, as 1), fails, and the request is let go;
 //   5. SUGGESTION_WAIT_MS with none of these: fails, and the request is let go.
-// The request is asked only while the session it was pressed in holds (another site or branch, or a reload, refuses it).
+// The request is asked only while the session it was pressed in holds (another site or branch, or a reload, refuses it),
+// and a session ended while it was asked ends the suggestion at once, its request left with its site.
 import type { AgentElement } from "../../shared/agent";
 import type { PinRequest } from "../components/agent-pins";
 import { watchReplies } from "../agent-replies";
@@ -64,6 +65,9 @@ export function createInboxAgent(ports: {
       // Another site, branch or load opened while the element was read: this element is not the open site's.
       if (session && !session.holds()) throw new Error("The site changed. Nothing was asked.");
       const asked = await link.ask(suggestionPrompt(item), element) as Pick<PinRequest, "id"> | undefined;
+      // Another site, branch or load opened while it was asked: no words come back for it, and its request stays with
+      // its own site (the agent now connected is the new session's, so nothing is let go through it).
+      if (session && !session.holds()) throw new Error("The site changed while the agent was asked.");
       const id = asked?.id;
       if (!id) throw new Error("The request did not reach the agent.");
       return await new Promise<string>((resolve, reject) => {
