@@ -14,7 +14,6 @@ import { componentIcon } from "../page-builder/component-icon";
 import { componentLabel } from "../native-insert";
 import { elementPathAt } from "../native-source-location";
 import { componentUsage } from "../page-builder/component-model";
-import { descendants, parseSource } from "../page-builder/source-tree";
 import { button, node } from "../ui/dom";
 import type { RangeEdit } from "../guarded-edit";
 import type { InboxItem } from "./inbox-item";
@@ -22,7 +21,8 @@ import type { InboxPorts } from "./inbox-host";
 import { markDecorative } from "./decorative";
 import { createInboxAgent } from "./inbox-agent";
 import { createInboxFixes, fixEdits, type FixState, type InboxFix } from "./inbox-fixes";
-import { forgetPages, pictureVerdict, siteFile, siteItems, type InboxPart } from "./site-items";
+import { forgetPages, partChain, pictureVerdict, siteFile, siteItems, type InboxPart } from "./site-items";
+import { watchReplies } from "../agent-replies";
 
 // The shared parts the last check read: counted again only when a page or template changed.
 let partsRead: { site: NativeSite; texts: (string | undefined)[]; parts: InboxPart[] } | undefined;
@@ -74,10 +74,14 @@ async function goToShared(item: InboxItem, shared: NonNullable<InboxItem["shared
   const stamp = ports.stamp();
   if (!showing && page) await ports.open(page);
   if (!stamp.holds()) return;
-  const source = page === undefined ? undefined : ports.source(page);
-  const host = source === undefined ? undefined : [...descendants(parseSource(source))].find(element => element.name.toLowerCase() === shared.tag);
-  const node = host && source !== undefined ? elementPathAt(source, host.tag.start) : undefined;
-  await ports.editComponent(shared.tag, node && page ? { path: page, node } : undefined, [sharedNote(shared)]);
+  // The part's instance on the page, through the parts it sits in (a logo inside the header): each opened in turn.
+  const chain = page === undefined ? undefined : partChain(page, ports.site()?.components ?? {}, file => ports.source(file), shared.tag);
+  if (!chain) await ports.editComponent(shared.tag, undefined, [sharedNote(shared)]);
+  for (const [n, step] of (chain ?? []).entries()) {
+    const text = ports.source(step.path), node = text === undefined ? undefined : elementPathAt(text, step.at);
+    if (!node || !stamp.holds()) return;
+    await ports.editComponent(step.tag, { path: step.path, node }, n ? [] : [sharedNote(shared)]);
+  }
   const template = ports.source(item.page);
   const at = template === undefined || item.at === undefined ? undefined : elementPathAt(template, item.at);
   if (at && stamp.holds()) ports.select({ path: item.page, node: at }, false);
@@ -173,6 +177,8 @@ export function createInboxList(ports: InboxPorts) {
     },
   });
   const fixes = createInboxFixes({ agent: () => agent, write, changed: redraw, error: error => ports.error(error) });
+  // An agent connecting or going away, or its requests changing, redraws an open panel: Fix with AI follows it.
+  watchReplies(redraw);
 
   // What was last shown: the list, the dots' rules and the panel are written again only when they change, since each
   // write makes the browser restyle the page (an edit's next layout would pay for it).
@@ -193,7 +199,8 @@ export function createInboxList(ports: InboxPorts) {
     if (root.hasAttribute("data-inbox-waiting") !== items.length > 0) root.toggleAttribute("data-inbox-waiting", items.length > 0);
     const any = (attribute: string, values: (string | undefined)[]) =>
       [...new Set(values.filter((value): value is string => Boolean(value)))].map(value => `[${attribute}="${CSS.escape(value)}"]`).join(",");
-    const pages = any("data-file", items.map(item => item.page)), media = any("data-path", items.map(item => item.media));
+    // A shared part's item waits on every page that shows the part.
+    const pages = any("data-file", items.flatMap(item => item.shared?.pages ?? [item.page])), media = any("data-path", items.map(item => item.media));
     const rules = `${pages ? `.pages-item:is(${pages}) > .pages-row { --inbox-dot: block; }` : ""}${media ? `.media-library__card:is(${media}) { --inbox-dot-size: 100% 100%; }` : ""}`;
     if (rules !== dotRules) dots.replaceSync(dotRules = rules);
     const open = panel();

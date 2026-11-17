@@ -205,6 +205,23 @@ test.describe("new checks (TOOLS-253)", () => {
     await expect.poll(() => effectiveSource(page, baseURL, "components/site-header/site-header.html")).toContain(`alt=""`);
   });
 
+  test("a part inside another part opens through it; its item's pages wear the Pages dot", async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/`);
+    const commit = async (path: string, content: string) => expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
+    const header = await (await page.request.get(`${baseURL}/__demo/file?path=components/site-header/site-header.html`)).text();
+    await commit("components/site-mark/site-mark.html", `<img class="mark" src="/images/placeholder.svg" width="24" height="24" data-key="mark">\n`);
+    await commit("components/site-header/site-header.html", header.replace(`<a class="brand"`, `<site-mark data-key="site-mark"></site-mark><a class="brand"`));
+    await open(page, baseURL);
+    await page.locator("#explorer-toggle").click();
+    await expect.poll(() => dot(page, '#explorer .pages-item[data-file="about/index.html"] > .pages-row .pages-icon')).toBe(true);
+    await page.keyboard.press("Escape");
+    await inboxButton(page).click();
+    await inbox(page).getByRole("button", { name: "Picture without a description, Site mark · changes 2 pages" }).click();
+    await expect(page.getByRole("button", { name: /^Note: Site mark is a shared part\. A change here shows on all 2 pages that use it\./ })).toBeVisible({ timeout: 15_000 });
+    await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-mark/site-mark.html");
+  });
+
   test("an item's row goes to its spot: the unnamed link selected, its Name field asking for one", async ({ page, baseURL }) => {
     await seed(page, baseURL);
     await inboxButton(page).click();
