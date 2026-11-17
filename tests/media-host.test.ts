@@ -97,28 +97,43 @@ function setup(race?: AwaitRace) {
   appStore.snapshot.value = SNAPSHOT;
   const record = (name: string) => () => { calls.push(name); };
   const session = createWorkspaceSession(githubScope(SCOPE));
-  const ports = {
-    runtime, appStore, workspaceSession: session, editorModule: handedOn<MediaHostPorts["editorModule"]>(),
-    mediaHistoryHome: handedOn<MediaHostPorts["mediaHistoryHome"]>(), guardedEdits: { stamp: (over?: "repository") => { stamps.push(over); return stamp; } }, parkedSteps: { park: () => {} },
-    finishedWork: { add: (scope: DraftScope, kind: string, details?: { count?: number }) => { calls.push(`finished ${kind} ${scope.branch} ${details?.count ?? ""}`.trim()); } },
-    pageStructureController: { renderEditBar: record("renderEditBar"), editOpenPage: () => true },
-    repositoryIndex: { seed: () => { indexed.push("seed"); }, entry: (_repo: Repository, _snapshot: Snapshot, path: string) => { indexed.push("entry"); return entryOf(path); }, find: async () => undefined }, versions: {}, cleanSources, api: handedOn<MediaHostPorts["api"]>(),
-    get nativePreview() { return late.preview; },
-    get pagesController() { return { pageLabel: (file: string) => (late.label ? `${late.label} ${file}` : undefined), selectTab: () => {}, explorerTab: () => late.tab ?? "pages" }; },
-    get workspace() { return { explorerDropdown: undefined }; },
-    element: <T extends HTMLElement>(id: string) => asElement<T>(late.elements?.[id] ?? { hidden: !(id === "explorer-tabs" && late.tabsShown) }),
-    lazyModule: <T>(load: () => Promise<T>) => load,
-    loadMediaWorkspace: handedOn<MediaHostPorts["loadMediaWorkspace"]>(), loadMedia: handedOn<MediaHostPorts["loadMedia"]>(),
-    draftScope: () => SCOPE, currentLoad: () => at.load,
-    stampOf: (epoch: number) => ({ ...stamp, load: epoch }), setupScope: () => at.setup, nativeTextIndexScopeKey: () => at.key,
+  // Each shared host module (src/host-modules.ts) is one fake; Pages & files and the panels are read at call time.
+  type Ports = MediaHostPorts;
+  const notices: Ports["notices"] = { announce: (text: string) => { calls.push(`announce ${text}`); }, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); } };
+  const sessionModule: Ports["session"] = { begin: () => session.begin(), draftScope: () => SCOPE, currentLoad: () => at.load, stampOf: (epoch: number) => ({ ...stamp, load: epoch }) };
+  const repo: Ports["repo"] = {
+    api: handedOn<Ports["repo"]["api"]>(),
     entryAt: (path: string) => (PATHS.includes(path) ? entryOf(path) : undefined),
     findEntry: wrap("findEntry", async (path: string) => (PATHS.includes(path) ? entryOf(path) : undefined)),
     readFile: wrap("readFile", async (_repo: string, sha: string) => { reads.push(sha); at.reading?.(); return `text of ${sha}`; }),
-    readBlob: async () => new Blob(), listRepositoryFiles: async () => PATHS, loadNativeAssets: async () => {}, updateNativePreviewSources: record("updateNativePreviewSources"),
-    afterFileChanges: record("afterFileChanges"), openAfter: async (path: string | undefined, keep?: boolean, quiet?: boolean) => { calls.push(`open ${path}${keep ? " keep" : ""}${quiet ? " quiet" : ""}`); },
-    restoreFile: async (path: string, epoch: SessionStamp, options?: { linkDefaultStyle?: boolean }) => { calls.push(`restore ${path} ${epoch.load} ${options?.linkDefaultStyle}`); },
-    imagesSignature: () => "", announce: (text: string) => { calls.push(`announce ${text}`); }, undoAction: () => undefined,
-    errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
+  };
+  const view: Ports["view"] = {
+    restoreFile: async (path, epoch, options) => { calls.push(`restore ${path} ${epoch.load} ${options?.linkDefaultStyle}`); },
+  };
+  const ports = {
+    notices, session: sessionModule, repo, view,
+    preview: { updateNativePreviewSources: record("updateNativePreviewSources") },
+    textIndex: { nativeTextIndexScopeKey: () => at.key },
+    pageBuilder: { pageStructureController: { renderEditBar: record("renderEditBar"), editOpenPage: () => true } },
+    get panels() { return { explorerDropdown: undefined }; },
+    get pagesAndFiles() {
+      return {
+        pagesController: { pageLabel: (file: string) => (late.label ? `${late.label} ${file}` : undefined), selectTab: () => {}, explorerTab: () => late.tab ?? "pages" },
+        afterFileChanges: record("afterFileChanges"),
+        openAfter: async (path: string | undefined, keep?: boolean, quiet?: boolean) => { calls.push(`open ${path}${keep ? " keep" : ""}${quiet ? " quiet" : ""}`); },
+      };
+    },
+    runtime, appStore, editorModule: handedOn<Ports["editorModule"]>(),
+    mediaHistoryHome: handedOn<Ports["mediaHistoryHome"]>(), guardedEdits: { stamp: (over?: "repository") => { stamps.push(over); return stamp; } }, parkedSteps: { park: () => {} },
+    finishedWork: { add: (scope: DraftScope, kind: string, details?: { count?: number }) => { calls.push(`finished ${kind} ${scope.branch} ${details?.count ?? ""}`.trim()); } },
+    repositoryIndex: { seed: () => { indexed.push("seed"); }, entry: (_repo: Repository, _snapshot: Snapshot, path: string) => { indexed.push("entry"); return entryOf(path); }, find: async () => undefined }, versions: {}, cleanSources,
+    get nativePreview() { return late.preview; },
+    element: <T extends HTMLElement>(id: string) => asElement<T>(late.elements?.[id] ?? { hidden: !(id === "explorer-tabs" && late.tabsShown) }),
+    lazyModule: <T>(load: () => Promise<T>) => load,
+    loadMediaWorkspace: handedOn<Ports["loadMediaWorkspace"]>(), loadMedia: handedOn<Ports["loadMedia"]>(),
+    setupScope: () => at.setup,
+    readBlob: async () => new Blob(), listRepositoryFiles: async () => PATHS, loadNativeAssets: async () => {},
+    imagesSignature: () => "", undoAction: () => undefined,
   } satisfies MediaHostPorts;
   return { host: createMediaHost(ports), calls, reads, stamps, indexed, at, late, runtime, appStore, session, cleanSources, stamp };
 }

@@ -5,27 +5,32 @@ import { parse, ts } from "./support/source-guard.ts";
 
 // The hosts that take the shared host modules (src/host-modules.ts) whole, in place of their loose callbacks.
 const SHARED = ["notices", "session", "repo", "view", "panels", "preview", "textIndex"];
-// `shared`: the modules each host must take (the workspace mount makes the panels and reads no repository, so takes neither).
+// `shared`: the modules each host must take (the workspace mount makes the panels and reads no repository, so takes neither;
+// the source pane, page structure and media take only the modules they read).
 const HOSTS = [
   { file: "src/pages-and-files-host.ts", ports: "PagesAndFilesPorts", ceiling: 30, shared: SHARED },
   { file: "src/workspace-boot.ts", ports: "WorkspaceBootPorts", ceiling: 30, shared: SHARED },
   { file: "src/workspace-mount.ts", ports: "WorkspaceMountPorts", ceiling: 37, shared: ["notices", "session", "view", "preview", "textIndex", "media", "pageBuilder"] },
   { file: "src/page-builder-host.ts", ports: "PageBuilderHostPorts", ceiling: 27, shared: [...SHARED, "media", "pagesAndFiles"] },
+  { file: "src/controllers/source-pane-controller.ts", ports: "SourcePanePorts", ceiling: 20, shared: ["notices", "session", "repo", "view", "panels", "preview", "pageBuilder", "pagesAndFiles"] },
+  { file: "src/controllers/page-structure-controller.ts", ports: "PageStructurePorts", ceiling: 31, shared: ["notices", "session", "view", "preview", "media", "pagesAndFiles"] },
+  { file: "src/controllers/media-host.ts", ports: "MediaHostPorts", ceiling: 30, shared: ["notices", "session", "repo", "view", "panels", "preview", "textIndex", "pagesAndFiles", "pageBuilder"] },
 ];
 // Members of a shared module or a host handed over whole: a host takes them through it, never as a loose port of their own.
 const MODULE_MEMBERS = ["status", "settleStatus", "clearError", "errorMessage", "announce", "workspaceSession", "nextLoad", "currentLoad", "stampOf", "draftScope", "shownScope",
   "api", "apiResponse", "readFile", "readFiles", "entryAt", "findEntry", "fileGeneration", "setCurrentPage", "showDirectory", "openNewDraft", "openEntry", "mountSource",
   "restoreFile", "loadSnapshot", "updateAgentContext", "updateCurrentPageLabel", "updatePreview", "updateNativePreview", "updateNativePreviewSources",
   "nativeRouteForPath", "nativeRouteInfo", "nativeTitles", "nativeFallbackPage", "nativeModeActive", "nativeComponentTagForPath", "nativePageStyles", "nativePreviewBehind",
-  "afterNativePaint", "ensureNativeTextIndex", "startNativeTextIndex", "wantNativeTextIndex", "noteNativePainted", "flushPendingNativePageTitles", "clearPendingTitles",
+  "afterNativePaint", "ensureNativeTextIndex", "startNativeTextIndex", "wantNativeTextIndex", "noteNativePainted", "flushPendingNativePageTitles", "clearPendingTitles", "nativeTextIndexScopeKey",
   "mediaController", "readMediaText", "mediaOrigins", "uploadFilesTo", "discardUpload", "nativeImagePaths",
   "cards", "nativeNavigationTarget", "writeNativePageMeta", "refreshNativeRoutes", "openNativePageSettings", "openNativeNavigation", "openNativeSiteSettings", "nativePageMeta",
   "paletteController", "pageStructureController", "nativeSectionChoices", "nativeElementAddPoint", "nativeAddPoints", "insertNativeComponent", "dragPageBlock",
   "structureDrop", "loadBlockDrag", "loadBlockInsert", "blockInsertPorts", "finishRailTyping", "elementMenuItems", "nativeComponentFieldsRevision", "nativeMoveItems", "mountComponentTools",
-  "ensureExplorer", "openCreate", "nativeSiteReadForCreate",
+  "nativeVariantFiles", "nativeCssWorkspace",
+  "ensureExplorer", "openCreate", "nativeSiteReadForCreate", "openAfter", "afterFileChanges", "discardedNewPages", "discardFileChange",
   "takeStartingPoint", "writeStartingPoint", "readPartialStart", "offerFinishStarter", "removeFinishStarter",
-  "nativeSite", "nativeSourcesRequest", "nativePaintedRequest", "nativePaintedPaths", "baseText",
-  "content", "files", "refreshButton", "branchSelect", "repositorySelect", "repositoryMenu", "explorerDropdown", "siteActions", "sidebarResize", "codePanes"];
+  "nativeSite", "nativeSourcesRequest", "nativePaintedRequest", "nativePaintedPaths", "baseText", "nativeBaseSources", "nativeSources", "nativeEditableSource", "nativeEffectiveSource",
+  "content", "files", "refreshButton", "branchSelect", "repositorySelect", "repositoryMenu", "explorerDropdown", "siteActions", "sidebarResize", "codePanes", "activeFileContext", "openCodeEditor"];
 
 function portNames(source: string, file: string, name: string): string[] {
   const tree = parse(source, file);

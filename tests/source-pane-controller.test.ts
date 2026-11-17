@@ -60,9 +60,59 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
     openFile: signal<string | undefined>(undefined), repository: signal<Repository | undefined>(REPO), snapshot: signal<Snapshot | undefined>(SNAPSHOT),
     selection: signal<NativePreviewSelection | undefined>(undefined),
   };
+  // Each shared host module (src/host-modules.ts) is one fake; the view's file counter is the selection counter above.
+  type Ports = SourcePanePorts;
+  const notices: Ports["notices"] = {
+    status: (message) => void calls.push(`status ${message}`),
+    settleStatus: (message) => void calls.push(`settle ${message}`),
+    errorMessage: (error, retry) => void calls.push(`error ${(error as Error).message}${retry ? " (retry)" : ""}`),
+  };
+  const sessionModule: Ports["session"] = { begin: () => session.begin(), draftScope: () => SCOPE };
+  const repo: Ports["repo"] = {
+    readFile: port("readFile", (_repo: string, sha: string) => options.read?.(sha) ?? Promise.resolve(`text of ${sha}`)),
+    entryAt: (path) => options.indexed ? entry(path) : undefined,
+  };
+  const view: Ports["view"] = {
+    get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
+    setCurrentPage: (path) => { appStore.openFile.value = path; calls.push(`page ${path}`); },
+    showDirectory: () => {},
+    restoreFile: async (path) => { calls.push(`restore ${path} (status: ${statusLine.textContent})`); statusLine.textContent = `Viewing ${path}.`; },
+    updateAgentContext: () => {},
+    updateCurrentPageLabel: () => {},
+  };
+  const preview: Ports["preview"] = {
+    nativeModeActive: () => true,
+    nativeRouteForPath: () => options.route,
+    nativeComponentTagForPath: (path) => path === options.component ? "site-card" : undefined,
+    nativeFallbackPage: () => options.fallback,
+    updateNativePreviewSources: () => void calls.push("preview"),
+  };
+  const panels: Ports["panels"] = {
+    content,
+    explorerDropdown: { close: () => void calls.push("close explorer") },
+    activeFileContext: null,
+    openCodeEditor: port("openCodeEditor", async (file: SourceFile) => { calls.push(`editor ${file.path}`); opened.push(file); if (!options.mountFails) mounted.add(file.path); }),
+  };
+  const pageBuilder: Ports["pageBuilder"] = {
+    previewSelection: { replayPending: (path) => void calls.push(`replay ${path}`) },
+    nativeVariantFiles: { site: () => undefined, read: () => undefined },
+    nativeCssWorkspace: () => undefined,
+  };
+  const pagesAndFiles: Ports["pagesAndFiles"] = {
+    savePublish: {
+      proof: () => ({ stamp: session.begin(), snapshot: SNAPSHOT }),
+      published: () => {}, discardAll: async () => {}, headFor: () => "head1234567", beginSave: () => () => {}, checkHead: async () => {},
+      isDeleted: () => false, settleDeleted: () => {},
+    },
+    filesTreeController: { refresh: () => {} },
+    openAfter: async (path) => void calls.push(`open after ${path}`),
+    discardedNewPages: (paths) => void calls.push(`discarded ${paths.join(" ")}`),
+    discardFileChange: async () => {},
+  };
   const ports = {
+    notices, session: sessionModule, repo, view, preview, panels, pageBuilder, pagesAndFiles,
+    runtime: { site: { routes: { "/": "index.html" }, components: {} }, base: { sources: new Map<string, string>() } },
     appStore,
-    workspaceSession: session,
     editorModule: { isMounted: (path) => mounted.has(path), holdHistoryRefresh: (path) => { calls.push(`hold ${path}`); return () => void calls.push(`release ${path}`); } },
     linkedStyles: {
       syncLinkedStyles: (path) => void calls.push(`sync ${path}`),
@@ -73,51 +123,14 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
       openDefaultLinkedStyle: port("openDefaultLinkedStyle", async (page?: string) => { calls.push(`default ${page}`); linkedPage = page; return true; }),
       openComponentLinkedStyle: async (page) => { calls.push(`component ${page}`); linkedPage = page; return true; },
     },
-    savePublish: {
-      proof: () => ({ stamp: session.begin(), snapshot: SNAPSHOT }),
-      published: () => {}, discardAll: async () => {}, headFor: () => "head1234567", beginSave: () => () => {}, checkHead: async () => {},
-      isDeleted: () => false, settleDeleted: () => {},
-    },
     versions: { history: { refresh: () => {}, open: async () => {} } },
-    previewSelection: { replayPending: (path) => void calls.push(`replay ${path}`) },
-    nativeBaseSources: new Map<string, string>(),
-    nativeVariantFiles: { site: () => undefined, read: () => undefined },
     info: { user: { login: "lex", avatar_url: "" } },
-    content,
-    explorerDropdown: { close: () => void calls.push("close explorer") },
-    nativeSite: { routes: { "/": "index.html" }, components: {} },
     nativePreview: { hideEditBar: () => void calls.push("hide bar") },
     componentTools: undefined,
     pageStructure: undefined,
-    fileGeneration: () => fileGeneration,
-    nextFileGeneration: () => ++fileGeneration,
-    setActiveFileContext: () => {},
-    openCodeEditor: port("openCodeEditor", async (file: SourceFile) => { calls.push(`editor ${file.path}`); opened.push(file); if (!options.mountFails) mounted.add(file.path); }),
     element: (id) => id === "status" ? statusLine : new FakeElement(),
-    status: (message) => void calls.push(`status ${message}`),
-    settleStatus: (message) => void calls.push(`settle ${message}`),
-    errorMessage: (error, retry) => void calls.push(`error ${(error as Error).message}${retry ? " (retry)" : ""}`),
-    readFile: port("readFile", (_repo: string, sha: string) => options.read?.(sha) ?? Promise.resolve(`text of ${sha}`)),
-    entryAt: (path) => options.indexed ? entry(path) : undefined,
-    draftScope: () => SCOPE,
     draftStore: () => ({ get: (_scope, path) => options.drafts?.[path] }),
-    openAfter: async (path) => void calls.push(`open after ${path}`),
-    setCurrentPage: (path) => { appStore.openFile.value = path; calls.push(`page ${path}`); },
     showDeletedFile: (path) => void calls.push(`deleted ${path}`),
-    isNativeTextFile: () => true,
-    nativeModeActive: () => true,
-    nativeRouteForPath: () => options.route,
-    nativeComponentTagForPath: (path) => path === options.component ? "site-card" : undefined,
-    nativeFallbackPage: () => options.fallback,
-    nativeCssWorkspace: () => undefined,
-    updateNativePreviewSources: () => void calls.push("preview"),
-    discardedNewPages: (paths) => void calls.push(`discarded ${paths.join(" ")}`),
-    restoreFile: async (path) => { calls.push(`restore ${path} (status: ${statusLine.textContent})`); statusLine.textContent = `Viewing ${path}.`; },
-    showDirectory: () => {},
-    refreshFiles: () => {},
-    updateAgentContext: () => {},
-    updateCurrentPageLabel: () => {},
-    discardFileChange: async () => {},
   } satisfies SourcePanePorts;
   return { ports, pane: createSourcePaneController(ports), content, statusLine, calls, opened, session, generation: () => fileGeneration, setLinked: (page: string) => { linkedPage = page; } };
 }
@@ -147,7 +160,7 @@ test("a file opened while another was reading has the last word", async () => {
   const h = harness({ read: () => new Promise<string>((resolve) => { release = resolve; }) });
   const first = h.pane.openEntry(entry("index.html"), "index.html", h.session.begin());
   await flush();
-  h.ports.nextFileGeneration();
+  ++h.ports.view.fileGeneration;
   release("late");
   await first;
   assert.deepEqual(h.opened, []);
@@ -198,7 +211,7 @@ test("a new selection or load during any await of openEntry opens no editor and 
       (run) => {
         run.since = run.h.calls.length;
         run.hash = new URL(shown.href).hash;
-        if (disturbance === "selection") run.h.ports.nextFileGeneration();
+        if (disturbance === "selection") ++run.h.ports.view.fileGeneration;
         else run.h.session.next();
       },
       (run) => {
@@ -213,21 +226,21 @@ test("a new selection or load during any await of openEntry opens no editor and 
 
 test("an editor that did not mount under beforeMount stops before the preview replay and the stylesheet", async () => {
   const h = harness({ mountFails: true });
-  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), h.ports.nextFileGeneration(), { beforeMount: () => true });
+  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), ++h.ports.view.fileGeneration, { beforeMount: () => true });
   assert.deepEqual(h.calls, ["editor index.html"]);
 });
 
 test("linkDefaultStyle false still drops another page's stylesheet but opens none", async () => {
   const h = harness();
   h.setLinked("about.html");
-  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), h.ports.nextFileGeneration(), { linkDefaultStyle: false });
+  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), ++h.ports.view.fileGeneration, { linkDefaultStyle: false });
   assert.ok(h.calls.includes("unlink"));
   assert.deepEqual(h.calls.filter((call) => /^(default|component|hold)/.test(call)), []);
 });
 
 test("the editor's history target opens the stylesheet beside the page and draws its rules", async () => {
   const h = harness();
-  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), h.ports.nextFileGeneration());
+  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), ++h.ports.view.fileGeneration);
   h.calls.length = 0;
   assert.equal(await h.opened[0].ensureHistoryTarget!("styles.css"), true);
   assert.deepEqual(h.calls, ["secondary styles.css", "render"]);
@@ -236,7 +249,7 @@ test("the editor's history target opens the stylesheet beside the page and draws
 test("a page the text index has not read yet is drawn from the branch text before its editor mounts", async () => {
   const h = harness({ indexed: true });
   await h.pane.openEntry(entry("index.html"), "index.html", h.session.begin());
-  assert.equal(h.ports.nativeBaseSources.get("index.html"), "text of index.html-sha");
+  assert.equal(h.ports.runtime.base.sources.get("index.html"), "text of index.html-sha");
   assert.ok(h.calls.indexOf("preview") >= 0 && h.calls.indexOf("preview") < h.calls.indexOf("editor index.html"), h.calls.join(", "));
 });
 
@@ -249,7 +262,7 @@ test("a file that cannot be read as text is said in the status line, not as a fa
 
 test("discarding a new page opens its fallback page once the discard is done, keeping the discard's words", async () => {
   const h = harness({ route: "/new/", fallback: "index.html" });
-  await h.pane.mountSource("new/index.html", "", null, false, h.session.begin(), h.ports.nextFileGeneration());
+  await h.pane.mountSource("new/index.html", "", null, false, h.session.begin(), ++h.ports.view.fileGeneration);
   h.calls.length = 0;
   h.opened[0].onDiscardNew!();
   assert.deepEqual(h.calls, ["discarded new/index.html"]);
