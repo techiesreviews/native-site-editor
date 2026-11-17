@@ -82,10 +82,11 @@ async function goToShared(item: InboxItem, shared: NonNullable<InboxItem["shared
   });
   // No framed instance to open it on: its code opens, with its note.
   if (!steps.length || steps.some(step => !step.node)) { await ports.editComponent(shared.tag, undefined, [sharedNote(shared)]); return; }
-  for (const step of steps) {
+  for (const [n, step] of steps.entries()) {
     if (!stamp.holds()) return;
-    // The note is the part's own: it rides on its step (the mode keeps the notes it was entered with).
-    const entered = await ports.editComponent(step.tag, { path: step.path, node: step.node! }, step.tag === shared.tag ? [sharedNote(shared)] : []);
+    // The mode keeps the notes it was entered with (a nested part opens behind a breadcrumb, without notes of its own),
+    // so the part's note rides on the first step.
+    const entered = await ports.editComponent(step.tag, { path: step.path, node: step.node! }, n ? [] : [sharedNote(shared)]);
     if (entered !== "mode") return;
   }
   const template = ports.source(item.page);
