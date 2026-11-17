@@ -30,17 +30,18 @@ export function suggestionWords(reply: string) {
   return line.trim().replace(/^["'“‘«]+|["'”’»]+$/g, "").trim().slice(0, SUGGESTION_LIMIT).trim();
 }
 
-/** Where `at` in `before` is in `after`, when the change between them leaves it be (before or after the changed
- * stretch); undefined when it sits in the changed stretch. */
-export function mapOffset(before: string, after: string, at: number) {
-  let head = 0;
-  const most = Math.min(before.length, after.length);
-  while (head < most && before[head] === after[head]) head++;
+/** Where the element at `at` in `before` is in `after`, when the change between them leaves it be: after the changed
+ * stretch (read from the end, so a tag put right before it does not count as a change in it), or before the stretch
+ * with its whole start tag (so a like link put after it reads either way, and one put before it never reads as it). */
+function mapOffsets(before: string, after: string, at: number) {
+  const most = Math.min(before.length, after.length), found: number[] = [];
   let tail = 0;
-  while (tail < most - head && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
-  if (at < head) return at;
-  if (at >= before.length - tail) return at + after.length - before.length;
-  return undefined;
+  while (tail < most && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
+  if (at >= before.length - tail) found.push(at + after.length - before.length);
+  let head = 0;
+  while (head < most && before[head] === after[head]) head++;
+  if (head >= before.indexOf(">", at) + 1) found.push(at);
+  return found;
 }
 /** A row's kind, file and address without its place among its like (a link's or a video's key ends with it). */
 const family = (item: InboxItem) => item.kind === "link" || item.kind === "video" ? item.key.replace(/\n\d+$/, "") : item.key;
@@ -62,7 +63,8 @@ export function createInboxFixes(ports: {
   // like it. A row whose key moved to another element (a like one put before it) loses its suggestion.
   const anchors = new Map<string, { found: string; at: number; like: number }>();
   let rows: readonly InboxItem[] = [];
-  const like = (item: InboxItem, among: readonly InboxItem[]) => among.filter(other => family(other) === family(item)).length;
+  // How many like rows (same kind, file and address) come before it: one put before it moves its key to another element.
+  const like = (item: InboxItem, among: readonly InboxItem[]) => among.filter(other => family(other) === family(item) && (other.at ?? 0) < (item.at ?? 0)).length;
   const forget = (key: string) => { states.delete(key); anchors.delete(key); };
   const set = (key: string, state: FixState | undefined) => {
     if (state) states.set(key, state); else forget(key);
@@ -74,7 +76,7 @@ export function createInboxFixes(ports: {
     if (!anchor || item.found === undefined || item.at === undefined) return true;
     if (like(item, among) !== anchor.like) return false;
     if (item.found === anchor.found) return item.at === anchor.at;
-    if (mapOffset(anchor.found, item.found, anchor.at) !== item.at) return false;
+    if (!mapOffsets(anchor.found, item.found, anchor.at).includes(item.at)) return false;
     anchors.set(item.key, { ...anchor, found: item.found, at: item.at });
     return true;
   };

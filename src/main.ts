@@ -304,7 +304,7 @@ const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.r
   label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), showing: () => nativePreview?.route(), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
   select: (request, later) => later ? nativePreview?.selectAfterUpdate(request, { reveal: "center" }) : nativePreview?.selectNode(request, false), error: errorMessage,
   pageDetails: page => void openNativePageSettings(page), media: () => mediaController.workspaceContext(), site: () => runtime.site ?? undefined, // TOOLS-253: shared parts, Fix with AI
-  agent: () => agentController, edits: guardedEdits, editComponent: (tag, instance, notes) => componentTools?.editComponent(tag, undefined, instance, notes) ?? Promise.resolve() });
+  agent: () => agentController, edits: guardedEdits, editComponent: (tag, instance, notes) => componentTools?.editComponent(tag, undefined, instance, notes) ?? Promise.resolve(undefined) });
 
 // `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
 let deactivatingAway = false;

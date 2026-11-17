@@ -46,7 +46,7 @@ export interface InboxPorts {
   /** An accepted fix, No speech and a heading's one press are written as one Undo step. */
   readonly edits: Pick<GuardedEdits, "run">;
   /** Edit component mode on a shared part, framing `instance` on its page, with `notes` in its bar. */
-  editComponent(tag: string, instance: { path: string; node: number[] } | undefined, notes: readonly string[]): Promise<unknown>;
+  editComponent(tag: string, instance: { path: string; node: number[] } | undefined, notes: readonly string[]): Promise<"mode" | "late" | undefined>;
   error(error: unknown): void;
 }
 

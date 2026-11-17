@@ -76,11 +76,17 @@ async function goToShared(item: InboxItem, shared: NonNullable<InboxItem["shared
   if (!stamp.holds()) return;
   // The part's instance on the page, through the parts it sits in (a logo inside the header): each opened in turn.
   const chain = page === undefined ? undefined : partChain(page, ports.site()?.components ?? {}, file => ports.source(file), shared.tag);
-  if (!chain) await ports.editComponent(shared.tag, undefined, [sharedNote(shared)]);
-  for (const [n, step] of (chain ?? []).entries()) {
-    const text = ports.source(step.path), node = text === undefined ? undefined : elementPathAt(text, step.at);
-    if (!node || !stamp.holds()) return;
-    await ports.editComponent(step.tag, { path: step.path, node }, n ? [] : [sharedNote(shared)]);
+  const steps = (chain ?? []).map(step => {
+    const text = ports.source(step.path);
+    return { ...step, node: text === undefined ? undefined : elementPathAt(text, step.at) };
+  });
+  // No framed instance to open it on: its code opens, with its note.
+  if (!steps.length || steps.some(step => !step.node)) { await ports.editComponent(shared.tag, undefined, [sharedNote(shared)]); return; }
+  for (const step of steps) {
+    if (!stamp.holds()) return;
+    // The note is the part's own: it rides on its step (the mode keeps the notes it was entered with).
+    const entered = await ports.editComponent(step.tag, { path: step.path, node: step.node! }, step.tag === shared.tag ? [sharedNote(shared)] : []);
+    if (entered !== "mode") return;
   }
   const template = ports.source(item.page);
   const at = template === undefined || item.at === undefined ? undefined : elementPathAt(template, item.at);
@@ -177,8 +183,9 @@ export function createInboxList(ports: InboxPorts) {
     },
   });
   const fixes = createInboxFixes({ agent: () => agent, write, changed: redraw, error: error => ports.error(error) });
-  // An agent connecting or going away, or its requests changing, redraws an open panel: Fix with AI follows it.
-  watchReplies(redraw);
+  // An agent connecting or going away redraws an open panel: Fix with AI follows it (answers redraw through `changed`).
+  let wasConnected = fixes.connected();
+  watchReplies(() => { const now = fixes.connected(); if (now !== wasConnected) { wasConnected = now; redraw(); } });
 
   // What was last shown: the list, the dots' rules and the panel are written again only when they change, since each
   // write makes the browser restyle the page (an edit's next layout would pay for it).
