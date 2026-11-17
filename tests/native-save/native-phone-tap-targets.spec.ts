@@ -153,6 +153,25 @@ for (const width of [390, 360, 430]) test.describe(`phone, ${width} px`, () => {
   });
 });
 
+test.describe("phone, forced colours", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, forcedColors: "active" });
+
+  // Forced colours paint even a transparent border in a system colour: the chip's clear band takes the page's own
+  // colour, so no bar shows above and below the pill.
+  test("the style chip's clear band paints no bar", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await structureAndCode(page);
+    await expect.poll(() => page.evaluate(() => {
+      const chip = getComputedStyle(document.querySelector("#secondary-rules .code-pane__rule")!);
+      const probe = document.body.appendChild(document.createElement("div"));
+      probe.style.color = "Canvas";
+      const canvas = getComputedStyle(probe).color;
+      probe.remove();
+      return [chip.borderTopColor, chip.borderBottomColor].every((color) => color === canvas);
+    })).toBe(true);
+  });
+});
+
 test.describe("desktop, 1280 px", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
