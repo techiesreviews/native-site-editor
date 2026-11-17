@@ -117,21 +117,28 @@ export function createInboxFixes(ports: {
       ports.changed();
       return false;
     }
-    for (const { item, state } of ready) states.set(item.key, { ...state, status: "accepting" });
+    // This Accept's own states: only rows still in them settle when the write does (another site, or another Accept
+    // of the same row since, has states of its own that this one never touches).
+    const accepting = ready.map(({ item, state, words }) => {
+      const mine: FixState = { ...state, status: "accepting" };
+      states.set(item.key, mine);
+      return { item, state, words, mine };
+    });
     ports.changed();
     try {
       await ports.write(ready.map(({ item, words }) => ({ item, words })));
     } catch (error) {
       // Refused (the page changed since): each row is back to its suggestion and says why, where Accept was pressed.
       const refused = error instanceof Error ? error.message : String(error);
-      for (const { item, state } of ready) if (states.get(item.key)?.status === "accepting") states.set(item.key, { status: "suggested", draft: state.draft, refused });
+      const own = accepting.filter(({ item, mine }) => states.get(item.key) === mine);
+      for (const { item, state } of own) states.set(item.key, { status: "suggested", draft: state.draft, refused });
       ports.changed();
-      // Said on the editor's status line too, for a screen reader.
-      ports.refused?.(refused);
+      // Said on the editor's status line too, for a screen reader, while one of its rows still shows it.
+      if (own.length) ports.refused?.(refused);
       return false;
     }
     // Accepted until the next check finds it fixed and the row leaves.
-    for (const { item, words } of ready) if (states.get(item.key)?.status === "accepting") states.set(item.key, { status: "accepted", draft: words });
+    for (const { item, words, mine } of accepting) if (states.get(item.key) === mine) states.set(item.key, { status: "accepted", draft: words });
     ports.changed();
     return true;
   }

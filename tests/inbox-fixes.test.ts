@@ -367,3 +367,23 @@ test("a refused Accept is said on the status line; refused words replace the ear
   assert.equal(await fixes.accept(vague), false);
   assert.deepEqual(fixes.state(vague.key), { status: "suggested", draft: "read more", invalid: true });
 });
+
+test("an older Accept that settles after another site's Accept of the same row never touches the newer one", async () => {
+  const answers: Record<string, string> = { [picture.key]: "Old words" };
+  const agent: InboxAgent = { connected: () => true, suggest: async item => answers[item.key] };
+  const settle: { fail?: (error: Error) => void; done?: () => void }[] = [];
+  const fixes = createInboxFixes({ agent: () => agent, write: () => new Promise<void>((done, fail) => { settle.push({ done, fail }); }), changed() {} });
+  await fixes.suggest(picture);
+  const old = fixes.accept(picture);
+  // Another site opens; the same row is asked and accepted there.
+  fixes.clear();
+  answers[picture.key] = "New words";
+  await fixes.suggest(picture);
+  const newer = fixes.accept(picture);
+  settle[0].fail!(new Error("The site changed since it was checked. Nothing was changed."));
+  assert.equal(await old, false);
+  assert.deepEqual(fixes.state(picture.key), { status: "accepting", draft: "New words" });
+  settle[1].done!();
+  assert.equal(await newer, true);
+  assert.deepEqual(fixes.state(picture.key), { status: "accepted", draft: "New words" });
+});

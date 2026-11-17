@@ -150,7 +150,8 @@ function readPage(file: string, source: string): PageRead {
   });
   // Each custom element's count (a component's instances), as Edit component mode counts them: parsed elements only.
   const tags = new Map<string, number>();
-  for (const element of elements) if (element.name.includes("-")) tags.set(element.name.toLowerCase(), (tags.get(element.name.toLowerCase()) ?? 0) + 1);
+  // One inside a <template> the page does not show is not a use (a declarative shadow root's is).
+  for (const element of shown) if (element.name.includes("-")) tags.set(element.name.toLowerCase(), (tags.get(element.name.toLowerCase()) ?? 0) + 1);
   const page = { source, titled: hasTitle(source, elements), pictures, links, headings, videos, tags };
   read.set(file, page);
   return page;
@@ -165,7 +166,8 @@ export function partChain(page: string, components: Readonly<Record<string, stri
     const text = source(file);
     if (text === undefined || seen.has(file)) return undefined;
     seen.add(file);
-    const hosts = [...descendants(parseSource(text))].filter(element => Object.hasOwn(components, element.name.toLowerCase()));
+    // An instance inside a <template> the page does not show is never one to open.
+    const hosts = [...descendants(parseSource(text))].filter(element => Object.hasOwn(components, element.name.toLowerCase()) && !inInactiveTemplate(text, element));
     const direct = hosts.find(element => element.name.toLowerCase() === target);
     if (direct) return [{ tag: target, path: file, at: direct.tag.start }];
     for (const host of hosts) {
