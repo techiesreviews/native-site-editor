@@ -64,7 +64,8 @@ export function pictureVerdict(alt: string | undefined, state: Verdict | undefin
 interface PagePicture { at: number; src: string | undefined; alt: string | undefined; shown: string; hidden: boolean; slotted: boolean }
 
 interface PageLink { at: number; href: string; words: string; named: boolean; plain: boolean; slotted: boolean }
-interface PageHeading { at: number; level: number; words: string }
+/** `hidden`: in a <template> the page does not show; it still sets the level the next heading follows, as the edit bar reads it. */
+interface PageHeading { at: number; level: number; words: string; hidden: boolean }
 interface PageVideo { at: number; src: string; waits: boolean; slotted: boolean }
 interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[]; links: readonly PageLink[]; headings: readonly PageHeading[]; videos: readonly PageVideo[]; tags: ReadonlyMap<string, number> }
 
@@ -133,13 +134,16 @@ function readPage(file: string, source: string): PageRead {
     const plain = element.children.every(child => child.type === "text");
     return [{ at: element.tag.start, href: attribute(source, element, "href") ?? "", words, named, plain, slotted: slotted(element) }];
   });
-  const headings = shown.flatMap(element => {
+  // Every heading in order, as the edit bar's previousHeadingLevel reads them (src/native-structure.ts): one in an
+  // inactive <template> sets the level too, but is never listed itself.
+  const headings = elements.flatMap(element => {
     const match = /^h([1-6])$/i.exec(element.name);
-    return match && element.close ? [{ at: element.tag.start, level: Number(match[1]), words: wordsOf(source, element) }] : [];
+    return match ? [{ at: element.tag.start, level: Number(match[1]), words: wordsOf(source, element), hidden: !element.close || inInactiveTemplate(source, element) }] : [];
   });
   const videos = shown.flatMap(element => {
     if (element.name.toLowerCase() !== "video") return [];
-    const tracks = [...descendants(element.children)].some(inner => inner.name.toLowerCase() === "track" && /^(subtitles|captions)$/i.test(attribute(source, inner, "kind")?.trim() ?? ""));
+    // A track with no kind is subtitles (the HTML default).
+    const tracks = [...descendants(element.children)].some(inner => inner.name.toLowerCase() === "track" && /^(subtitles|captions)$/i.test(attribute(source, inner, "kind")?.trim() ?? "subtitles"));
     // A muted video says nothing to hear; "No speech" marks one with sound but no words.
     const silent = attribute(source, element, "muted") !== undefined || attribute(source, element, "data-no-speech") !== undefined;
     return [{ at: element.tag.start, src: attribute(source, element, "src")?.trim() ?? "", waits: !tracks && !silent, slotted: slotted(element) }];
@@ -258,7 +262,7 @@ export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules, par
     for (const heading of known.headings) {
       const nth = named.get(heading.words) ?? 0;
       named.set(heading.words, nth + 1);
-      if (previous > 0 && heading.level > previous + 1)
+      if (!heading.hidden && previous > 0 && heading.level > previous + 1)
         items.push({ key: `heading\n${page.file}\n${heading.words}\n${nth}`, kind: "heading", what: "Heading skips a level", where: `${page.label} page`, page: page.file,
           at: heading.at, level: { from: heading.level, to: previous + 1 }, found: source });
       previous = heading.level;

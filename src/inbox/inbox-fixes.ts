@@ -19,7 +19,8 @@ export interface InboxAgent {
 export interface InboxFix { item: InboxItem; words: string }
 
 export type FixStatus = "thinking" | "suggested" | "failed" | "accepting" | "accepted";
-export interface FixState { status: FixStatus; draft?: string; invalid?: true }
+/** `refused`: why the last Accept wrote nothing, shown on its row. */
+export interface FixState { status: FixStatus; draft?: string; invalid?: true; refused?: string }
 
 /** The longest words a suggestion keeps: a description or a link's words, never a paragraph. */
 export const SUGGESTION_LIMIT = 250;
@@ -56,7 +57,6 @@ export function createInboxFixes(ports: {
   write(fixes: readonly InboxFix[]): Promise<void>;
   /** Something a row shows changed: draw again. */
   changed(): void;
-  error(error: unknown): void;
 }) {
   const states = new Map<string, FixState>();
   // The element each suggestion is for, as it was asked: its file's text, its offset there and how many rows were
@@ -115,9 +115,10 @@ export function createInboxFixes(ports: {
     try {
       await ports.write(ready.map(({ item, words }) => ({ item, words })));
     } catch (error) {
-      for (const { item, state } of ready) if (states.get(item.key)?.status === "accepting") states.set(item.key, state);
+      // Refused (the page changed since): each row is back to its suggestion and says why, where Accept was pressed.
+      const refused = error instanceof Error ? error.message : String(error);
+      for (const { item, state } of ready) if (states.get(item.key)?.status === "accepting") states.set(item.key, { ...state, refused });
       ports.changed();
-      ports.error(error);
       return false;
     }
     // Accepted until the next check finds it fixed and the row leaves.
@@ -206,8 +207,9 @@ export function fixEdits(item: InboxItem, words: string, source: string): { star
     const current = startTagAttribute(source, element.tag, key);
     const text = ` ${key}="${escapeValue(value)}"`;
     if (current) return { start: current.start, end: current.end, text };
-    // A new attribute goes last in the start tag, before `>` or ` />`.
-    let end = source[element.tag.end - 2] === "/" ? element.tag.end - 2 : element.tag.end - 1;
+    // A new attribute goes last in the start tag, before `>` or a self-closing `/>` (not the slash an unquoted value ends with).
+    const closing = source[element.tag.end - 2] === "/" && /[\s"']/.test(source[element.tag.end - 3] ?? "");
+    let end = closing ? element.tag.end - 2 : element.tag.end - 1;
     while (end > element.tag.nameEnd && /\s/.test(source[end - 1])) end--;
     return { start: end, end, text };
   };

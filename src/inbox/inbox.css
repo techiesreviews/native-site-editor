@@ -149,6 +149,7 @@
 }
 .inbox__suggest > label { color: var(--muted); font-size: var(--type-small); }
 .inbox__field { inline-size: 100%; min-block-size: var(--size-compact); }
+.inbox__refused { color: var(--warning-fg); font-size: var(--type-small); }
 /* Fix all with AI and Accept all, over the list. */
 .inbox__all { display: flex; padding: 0 var(--space-xs) var(--space-xs); }
 @media (hover: none), (pointer: coarse), (width <= 768px) {
