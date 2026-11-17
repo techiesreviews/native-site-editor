@@ -67,7 +67,7 @@ interface PageLink { at: number; href: string; words: string; named: boolean; pl
 /** `hidden`: in a <template> the page does not show; it still sets the level the next heading follows, as the edit bar reads it. */
 interface PageHeading { at: number; level: number; words: string; hidden: boolean }
 interface PageVideo { at: number; src: string; waits: boolean; slotted: boolean }
-interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[]; links: readonly PageLink[]; headings: readonly PageHeading[]; videos: readonly PageVideo[]; tags: ReadonlyMap<string, number> }
+interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[]; links: readonly PageLink[]; headings: readonly PageHeading[]; videos: readonly PageVideo[]; tags: ReadonlyMap<string, number>; shownTags: ReadonlyMap<string, number> }
 
 /** Link words that do not say where a link goes (research 01's words rules), compared lower case with spaces folded. */
 const VAGUE_WORDS = new Set(["click here", "here", "read more", "more", "learn more", "link", "this", "click", "go", "details", "more info"]);
@@ -148,11 +148,14 @@ function readPage(file: string, source: string): PageRead {
     const silent = attribute(source, element, "muted") !== undefined || attribute(source, element, "data-no-speech") !== undefined;
     return [{ at: element.tag.start, src: attribute(source, element, "src")?.trim() ?? "", waits: !tracks && !silent, slotted: slotted(element) }];
   });
-  // Each custom element's count (a component's instances), as Edit component mode counts them: parsed elements only.
-  const tags = new Map<string, number>();
-  // One inside a <template> the page does not show is not a use (a declarative shadow root's is).
-  for (const element of shown) if (element.name.includes("-")) tags.set(element.name.toLowerCase(), (tags.get(element.name.toLowerCase()) ?? 0) + 1);
-  const page = { source, titled: hasTitle(source, elements), pictures, links, headings, videos, tags };
+  // Each custom element's count (a component's instances): every parsed one, as Edit component mode counts the pages
+  // a change reaches (one in a <template> may be shown by the page's script); and the ones the page shows itself.
+  const count = (list: readonly SourceElement[]) => {
+    const found = new Map<string, number>();
+    for (const element of list) if (element.name.includes("-")) found.set(element.name.toLowerCase(), (found.get(element.name.toLowerCase()) ?? 0) + 1);
+    return found;
+  };
+  const page = { source, titled: hasTitle(source, elements), pictures, links, headings, videos, tags: count(elements), shownTags: count(shown) };
   read.set(file, page);
   return page;
 }
@@ -223,8 +226,9 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
   return items;
 }
 
-/** The custom elements a page or template holds, with how many of each, read once per text (with its items). */
-export const componentTags = (file: string, source: string) => readPage(file, source).tags;
+/** The custom elements a page or template holds, with how many of each, read once per text (with its items): every
+ * one, or (`shown`) only those outside a <template> the page does not show. */
+export const componentTags = (file: string, source: string, shown = false) => shown ? readPage(file, source).shownTags : readPage(file, source).tags;
 
 /** For each component, the pages that show it: in their own markup, or through the components they show (a logo
  * inside the header), as Edit component mode counts them (component-model.ts `componentUsage`). */

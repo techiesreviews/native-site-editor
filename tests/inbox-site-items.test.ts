@@ -271,13 +271,13 @@ test("a subtitles track with no kind counts (the HTML default); a heading in a h
   assert.equal(heading.at, source.indexOf("<h4>"));
 });
 
-test("a part inside a template the page does not show is no use of it: no item, no page, no way to it", () => {
+test("a part inside a template the page does not show is reached by a change (Edit component mode counts it) but never shown, nor a way to it", () => {
   const files: Record<string, string> = {
     "index.html": `<body><template><site-header></site-header></template></body>`,
     "components/site-header/site-header.html": `<header><img src="/logo.svg"></header>`,
   };
   const components = { "site-header": "components/site-header/site-header.html" };
-  const shows = componentPages(["index.html"], components, file => componentTags(file, files[file]));
-  assert.equal(shows.has("site-header"), false);
+  assert.equal(componentPages(["index.html"], components, file => componentTags(file, files[file], true)).has("site-header"), false);
+  assert.deepEqual([...componentPages(["index.html"], components, file => componentTags(file, files[file])).get("site-header")!], ["index.html"]);
   assert.equal(partChain("index.html", components, file => files[file], "site-header"), undefined);
 });
