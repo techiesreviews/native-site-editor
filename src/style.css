@@ -316,6 +316,10 @@ pre:focus-visible {
     outline-offset: calc((var(--size-compact) - var(--size-tap)) / 2);
     box-shadow: var(--focus-ring-inset);
   }
+  /* Forced colours paint the transparent band too: in the page's own colour it shows no bar above and below the pill. */
+  @media (forced-colors: active) {
+    .code-pane__rule { border-color: Canvas; }
+  }
 }
 .code-pane > .workspace-content {
   flex: 1;
