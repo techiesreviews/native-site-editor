@@ -28,11 +28,12 @@ import { watchReplies } from "../agent-replies";
 function sharedParts(ports: InboxPorts, pages: readonly string[]): InboxPart[] {
   const site = ports.site();
   if (!site) return [];
-  const tags = (file: string) => { const text = ports.source(file); return text === undefined ? undefined : componentTags(file, text); };
-  const shows = componentPages(pages, site.components, tags);
+  const tags = (shown: boolean) => (file: string) => { const text = ports.source(file); return text === undefined ? undefined : componentTags(file, text, shown); };
+  // The pages a change reaches, as Edit component mode counts them; a part is checked only where a page shows it.
+  const reaches = componentPages(pages, site.components, tags(false)), shows = componentPages(pages, site.components, tags(true));
   return Object.entries(site.components).flatMap(([tag, file]) => {
-    const used = pages.filter(page => shows.get(tag)?.has(page));
-    return used.length ? [{ file, tag, name: componentLabel(tag), pages: used, source: ports.source(file) }] : [];
+    const used = pages.filter(page => reaches.get(tag)?.has(page));
+    return shows.get(tag)?.size ? [{ file, tag, name: componentLabel(tag), pages: used, source: ports.source(file) }] : [];
   });
 }
 
@@ -62,13 +63,15 @@ export const sharedNote = (shared: NonNullable<InboxItem["shared"]>, within?: st
 /** Goes to a shared part's item: a page that shows the part (the one shown, if it does) in Edit component mode, with
  * the part's note, and the element selected in its template. */
 async function goToShared(item: InboxItem, shared: NonNullable<InboxItem["shared"]>, ports: InboxPorts) {
-  const showing = shared.pages.find(page => ports.appStore.openFile.value === page && ports.showing() === ports.route(page));
-  const page = showing ?? shared.pages[0];
+  const components = ports.site()?.components ?? {}, read = (file: string) => ports.source(file);
+  // The page shown when it shows the part, else the first page that shows it (not only in a hidden template).
+  const showing = shared.pages.find(page => ports.appStore.openFile.value === page && ports.showing() === ports.route(page) && partChain(page, components, read, shared.tag));
+  const page = showing ?? shared.pages.find(page => partChain(page, components, read, shared.tag)) ?? shared.pages[0];
   const stamp = ports.stamp();
   if (!showing && page) await ports.open(page);
   if (!stamp.holds()) return;
   // The part's instance on the page, through the parts it sits in (a logo inside the header): each opened in turn.
-  const chain = page === undefined ? undefined : partChain(page, ports.site()?.components ?? {}, file => ports.source(file), shared.tag);
+  const chain = page === undefined ? undefined : partChain(page, components, read, shared.tag);
   const steps = (chain ?? []).map(step => {
     const text = ports.source(step.path);
     return { ...step, node: text === undefined ? undefined : elementPathAt(text, step.at) };
