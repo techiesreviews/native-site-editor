@@ -66,7 +66,7 @@ interface PagePicture { at: number; src: string | undefined; alt: string | undef
 interface PageLink { at: number; href: string; words: string; named: boolean; plain: boolean; slotted: boolean }
 interface PageHeading { at: number; level: number; words: string }
 interface PageVideo { at: number; src: string; waits: boolean; slotted: boolean }
-interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[]; links: readonly PageLink[]; headings: readonly PageHeading[]; videos: readonly PageVideo[] }
+interface PageRead { source: string; titled: boolean; pictures: readonly PagePicture[]; links: readonly PageLink[]; headings: readonly PageHeading[]; videos: readonly PageVideo[]; tags: ReadonlyMap<string, number> }
 
 /** Link words that do not say where a link goes (research 01's words rules), compared lower case with spaces folded. */
 const VAGUE_WORDS = new Set(["click here", "here", "read more", "more", "learn more", "link", "this", "click", "go", "details", "more info"]);
@@ -144,7 +144,10 @@ function readPage(file: string, source: string): PageRead {
     const silent = attribute(source, element, "muted") !== undefined || attribute(source, element, "data-no-speech") !== undefined;
     return [{ at: element.tag.start, src: attribute(source, element, "src")?.trim() ?? "", waits: !tracks && !silent, slotted: slotted(element) }];
   });
-  const page = { source, titled: hasTitle(source, elements), pictures, links, headings, videos };
+  // Each custom element's count (a component's instances), as Edit component mode counts them: parsed elements only.
+  const tags = new Map<string, number>();
+  for (const element of elements) if (element.name.includes("-")) tags.set(element.name.toLowerCase(), (tags.get(element.name.toLowerCase()) ?? 0) + 1);
+  const page = { source, titled: hasTitle(source, elements), pictures, links, headings, videos, tags };
   read.set(file, page);
   return page;
 }
@@ -212,6 +215,31 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
     if (video.waits && own(video)) items.push({ key: `video\n${file}\n${video.src}\n${nth}`, kind: "video", what: "Video without subtitles", ...common, at: video.at, wave: "No speech", found: source });
   }
   return items;
+}
+
+/** The custom elements a page or template holds, with how many of each, read once per text (with its items). */
+export const componentTags = (file: string, source: string) => readPage(file, source).tags;
+
+/** For each component, the pages that show it: in their own markup, or through the components they show (a logo
+ * inside the header), as Edit component mode counts them (component-model.ts `componentUsage`). */
+export function componentPages(pages: readonly string[], components: Readonly<Record<string, string>>, tags: (file: string) => ReadonlyMap<string, number> | undefined) {
+  const shows = new Map<string, Set<string>>();
+  // The components a file shows, through the ones inside them; a loop of components ends where it began.
+  const inside = (file: string, seen: Set<string>): Set<string> => {
+    const found = new Set<string>();
+    for (const tag of tags(file)?.keys() ?? []) {
+      if (!Object.hasOwn(components, tag) || found.has(tag)) continue;
+      found.add(tag);
+      if (seen.has(tag)) continue;
+      for (const deeper of inside(components[tag], new Set([...seen, tag]))) found.add(deeper);
+    }
+    return found;
+  };
+  for (const page of pages) for (const tag of inside(page, new Set())) {
+    if (!shows.has(tag)) shows.set(tag, new Set());
+    shows.get(tag)!.add(page);
+  }
+  return shows;
 }
 
 export function siteItems(pages: readonly InboxPage[], rules: SiteItemRules, parts: readonly InboxPart[] = []): InboxItem[] {

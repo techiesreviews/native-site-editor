@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forgetPages, heldPages, partChain, pictureVerdict, siteFile, siteItems, type InboxPage, type InboxPart } from "../src/inbox/site-items.ts";
+import { componentPages, componentTags, forgetPages, heldPages, partChain, pictureVerdict, siteFile, siteItems, type InboxPage, type InboxPart } from "../src/inbox/site-items.ts";
 
 // The edit bar's verdict stands in: an absent alt or an unmarked empty one is not described yet.
 const rules = {
@@ -239,4 +239,25 @@ test("the way to a part goes through the parts it sits in, as Edit component mod
   ]);
   assert.deepEqual(partChain("index.html", components, file => files[file], "site-header"), [{ tag: "site-header", path: "index.html", at: files["index.html"].indexOf("<site-header") }]);
   assert.equal(partChain("index.html", components, file => files[file], "card-note"), undefined);
+});
+
+test("each part's pages are the pages that show it, in their markup or through another part; a loop of parts ends", () => {
+  const tags: Record<string, Map<string, number>> = {
+    "index.html": new Map([["site-header", 1]]),
+    "about/index.html": new Map([["site-footer", 1], ["x-unknown", 1]]),
+    "components/site-header/site-header.html": new Map([["site-mark", 1]]),
+    "components/site-mark/site-mark.html": new Map([["site-header", 1]]),
+    "components/site-footer/site-footer.html": new Map(),
+  };
+  const components = { "site-header": "components/site-header/site-header.html", "site-mark": "components/site-mark/site-mark.html", "site-footer": "components/site-footer/site-footer.html" };
+  const shows = componentPages(["index.html", "about/index.html"], components, file => tags[file]);
+  assert.deepEqual([...shows.get("site-header")!], ["index.html"]);
+  assert.deepEqual([...shows.get("site-mark")!], ["index.html"]);
+  assert.deepEqual([...shows.get("site-footer")!], ["about/index.html"]);
+  assert.equal(shows.has("x-unknown"), false);
+});
+
+test("a page's components are read from its elements once per text: a commented-out tag does not count", () => {
+  const text = `<body><!-- <site-header> --><site-header></site-header><site-header></site-header></body>`;
+  assert.deepEqual([...componentTags("index.html", text)], [["site-header", 2]]);
 });

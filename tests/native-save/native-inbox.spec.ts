@@ -217,7 +217,7 @@ test.describe("new checks (TOOLS-253)", () => {
     await page.keyboard.press("Escape");
     await inboxButton(page).click();
     await inbox(page).getByRole("button", { name: "Picture without a description, Site mark · changes 2 pages" }).click();
-    await expect(page.getByRole("button", { name: /^Note: Site mark is a shared part\. A change here shows on all 2 pages that use it\./ })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /^Note: Site mark, inside Site header, is a shared part\. A change here shows on all 2 pages that use it\./ })).toBeVisible({ timeout: 15_000 });
     await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/site-mark/site-mark.html");
   });

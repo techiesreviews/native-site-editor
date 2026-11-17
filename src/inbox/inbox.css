@@ -147,7 +147,7 @@
   border-radius: var(--radius);
   background: var(--surface-card);
 }
-.inbox__suggest > small { color: var(--muted); font-size: var(--type-small); }
+.inbox__suggest > label { color: var(--muted); font-size: var(--type-small); }
 .inbox__field { inline-size: 100%; min-block-size: var(--size-compact); }
 /* Fix all with AI and Accept all, over the list. */
 .inbox__all { display: flex; padding: 0 var(--space-xs) var(--space-xs); }
