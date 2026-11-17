@@ -58,31 +58,38 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
       selectNode: unused("selectNode"), selectTextAfterUpdate: () => {}, selectAfterUpdate: () => {},
       showEditBar: unused("showEditBar"), hideEditBar: unused("hideEditBar"),
     },
-    nativeSite: { routes: { "/": PAGE }, components: { "x-band": BAND } },
-    nativeEditableTemplatePath: () => undefined,
-    nativeEffectiveSource: (path: string) => edits.peek.source(path),
-    draftScope: () => mem.scope,
+    // The open site: the memory workspace's files as the guarded edit module reads them.
+    runtime: {
+      site: { routes: { "/": PAGE }, components: { "x-band": BAND } },
+      sources: () => Object.fromEntries(mem.files().map(path => [path, edits.peek.source(path)!])),
+      source: (path: string) => edits.peek.source(path),
+    },
+    // Each shared host module (src/host-modules.ts) is one fake.
+    notices: {
+      errorMessage: (error: unknown) => errors.push(error instanceof Error ? error.message : String(error)),
+      announce: text => mem.announced.push(text),
+    },
+    // The memory workspace's guarded edit stamps stand for the load; a restore's own stamp always holds here.
+    session: { begin: () => ({ load: 0, scope: undefined, holds: () => true, changed: () => undefined }), currentLoad: () => 0, draftScope: () => mem.scope },
+    view: { restoreFile: unused("restoreFile") },
+    preview: { nativePageStyles: () => [], nativeRouteInfo: () => ({}), updateNativePreviewSources: unused("updateNativePreviewSources") },
+    media: { mediaController: {
+      placeState: () => undefined, changePlace: unused("changePlace"), videoControls: () => [], mediaButton: () => undefined, placeFrame: () => undefined, editImage: unused("editImage"),
+    } },
+    pagesAndFiles: { pagesController: { pageLabel: (path: string) => path } },
     get versionView() { return undefined; },
     locateNativeElementRange,
-    nativePageLabelOf: (path: string) => path,
     refuse: (message: string) => notices.push(message),
-    errorMessage: (error: unknown) => errors.push(error instanceof Error ? error.message : String(error)),
     moves,
     componentTools: undefined,
-    nativeEditableSource: path => edits.peek.source(path),
-    element: unused("element"), generation: 0, setupScope: () => "scope",
+    element: unused("element"), setupScope: () => "scope",
     openNativeNavigation: unused("openNativeNavigation"),
-    nativeSources: () => Object.fromEntries(mem.files().map(path => [path, edits.peek.source(path)!])),
-    nativePageStyles: () => [], nativeTextTags: new Set(), nativeLinkParents: new Set(),
-    previewSelection: { textSelection: () => undefined },
-    wholeWrapper: () => undefined, nearestLink: () => undefined, nativeRouteInfo: () => ({}),
+    nativeTextTags: new Set(), nativeLinkParents: new Set(),
+    previewSelection: { textSelection: () => undefined, editableTemplatePath: () => undefined },
+    wholeWrapper: () => undefined, nearestLink: () => undefined,
     nativeNamedDescendant: () => false, nativePictureSources: () => false,
-    mediaPlaceState: undefined, changeMediaPlace: undefined, mediaVideoControls: undefined,
-    mediaButton: undefined, mediaPlaceFrame: undefined, editImage: undefined,
-    chooseMediaForImage: unused("chooseMediaForImage"),
     cardControls: () => [], agentController: { captureAsk: () => undefined },
-    announce: text => mem.announced.push(text), restoreFile: unused("restoreFile"),
-    updateNativePreviewSources: unused("updateNativePreviewSources"), pageStructure: undefined,
+    pageStructure: undefined,
     elementPathAt: () => undefined, wrapperAround: () => undefined,
   } satisfies PageStructurePorts;
   const controller = createPageStructureController(ports);
@@ -309,10 +316,10 @@ test("letters typed while the page opens, the page left meanwhile, go into its d
   let route = "/";
   let opened!: () => void;
   const opening = new Promise<void>((resolve) => { opened = resolve; });
-  f.ports.nativeSite = { routes: { "/": PAGE, "/about/": "about.html" }, components: { "x-band": BAND } };
+  f.ports.runtime.site = { routes: { "/": PAGE, "/about/": "about.html" }, components: { "x-band": BAND } };
   f.ports.nativePreview = { ...f.ports.nativePreview!, route: () => route };
   // Opening the page waits; meanwhile another page shows, so nothing opens.
-  f.ports.restoreFile = async () => { await opening; };
+  f.ports.view.restoreFile = async () => { await opening; };
   const type = (before: string, after: string) => f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before, after, live: true, group: "g" });
   const steps = f.mem.steps().length;
   const letters = [type("A", "AB"), type("AB", "ABC"), type("ABC", "ABCD")];
@@ -328,7 +335,7 @@ test("letters typed while the page opens, the page left meanwhile, go into its d
 function openingFixture() {
   const f = fixture({ open: "styles/site.css" });
   const restores: string[] = [];
-  f.ports.restoreFile = async (path, _epoch, options) => { restores.push(path); await f.mem.workspace.open(path, options?.beforeMount); };
+  f.ports.view.restoreFile = async (path, _at, options) => { restores.push(path); await f.mem.workspace.open(path, options?.beforeMount); };
   const type = (before: string, after: string) => f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before, after });
   return { ...f, restores, type };
 }
@@ -353,8 +360,8 @@ for (const moved of ["generation", "scope"] as const) {
   test(`a ${moved} change while queued text edits wait for the page writes neither`, async () => {
     const points = await forEachAwait(race => {
       const f = openingFixture();
-      const restore = f.ports.restoreFile;
-      f.ports.restoreFile = race.port("restoreFile", (...args: Parameters<typeof restore>) => restore(...args));
+      const restore = f.ports.view.restoreFile;
+      f.ports.view.restoreFile = race.port("restoreFile", (...args: Parameters<typeof restore>) => restore(...args));
       const done = Promise.all([f.type("A", "AB"), f.type("AB", "ABC")]);
       return { ...f, done };
     }, f => { if (moved === "generation") f.mem.bumpGeneration(); else f.mem.setScope("lex/site@other"); }, f => {
@@ -383,7 +390,7 @@ test("link popup writes chosen and typed page routes with the live site prefix",
     return elementEnd(html, tags, tags.findIndex(tag => tag.name === name), html.length);
   };
   const address = drawBar(f, f.target.node, {
-    nativeRouteInfo: () => ({ title: "Home" }),
+    preview: { ...f.ports.preview, nativeRouteInfo: () => ({ title: "Home" }) },
     nearestLink: html => ({ range: rangeOf(html, "a")!, node: [0, 0, 0] }),
     locateNativeElementRange: (html, node) => rangeOf(html, node.length === 3 ? "a" : "section"),
     editorModule: { ...f.ports.editorModule!, replaceActiveRange: edit => {
