@@ -261,3 +261,12 @@ test("a page's components are read from its elements once per text: a commented-
   const text = `<body><!-- <site-header> --><site-header></site-header><site-header></site-header></body>`;
   assert.deepEqual([...componentTags("index.html", text)], [["site-header", 2]]);
 });
+
+test("a subtitles track with no kind counts (the HTML default); a heading in a hidden template sets the level as the edit bar reads it", () => {
+  const video = siteItems([page("index.html", `${head("Home")}<video src="/m/a.mp4" controls><track src="/m/a.vtt" srclang="en"></video></body>`)], rules);
+  assert.deepEqual(video.filter(item => item.kind === "video"), []);
+  const source = `${head("Home")}<h1>A</h1><template><h2>B</h2></template><h4>C</h4></body>`;
+  const [heading] = siteItems([page("index.html", source)], rules).filter(item => item.kind === "heading");
+  assert.deepEqual(heading.level, { from: 4, to: 3 });
+  assert.equal(heading.at, source.indexOf("<h4>"));
+});

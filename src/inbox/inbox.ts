@@ -137,6 +137,9 @@ const hold = (control: HTMLButtonElement, busy = true) => {
 };
 const held = (control: Element) => control.getAttribute("aria-disabled") === "true";
 
+// Each suggestion field drawn gets an id of its own, so its label names it (keys may read alike once cleaned).
+let fieldIds = 0;
+
 export function createInboxList(ports: InboxPorts) {
   let items: readonly InboxItem[] = [];
   let retry: ReturnType<typeof setTimeout> | undefined, retries = 0, checked = false;
@@ -169,6 +172,7 @@ export function createInboxList(ports: InboxPorts) {
   }
   const agent = createInboxAgent({
     link: () => ports.agent(),
+    stamp: () => ports.stamp(),
     async element(item) {
       const site = ports.site(), source = ports.source(item.page);
       const at = source === undefined || item.at === undefined ? undefined : elementPathAt(source, item.at);
@@ -178,7 +182,7 @@ export function createInboxList(ports: InboxPorts) {
       return agentElement({ path: item.page, node: at, tag: item.kind === "picture" ? "img" : "a", text: item.words ?? "", ...route ? { route } : {} }, site, source);
     },
   });
-  const fixes = createInboxFixes({ agent: () => agent, write, changed: redraw, error: error => ports.error(error) });
+  const fixes = createInboxFixes({ agent: () => agent, write, changed: redraw });
   // An agent connecting or going away redraws an open panel: Fix with AI follows it (answers redraw through `changed`).
   let wasConnected = fixes.connected();
   watchReplies(() => { const now = fixes.connected(); if (now !== wasConnected) { wasConnected = now; redraw(); } });
@@ -348,9 +352,16 @@ export function createInboxList(ports: InboxPorts) {
     buttons.querySelectorAll<HTMLElement>("button").forEach((control, n) => { control.dataset.act = n ? "dismiss" : "accept"; });
     // The field's own label (the forms rule), not a hint: what the words are.
     const label = node("label", "", `Suggested ${field}`);
-    input.id = `inbox-suggestion-${item.key.replace(/[^\w-]/g, "-")}`;
+    input.id = `inbox-suggestion-${++fieldIds}`;
     label.htmlFor = input.id;
-    box.append(label, input, buttons);
+    box.append(label, input);
+    // An Accept the page refused says why beside its field (where it was pressed), read out as it appears.
+    if (state.refused) {
+      const why = node("small", "inbox__refused", state.refused);
+      why.setAttribute("role", "status");
+      box.append(why);
+    }
+    box.append(buttons);
     return box;
   }
 

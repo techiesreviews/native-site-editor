@@ -2,7 +2,7 @@
 // its reply's words are the suggestion, and the request is let go once answered.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createInboxAgent, SUGGESTION_WAIT_MS, suggestionPrompt, type InboxAgentLink } from "../src/inbox/inbox-agent.ts";
+import { createInboxAgent, DISCONNECT_GRACE_MS, SUGGESTION_WAIT_MS, suggestionPrompt, type InboxAgentLink } from "../src/inbox/inbox-agent.ts";
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
 import type { AgentElement } from "../shared/agent.ts";
 import type { PinRequest } from "../src/components/agent-pins.ts";
@@ -83,36 +83,53 @@ test("each fix asks for its own words", () => {
   assert.match(suggestionPrompt({ ...logo, kind: "link", fix: "words", words: "click here", shared: undefined }), /only says “click here”/);
 });
 
-test("an agent that goes away while the suggestion waits ends it at once, not at the timeout", async () => {
+/** A clock whose timers run when the test says: `run(ms)` fires those set for exactly `ms`. */
+function heldClock() {
+  const timers: { run: () => void; ms: number }[] = [];
+  return {
+    clock: { setTimeout: (run: () => void, ms: number) => timers.push({ run, ms }), clearTimeout: (timer: unknown) => { timers.splice((timer as number) - 1, 1, { run: () => undefined, ms: -1 }); } },
+    run: (ms: number) => { for (const timer of timers.filter(found => found.ms === ms)) timer.run(); },
+  };
+}
+
+test("an agent that goes away while the suggestion waits ends it after a short grace, not at the timeout, and lets the request go", async () => {
   let connected = true;
   const listeners: ((requests: readonly PinRequest[]) => void)[] = [];
+  const dismissed: string[] = [];
+  const held = heldClock();
   const agent = createInboxAgent({
-    link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: () => undefined }),
+    link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: (id) => { dismissed.push(id); } }),
     element: async () => element,
     watch: heard => { listeners.push(heard); heard([]); return () => undefined; },
-    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+    clock: held.clock,
   });
   const words = agent.suggest(logo);
   await new Promise(done => setTimeout(done));
   connected = false;
   listeners[0]([]);
+  held.run(DISCONNECT_GRACE_MS);
   await assert.rejects(words, /no longer connected/);
+  assert.deepEqual(dismissed, ["req-1"]);
 });
 
-test("an answer that arrives as the agent goes away is still the suggestion", async () => {
+test("a reply the menu tells just after the agent left, within the grace, is still the suggestion", async () => {
   let connected = true;
   const listeners: ((requests: readonly PinRequest[]) => void)[] = [];
   const dismissed: string[] = [];
+  const held = heldClock();
   const agent = createInboxAgent({
     link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: (id) => { dismissed.push(id); } }),
     element: async () => element,
     watch: heard => { listeners.push(heard); heard([]); return () => undefined; },
-    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+    clock: held.clock,
   });
   const words = agent.suggest(logo);
   await new Promise(done => setTimeout(done));
   connected = false;
+  // The disconnect is told first, with the old list; the saved reply follows.
+  listeners[0]([]);
   listeners[0]([{ id: "req-1", text: "", state: "done", createdAt: 1, repoId: 1, element, reply: { status: "done", message: "Logo", at: 2 } }]);
+  held.run(DISCONNECT_GRACE_MS);
   assert.equal(await words, "Logo");
   assert.deepEqual(dismissed, ["req-1"]);
 });
@@ -120,15 +137,29 @@ test("an answer that arrives as the agent goes away is still the suggestion", as
 test("the menu's connection change alone ends a waiting suggestion (agent-replies)", async () => {
   const replies = await import("../src/agent-replies.ts");
   let connected = true;
+  const held = heldClock();
   const agent = createInboxAgent({
     link: () => ({ connected: () => connected, ask: async () => ({ id: "req-9" }), dismiss: () => undefined }),
     element: async () => element,
-    clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+    clock: held.clock,
   });
   const words = agent.suggest(logo);
   await new Promise(done => setTimeout(done));
   connected = false;
   // Disconnect MCP: the request list stays the same, only the connection changes.
   replies.connectionChanged();
+  held.run(DISCONNECT_GRACE_MS);
   await assert.rejects(words, /no longer connected/);
+});
+
+test("another site opened while the element was read: nothing is asked", async () => {
+  let holds = true;
+  const asked: string[] = [];
+  const agent = createInboxAgent({
+    link: () => ({ connected: () => true, ask: async (text) => { asked.push(text); return { id: "req-2" }; }, dismiss: () => undefined }),
+    element: async () => { holds = false; return element; },
+    stamp: () => ({ holds: () => holds }),
+  });
+  await assert.rejects(agent.suggest(logo), /site changed/);
+  assert.deepEqual(asked, []);
 });

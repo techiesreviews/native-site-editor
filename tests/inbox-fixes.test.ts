@@ -45,7 +45,6 @@ function setup(agent: InboxAgent | undefined) {
     agent: () => agent,
     write: async (list) => { written.push(list.map(fix => ({ ...fix }))); },
     changed: () => { changes++; },
-    error: error => errors.push(error),
   });
   return { fixes, written, errors, changes: () => changes };
 }
@@ -172,16 +171,17 @@ test("Accept all refuses while a row's words are empty, marking that row, and wr
   assert.equal(written.length, 0);
 });
 
-test("a refused write puts the rows back to their suggestions and tells why", async () => {
+test("a refused write puts the rows back to their suggestions and says why on the row", async () => {
   const fake = fakeAgent({ [picture.key]: "Three riders" });
-  const errors: unknown[] = [];
-  const fixes = createInboxFixes({ agent: () => fake.agent, write: async () => { throw new Error("The page changed. Nothing was changed."); }, changed() {}, error: error => errors.push(error) });
+  const fixes = createInboxFixes({ agent: () => fake.agent, write: async () => { throw new Error("The page changed. Nothing was changed."); }, changed() {} });
   const asking = fixes.suggest(picture);
   await fake.release();
   await asking;
   assert.equal(await fixes.accept(picture), false);
-  assert.equal(fixes.state(picture.key)?.status, "suggested");
-  assert.equal((errors[0] as Error).message, "The page changed. Nothing was changed.");
+  assert.deepEqual(fixes.state(picture.key), { status: "suggested", draft: "Three riders", refused: "The page changed. Nothing was changed." });
+  // Changing the words clears it.
+  fixes.edit(picture.key, "Three riders at the door");
+  assert.equal(fixes.state(picture.key)?.refused, undefined);
 });
 
 test("rows that leave the list forget their suggestion; an answer for a row gone is dropped", async () => {
@@ -305,4 +305,17 @@ test("a like link put after the element leaves its suggestion with it", async ()
   const second = { ...unnamed, key: unnamed.key.replace(/0$/, "1"), found: after, at: after.indexOf(copy) + copy.length };
   assert.equal(fixes.keep([first, second]), false);
   assert.equal(fixes.state(unnamed.key)?.status, "suggested");
+});
+
+test("a new attribute goes before the tag's end, keeping the slash an unquoted address ends with", () => {
+  const source = `<p><a href=/new/><svg></svg></a><img src="/x.svg"/></p>`;
+  const link: InboxItem = { ...unnamed, at: source.indexOf("<a"), found: source };
+  const img: InboxItem = { ...picture, at: source.indexOf("<img"), found: source };
+  const apply = (item: InboxItem, words: string) => {
+    const edits = fixEdits(item, words, source);
+    assert.ok(!("refuse" in edits));
+    return [...edits].sort((a, b) => b.start - a.start).reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+  };
+  assert.match(apply(link, "Home"), /<a href=\/new\/ aria-label="Home">/);
+  assert.match(apply(img, "A mark"), /<img src="\/x\.svg" alt="A mark"\/>/);
 });
