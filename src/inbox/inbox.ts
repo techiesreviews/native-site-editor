@@ -7,13 +7,12 @@
 // AI over the list asks for every row at once, and Accept all writes them; a shared part's row, Accept button and
 // spot say how many pages it changes.
 import "./inbox.css";
-import { NATIVE_CONFIG_PATH, nativeSitePrefix, type NativeSite } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { icon } from "../icons";
 import { elementIcon } from "../components/element-icons";
 import { componentIcon } from "../page-builder/component-icon";
 import { componentLabel } from "../native-insert";
 import { elementPathAt } from "../native-source-location";
-import { componentUsage } from "../page-builder/component-model";
 import { button, node } from "../ui/dom";
 import type { RangeEdit } from "../guarded-edit";
 import type { InboxItem } from "./inbox-item";
@@ -21,26 +20,20 @@ import type { InboxPorts } from "./inbox-host";
 import { markDecorative } from "./decorative";
 import { createInboxAgent } from "./inbox-agent";
 import { createInboxFixes, fixEdits, type FixState, type InboxFix } from "./inbox-fixes";
-import { forgetPages, partChain, pictureVerdict, siteFile, siteItems, type InboxPart } from "./site-items";
+import { componentPages, componentTags, forgetPages, partChain, pictureVerdict, siteFile, siteItems, type InboxPart } from "./site-items";
 import { watchReplies } from "../agent-replies";
 
-// The shared parts the last check read: counted again only when a page or template changed.
-let partsRead: { site: NativeSite; texts: (string | undefined)[]; parts: InboxPart[] } | undefined;
-/** The site's shared parts that a page shows, each with those pages (counted as Edit component mode counts them). */
+/** The site's shared parts that a page shows, each with those pages. Each page and template is parsed once per text
+ * (with its items, site-items.ts), so an edit reads again only the file it changed. */
 function sharedParts(ports: InboxPorts, pages: readonly string[]): InboxPart[] {
   const site = ports.site();
   if (!site) return [];
-  const files = [...pages, ...Object.values(site.components)];
-  const texts = files.map(file => ports.source(file));
-  if (partsRead?.site === site && partsRead.texts.length === texts.length && partsRead.texts.every((text, n) => text === texts[n])) return partsRead.parts;
-  const sources: Record<string, string> = {};
-  files.forEach((file, n) => { if (texts[n] !== undefined) sources[file] = texts[n]!; });
-  const parts = Object.entries(site.components).flatMap(([tag, file]) => {
-    const used = componentUsage(site, sources, tag).pages.map(page => page.file);
-    return used.length ? [{ file, tag, name: componentLabel(tag), pages: used, source: sources[file] }] : [];
+  const tags = (file: string) => { const text = ports.source(file); return text === undefined ? undefined : componentTags(file, text); };
+  const shows = componentPages(pages, site.components, tags);
+  return Object.entries(site.components).flatMap(([tag, file]) => {
+    const used = pages.filter(page => shows.get(tag)?.has(page));
+    return used.length ? [{ file, tag, name: componentLabel(tag), pages: used, source: ports.source(file) }] : [];
   });
-  partsRead = { site, texts, parts };
-  return parts;
 }
 
 /** The site's items now; `unsure` while a picture's verdict is not known yet (`settle`: judge it by its alt text). */
@@ -63,8 +56,8 @@ function findItems(ports: InboxPorts, settle: boolean) {
 }
 
 /** The sentence a shared part's spot shows (Edit component mode's note): a change there shows on every page using it. */
-export const sharedNote = (shared: NonNullable<InboxItem["shared"]>) =>
-  `${shared.name} is a shared part. A change here shows on ${shared.pages.length === 1 ? "the one page" : `all ${shared.pages.length} pages`} that use${shared.pages.length === 1 ? "s" : ""} it.`;
+export const sharedNote = (shared: NonNullable<InboxItem["shared"]>, within?: string) =>
+  `${shared.name}${within ? `, inside ${within},` : ""} is a shared part. A change here shows on ${shared.pages.length === 1 ? "the one page" : `all ${shared.pages.length} pages`} that use${shared.pages.length === 1 ? "s" : ""} it.`;
 
 /** Goes to a shared part's item: a page that shows the part (the one shown, if it does) in Edit component mode, with
  * the part's note, and the element selected in its template. */
@@ -86,7 +79,9 @@ async function goToShared(item: InboxItem, shared: NonNullable<InboxItem["shared
     if (!stamp.holds()) return;
     // The mode keeps the notes it was entered with (a nested part opens behind a breadcrumb, without notes of its own),
     // so the part's note rides on the first step.
-    const entered = await ports.editComponent(step.tag, { path: step.path, node: step.node! }, n ? [] : [sharedNote(shared)]);
+    // Worded for the chain when the part sits inside another ("Site mark, inside Site header, is a shared part…").
+    const within = steps.length > 1 ? componentLabel(steps[0].tag) : undefined;
+    const entered = await ports.editComponent(step.tag, { path: step.path, node: step.node! }, n ? [] : [sharedNote(shared, within)]);
     if (entered !== "mode") return;
   }
   const template = ports.source(item.page);
@@ -330,7 +325,6 @@ export function createInboxList(ports: InboxPorts) {
     input.value = state.draft ?? "";
     input.dataset.act = "draft";
     input.autocomplete = "off";
-    input.setAttribute("aria-label", `${field[0].toUpperCase()}${field.slice(1)}, suggested by AI. Change it if you like.`);
     input.readOnly = state.status !== "suggested";
     if (state.invalid) input.setAttribute("aria-invalid", "true");
     const accept = () => {
@@ -352,7 +346,11 @@ export function createInboxList(ports: InboxPorts) {
       if (state.status === "suggested") buttons.append(act("Not now", () => fixes.dismiss(item.key)));
     }
     buttons.querySelectorAll<HTMLElement>("button").forEach((control, n) => { control.dataset.act = n ? "dismiss" : "accept"; });
-    box.append(node("small", "", `AI suggests this ${field}. Change it if you like.`), input, buttons);
+    // The field's own label (the forms rule), not a hint: what the words are.
+    const label = node("label", "", `Suggested ${field}`);
+    input.id = `inbox-suggestion-${item.key.replace(/[^\w-]/g, "-")}`;
+    label.htmlFor = input.id;
+    box.append(label, input, buttons);
     return box;
   }
 

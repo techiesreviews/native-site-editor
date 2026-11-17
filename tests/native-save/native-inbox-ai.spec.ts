@@ -56,7 +56,7 @@ test.describe("Fix with AI", () => {
     expect(request.text).toContain("Change nothing on the site.");
     expect(request.element.tag).toBe("img");
     await connected.call("reply_to_request", { request: request.id, status: "answered", message: "“A desk with a laptop”", agent: "Describer" });
-    const field = hero.getByRole("textbox", { name: /^Description, suggested by AI/ });
+    const field = hero.getByRole("textbox", { name: "Suggested description", exact: true });
     await expect(field).toHaveValue("A desk with a laptop");
     // Answered: its request is let go, so no pin stays on the page.
     await expect(page.locator(".agent-pin")).toHaveCount(0);
@@ -90,7 +90,7 @@ test.describe("Fix with AI", () => {
     // The agent asks back instead: that row's suggestion fails and its pin stays for the question.
     await reply(about(/no name/), "Which page does it go to?", "question");
     const logoRow = row(page, "Picture without a description, Site header · changes 2 pages");
-    await expect(logoRow.getByRole("textbox", { name: /^Description, suggested by AI/ })).toHaveValue("Native Studio logo");
+    await expect(logoRow.getByRole("textbox", { name: "Suggested description", exact: true })).toHaveValue("Native Studio logo");
     await expect(logoRow.getByRole("button", { name: "Accept on 2 pages", exact: true })).toBeVisible();
     await expect(row(page, "Link without a name, Home page").getByRole("button", { name: /^No suggestion · Try again/ })).toBeVisible();
     // Any suggestion can be changed before Accept all.
