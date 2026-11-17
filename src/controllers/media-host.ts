@@ -33,7 +33,8 @@ import { pinMedia } from "./media-pin";
 import type { createPageStructureController } from "./page-structure-controller";
 
 export interface MediaHostPorts {
-  // The shared host modules (src/host-modules.ts), each handed over whole; their members are read at call time.
+  // The shared host modules (src/host-modules.ts), each handed over whole and read once: main.ts makes each one fixed object of
+  // free functions, so the media controller's ports below take some of those functions as the host is made.
   notices: Pick<Notices, "announce" | "errorMessage">;
   session: Pick<Session, "begin" | "draftScope" | "currentLoad" | "stampOf">;
   repo: Pick<Repo, "api" | "entryAt" | "findEntry" | "readFile">;

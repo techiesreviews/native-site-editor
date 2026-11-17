@@ -29,7 +29,8 @@ type LinkedStyles = ReturnType<typeof createLinkedStylesController>;
 type SavePublish = ReturnType<typeof createSavePublishController>;
 
 export interface SourcePanePorts {
-  // The shared host modules (src/host-modules.ts), each handed over whole; their members are read at call time.
+  // The shared host modules (src/host-modules.ts), each handed over whole and read once; their members are read at call time,
+  // save and publish once, as the host is made.
   notices: Pick<Notices, "status" | "settleStatus" | "errorMessage">;
   session: Pick<Session, "begin" | "draftScope">;
   repo: Pick<Repo, "readFile" | "entryAt">;

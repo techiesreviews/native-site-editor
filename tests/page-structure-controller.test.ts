@@ -67,14 +67,13 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
     // Each shared host module (src/host-modules.ts) is one fake.
     notices: {
       errorMessage: (error: unknown) => errors.push(error instanceof Error ? error.message : String(error)),
-      announce: text => mem.announced.push(text),
     },
     // The memory workspace's guarded edit stamps stand for the load; a restore's own stamp always holds here.
     session: { begin: () => ({ load: 0, scope: undefined, holds: () => true, changed: () => undefined }), currentLoad: () => 0, draftScope: () => mem.scope },
     view: { restoreFile: unused("restoreFile") },
     preview: { nativePageStyles: () => [], nativeRouteInfo: () => ({}), updateNativePreviewSources: unused("updateNativePreviewSources") },
     media: { mediaController: {
-      placeState: () => undefined, changePlace: unused("changePlace"), videoControls: () => [], mediaButton: () => undefined, placeFrame: () => undefined, editImage: unused("editImage"),
+      placeState: () => undefined, videoControls: () => [], mediaButton: () => undefined, placeFrame: () => undefined, editImage: unused("editImage"),
     } },
     pagesAndFiles: { pagesController: { pageLabel: (path: string) => path } },
     get versionView() { return undefined; },
@@ -89,7 +88,6 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
     wholeWrapper: () => undefined, nearestLink: () => undefined,
     nativeNamedDescendant: () => false, nativePictureSources: () => false,
     cardControls: () => [], agentController: { captureAsk: () => undefined },
-    pageStructure: undefined,
     elementPathAt: () => undefined, wrapperAround: () => undefined,
   } satisfies PageStructurePorts;
   const controller = createPageStructureController(ports);
@@ -619,6 +617,15 @@ test("Link wraps selected text; leaving its unused Address removes the empty lin
   assert.deepEqual(f.mem.steps(), []);
   assert.equal(f.mem.undo(), false);
   assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("an image's Media button opens media's image popup on that image", () => {
+  const f = fixture({ page: '<main><img src="a.png" alt="A"></main>' });
+  const opened: { path: string; node: number[] }[] = [];
+  f.ports.media.mediaController.editImage = async (target) => { opened.push(target); };
+  drawBar(f, f.target.node, { locateNativeElementRange: html => rangeOf(html, "img") }, undefined, "img")("Media").onPress!();
+  assert.deepEqual(opened, [{ path: PAGE, node: f.target.node }]);
   assert.deepEqual(f.errors, []);
 });
 
