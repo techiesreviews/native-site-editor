@@ -319,3 +319,51 @@ test("a new attribute goes before the tag's end, keeping the slash an unquoted a
   assert.match(apply(link, "Home"), /<a href=\/new\/ aria-label="Home">/);
   assert.match(apply(img, "A mark"), /<img src="\/x\.svg" alt="A mark"\/>/);
 });
+
+test("a link with the same tag but other contents put before it never takes its suggestion", async () => {
+  const fake = fakeAgent({ [unnamed.key]: "See all new arrivals" });
+  const { fixes, written } = setup(fake.agent);
+  fixes.keep([unnamed]);
+  const asking = fixes.suggest(unnamed);
+  await fake.release();
+  await asking;
+  const copy = `<a href="/new/"><svg></svg></a>`, other = `<a href="/new/"><svg><path d="M1 1"/></svg></a>`;
+  const twice = page.replace(copy, other + copy);
+  const first = { ...unnamed, found: twice, at: twice.indexOf(other) };
+  const second = { ...unnamed, key: unnamed.key.replace(/0$/, "1"), found: twice, at: twice.indexOf(copy, twice.indexOf(other) + other.length) };
+  assert.equal(fixes.keep([first, second]), true);
+  assert.equal(await fixes.accept(first), false);
+  assert.equal(written.length, 0);
+});
+
+test("another site opening forgets every suggestion, and an answer still on its way is dropped", async () => {
+  const fake = fakeAgent({ [picture.key]: "Three riders", [vague.key]: "Bikes in stock" });
+  const { fixes } = setup(fake.agent);
+  const asked = fixes.suggest(picture);
+  await fake.release();
+  await asked;
+  const late = fixes.suggest(vague);
+  fixes.clear();
+  await fake.release();
+  await late;
+  assert.equal(fixes.state(picture.key), undefined);
+  assert.equal(fixes.state(vague.key), undefined);
+});
+
+test("a refused Accept is said on the status line; refused words replace the earlier refusal", async () => {
+  const fake = fakeAgent({ [vague.key]: "Bikes in stock" });
+  const said: string[] = [];
+  let changes = 0;
+  const fixes = createInboxFixes({ agent: () => fake.agent, write: async () => { throw new Error("The page changed. Nothing was changed."); }, changed: () => { changes++; }, refused: message => said.push(message) });
+  const asking = fixes.suggest(vague);
+  await fake.release();
+  await asking;
+  assert.equal(await fixes.accept(vague), false);
+  assert.deepEqual(said, ["The page changed. Nothing was changed."]);
+  const before = changes;
+  fixes.edit(vague.key, "read more");
+  // Typing that clears the refusal draws the row again.
+  assert.equal(changes, before + 1);
+  assert.equal(await fixes.accept(vague), false);
+  assert.deepEqual(fixes.state(vague.key), { status: "suggested", draft: "read more", invalid: true });
+});

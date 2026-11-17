@@ -182,7 +182,15 @@ export function createInboxList(ports: InboxPorts) {
       return agentElement({ path: item.page, node: at, tag: item.kind === "picture" ? "img" : "a", text: item.words ?? "", ...route ? { route } : {} }, site, source);
     },
   });
-  const fixes = createInboxFixes({ agent: () => agent, write, changed: redraw });
+  const fixes = createInboxFixes({ agent: () => agent, write, changed: redraw, refused: message => ports.announce(message) });
+  // A row's own action the page refused (Decorative, No speech, Use H3): why, shown on its row until it is drawn anew.
+  const refusals = new Map<string, string>();
+  const refuse = (item: InboxItem, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    refusals.set(item.key, message);
+    ports.announce(message);
+    redraw();
+  };
   // An agent connecting or going away redraws an open panel: Fix with AI follows it (answers redraw through `changed`).
   let wasConnected = fixes.connected();
   watchReplies(() => { const now = fixes.connected(); if (now !== wasConnected) { wasConnected = now; redraw(); } });
@@ -194,8 +202,11 @@ export function createInboxList(ports: InboxPorts) {
     // A row's spot (`at`) and the page text it was found in are part of it: drawn rows act on the items they hold.
     const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}\n${item.shared?.pages.join(" ") ?? ""}`).join("\n\n");
     // Rows drawn on another session (a reload with the same items) act on it no more: they are drawn again.
+    // Another site, branch or load: the suggestions and refusals shown belong to the one before.
+    if (session !== shownSession) { fixes.clear(); refusals.clear(); }
     // A row whose Accept was undone before this check is ready again: drawn again even when the items are the same.
     const ready = fixes.keep(next);
+    for (const key of [...refusals.keys()]) if (!next.some(item => item.key === key)) refusals.delete(key);
     const same = !ready && keys === shownKeys && checked === shownChecked && session === shownSession && next.every((item, n) => item.found === items[n]?.found);
     items = next;
     if (same) return;
@@ -265,10 +276,11 @@ export function createInboxList(ports: InboxPorts) {
     if (!found?.holds()) { check(); return; }
     button.setAttribute("aria-disabled", "true");
     button.setAttribute("aria-busy", "true");
+    refusals.delete(item.key);
     try { await (item.kind === "video" ? write([{ item, words: "" }]) : decorative(item, ports, found)); } catch (error) {
       button.removeAttribute("aria-disabled");
       button.removeAttribute("aria-busy");
-      ports.error(error);
+      refuse(item, error);
     }
   }
 
@@ -277,10 +289,11 @@ export function createInboxList(ports: InboxPorts) {
     if (held(control) || !item.level) return;
     if (!found?.holds()) { check(); return; }
     hold(control);
+    refusals.delete(item.key);
     try { await write([{ item, words: String(item.level.to) }]); } catch (error) {
       control.removeAttribute("aria-disabled");
       control.removeAttribute("aria-busy");
-      ports.error(error);
+      refuse(item, error);
     }
   }
 
@@ -318,6 +331,9 @@ export function createInboxList(ports: InboxPorts) {
       off.setAttribute("aria-label", `${item.wave}: ${item.what}, ${item.where}`);
       row.append(off);
     }
+    // Why the page refused this row's own action, beside it (the status line read it out).
+    const why = refusals.get(item.key);
+    if (why) row.append(node("small", "inbox__refused", why));
     for (const control of row.querySelectorAll<HTMLElement>("button")) control.dataset.act = control.classList.contains("inbox__ai") ? "ai" : control.classList.contains("inbox__wave") ? "wave" : "level";
     return row;
   }
@@ -356,11 +372,7 @@ export function createInboxList(ports: InboxPorts) {
     label.htmlFor = input.id;
     box.append(label, input);
     // An Accept the page refused says why beside its field (where it was pressed), read out as it appears.
-    if (state.refused) {
-      const why = node("small", "inbox__refused", state.refused);
-      why.setAttribute("role", "status");
-      box.append(why);
-    }
+    if (state.refused) box.append(node("small", "inbox__refused", state.refused));
     box.append(buttons);
     return box;
   }
