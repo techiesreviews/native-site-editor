@@ -6,6 +6,7 @@ import { createInboxAgent, DISCONNECT_GRACE_MS, SUGGESTION_WAIT_MS, suggestionPr
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
 import type { AgentElement } from "../shared/agent.ts";
 import type { PinRequest } from "../src/components/agent-pins.ts";
+import { forEachAwait } from "./support/await-race";
 
 const logo: InboxItem = { key: "picture\nheader.html\nimages/logo.svg", kind: "picture", what: "Picture without a description", where: "Site header",
   page: "components/site-header/site-header.html", at: 8, fix: "alt", shared: { tag: "site-header", name: "Site header", pages: ["index.html", "about/index.html"] } };
@@ -162,6 +163,34 @@ test("another site opened while the element was read: nothing is asked", async (
   });
   await assert.rejects(agent.suggest(logo), /site changed/);
   assert.deepEqual(asked, []);
+});
+
+test("a suggestion is asked and comes back only on the session it was pressed in (await race)", async () => {
+  const awaits = await forEachAwait(race => {
+    const state = { live: true, asked: 0, dismissed: [] as string[], words: "", error: "" };
+    const agent = createInboxAgent({
+      link: () => ({
+        connected: () => true,
+        ask: race.port("ask", async (_text: string, _about: AgentElement) => { state.asked++; return { id: "req-1" }; }),
+        dismiss: (id) => { state.dismissed.push(id); },
+      }),
+      element: race.port("element", async (_item: InboxItem) => element),
+      stamp: () => ({ holds: () => state.live }),
+      // The agent answers at once, so a suggestion that goes on waiting settles in the same replay.
+      watch: heard => { heard([{ id: "req-1", text: "", state: "done", createdAt: 1, repoId: 1, element, reply: { status: "done", message: "Logo", at: 2 } }]); return () => undefined; },
+      clock: { setTimeout: () => 0, clearTimeout: () => undefined },
+    });
+    const done = agent.suggest(logo).then(words => { state.words = words; }, (error: Error) => { state.error = error.message; });
+    return { state, done };
+  }, run => { run.state.live = false; }, run => {
+    // Another site, branch or load opened: no words come back for the old one, nothing more is asked, and its request
+    // is never let go through the new session's agent (it stays with its own site).
+    assert.equal(run.state.words, "");
+    assert.match(run.state.error, /site changed/);
+    assert.ok(run.state.asked <= 1);
+    assert.deepEqual(run.state.dismissed, []);
+  });
+  assert.equal(awaits, 2);
 });
 
 test("an agent back within the grace keeps the suggestion waiting, and its request", async () => {

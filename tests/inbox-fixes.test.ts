@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createInboxFixes, fixEdits, type InboxAgent, type InboxFix } from "../src/inbox/inbox-fixes.ts";
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
+import { forEachAwait } from "./support/await-race";
 
 const page = `<!doctype html><html><head><title>Home</title></head><body><img src="/images/team.jpg"><a href="/new/"><svg></svg></a><p><a href="/bikes/">click here</a></p><h2>A</h2><h4>Opening hours</h4><video src="/m/fit.mp4" controls></video></body></html>`;
 const header = `<header><img src="/images/logo.svg"><a href="/">Home</a></header>`;
@@ -386,4 +387,26 @@ test("an older Accept that settles after another site's Accept of the same row n
   settle[1].done!();
   assert.equal(await newer, true);
   assert.deepEqual(fixes.state(picture.key), { status: "accepted", draft: "New words" });
+});
+
+test("Fix with AI and Accept settle only on the site they were pressed on (await race)", async () => {
+  // Accept's write succeeds, or the page refuses it: either way another site opening meanwhile keeps the row untouched.
+  for (const refuses of [false, true]) {
+    const awaits = await forEachAwait(race => {
+      const said: string[] = [];
+      const agent: InboxAgent = { connected: () => true, suggest: race.port("suggest", async (_item: InboxItem) => "Three riders") };
+      const fixes = createInboxFixes({
+        agent: () => agent,
+        write: race.port("write", async (_list: readonly InboxFix[]) => { if (refuses) throw new Error("The page changed. Nothing was changed."); }),
+        changed() {},
+        refused: message => said.push(message),
+      });
+      const done = fixes.suggest(picture).then(() => fixes.accept(picture));
+      return { fixes, said, done };
+    }, run => { run.fixes.clear(); }, run => {
+      assert.equal(run.fixes.state(picture.key), undefined);
+      assert.deepEqual(run.said, []);
+    });
+    assert.equal(awaits, 2);
+  }
 });
