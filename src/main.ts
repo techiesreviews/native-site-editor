@@ -45,7 +45,7 @@ import { createBlockMoves } from "./page-builder/block-move";
 import { createPagesAndFilesHost } from "./pages-and-files-host";
 import { createPageBuilderHost } from "./page-builder-host";
 import { createSiteLoading } from "./site-loading";
-import { createSiteTextIndex, isNativeTextFile } from "./site-text-index";
+import { createSiteTextIndex } from "./site-text-index";
 import { createGuardedEdits } from "./guarded-edit";
 import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
@@ -117,7 +117,7 @@ const sitePreview = createSitePreview({
   nativePreviewUnreadable: () => nativePreviewUnreadable(), loadNativeAssets: () => loadNativeAssets(), loadNativeStyleFiles: () => loadNativeStyleFiles(), loadNativeShownFiles: () => loadNativeShownFiles(),
 });
 const { nativeModeActive, nativeRouteForPath, nativeRouteInfo, nativeLinkedSheets, nativePageStyles, withSiteConfig, updateNativePreview,
-  updateNativePreviewSources, updateNativePreviewAssets, nativeComponentTagForPath, nativeFallbackPage } = sitePreview;
+  updateNativePreviewSources, updateNativePreviewAssets, nativeComponentTagForPath } = sitePreview;
 // Work finished on another project or branch, counted in the repository menu until it is opened (src/finished-elsewhere.ts).
 const finishedWork = createFinishedElsewhere({ draw: (notes) => workspace.repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), showing: (scope) => holdsDraftScope(workspaceSession.current().scope, scope), follow: (commit, scope) => { if (runtime.engaged) workspace.siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
 // Reading and opening the native site, its assets, the file readers and warnings (src/site-loading.ts).
@@ -291,12 +291,11 @@ function draftScope() { return draftScopeOf(shownScope()); }
 // Media's wiring: image paths, uploads, media text, the media controller and its batches (src/controllers/media-host.ts).
 // Made before Pages & files and the workspace, which take its functions: later consts and `let` state go in as getters, later functions as arrows.
 const media = createMediaHost({
-  runtime, appStore, workspaceSession, editorModule, mediaHistoryHome, guardedEdits, parkedSteps, finishedWork, pageStructureController,
-  repositoryIndex, versions, cleanSources, api, element, lazyModule, loadMediaWorkspace, loadMedia, draftScope, currentLoad, stampOf,
-  nativeTextIndexScopeKey, entryAt, findEntry, readFile, readBlob, listRepositoryFiles, loadNativeAssets, updateNativePreviewSources,
-  imagesSignature, announce, undoAction, errorMessage,
-  get nativePreview() { return nativePreview; }, get pagesController() { return pagesController; }, get workspace() { return workspace; },
-  setupScope: () => setupScope(), afterFileChanges: () => afterFileChanges(), openAfter: (...args) => openAfter(...args), restoreFile: (...args) => restoreFile(...args),
+  notices, session, repo, view, preview: sitePreview, textIndex, pageBuilder,
+  runtime, appStore, editorModule, mediaHistoryHome, guardedEdits, parkedSteps, finishedWork, repositoryIndex, versions, cleanSources,
+  element, lazyModule, loadMediaWorkspace, loadMedia, readBlob, listRepositoryFiles, loadNativeAssets, imagesSignature, undoAction,
+  get nativePreview() { return nativePreview; }, get panels() { return workspace; }, get pagesAndFiles() { return pagesAndFiles; },
+  setupScope: () => setupScope(),
 });
 const { mediaPorts, mediaController, discardUpload, readMediaText } = media;
 const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
@@ -375,7 +374,7 @@ const pagesAndFiles = createPagesAndFilesHost({
   get panels() { return workspace; }, get pageStructure() { return pageStructure; },
 });
 const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, treeState, pathNow, nativePathExists, nativeSiteReadForCreate,
-  branchText, branchPathProblem, discardedNewPages, afterFileChanges, openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
+  branchText, branchPathProblem, afterFileChanges, openAfter, undoFileChanges } = pagesAndFiles;
 
 // The workspace's screen, the code panes and the source editor, a folder's summary, and closing it all (src/workspace-mount.ts).
 // By value: consts declared above and hoisted functions; `let` state goes in as accessors (tests/main-ts-ceiling.test.ts).
@@ -393,22 +392,14 @@ const workspace = createWorkspaceMount({
   account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),
     choose: () => chooseRepository(), load: () => loadSnapshot() },
 });
-const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor, mountWorkspace, closeWorkspace,
+const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, mountWorkspace, closeWorkspace,
   setupScope, showDirectory } = workspace;
 
-// Opening a file in the source pane (src/controllers/source-pane-controller.ts).
+// Opening a file in the source pane (src/controllers/source-pane-controller.ts): the shared host modules and the hosts above, by value.
 const sourcePane = createSourcePaneController({
-  appStore, workspaceSession, editorModule, linkedStyles, savePublish, versions, previewSelection, nativeBaseSources: runtime.base.sources, nativeVariantFiles,
-  get info() { return info; }, get content() { return workspace.content; }, get explorerDropdown() { return workspace.explorerDropdown; },
-  get nativeSite() { return runtime.site; }, get nativePreview() { return nativePreview; },
-  get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
-  fileGeneration: () => fileGeneration, nextFileGeneration: () => ++fileGeneration,
-  setActiveFileContext: (value) => { workspace.activeFileContext = value; },
-  openCodeEditor, element, status, settleStatus, errorMessage, readFile, entryAt, draftScope, draftStore, openAfter, setCurrentPage, showDeletedFile,
-  isNativeTextFile, nativeModeActive, nativeRouteForPath, nativeComponentTagForPath, nativeFallbackPage, nativeCssWorkspace,
-  updateNativePreviewSources, discardedNewPages, showDirectory, updateAgentContext, updateCurrentPageLabel, discardFileChange,
-  restoreFile: (path, at) => restoreFile(path, at),
-  refreshFiles: () => filesTreeController.refresh(),
+  notices, session, repo, view, preview: sitePreview, panels: workspace, pageBuilder, pagesAndFiles, runtime,
+  appStore, editorModule, linkedStyles, versions, element, draftStore, showDeletedFile,
+  get info() { return info; }, get nativePreview() { return nativePreview; }, get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
 });
 const { openEntry, mountSource } = sourcePane;
 

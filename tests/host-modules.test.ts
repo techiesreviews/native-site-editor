@@ -6,14 +6,15 @@ import { parse, ts } from "./support/source-guard.ts";
 // The hosts that take the shared host modules (src/host-modules.ts) whole, in place of their loose callbacks.
 const SHARED = ["notices", "session", "repo", "view", "panels", "preview", "textIndex"];
 // `shared`: the modules each host must take (the workspace mount makes the panels and reads no repository, so takes neither;
-// the source pane, page structure and media take only the modules they read).
+// the source pane, page structure and media take only the modules they read). `own`: a module's members a host may take loose,
+// as page structure takes the page builder's own functions: the page builder makes it, so cannot hand itself over.
 const HOSTS = [
   { file: "src/pages-and-files-host.ts", ports: "PagesAndFilesPorts", ceiling: 30, shared: SHARED },
   { file: "src/workspace-boot.ts", ports: "WorkspaceBootPorts", ceiling: 30, shared: SHARED },
   { file: "src/workspace-mount.ts", ports: "WorkspaceMountPorts", ceiling: 37, shared: ["notices", "session", "view", "preview", "textIndex", "media", "pageBuilder"] },
   { file: "src/page-builder-host.ts", ports: "PageBuilderHostPorts", ceiling: 27, shared: [...SHARED, "media", "pagesAndFiles"] },
   { file: "src/controllers/source-pane-controller.ts", ports: "SourcePanePorts", ceiling: 20, shared: ["notices", "session", "repo", "view", "panels", "preview", "pageBuilder", "pagesAndFiles"] },
-  { file: "src/controllers/page-structure-controller.ts", ports: "PageStructurePorts", ceiling: 31, shared: ["notices", "session", "view", "preview", "media", "pagesAndFiles"] },
+  { file: "src/controllers/page-structure-controller.ts", ports: "PageStructurePorts", ceiling: 30, shared: ["notices", "session", "view", "preview", "media", "pagesAndFiles"], own: ["openNativeNavigation"] },
   { file: "src/controllers/media-host.ts", ports: "MediaHostPorts", ceiling: 30, shared: ["notices", "session", "repo", "view", "panels", "preview", "textIndex", "pagesAndFiles", "pageBuilder"] },
 ];
 // Members of a shared module or a host handed over whole: a host takes them through it, never as a loose port of their own.
@@ -40,23 +41,28 @@ function portNames(source: string, file: string, name: string): string[] {
 }
 
 // What is wrong with a host's ports: a shared module it does not take, a module member taken loose, or more ports than its ceiling.
-function problems(names: string[], ceiling: number, shared = SHARED): string[] {
+function problems(names: string[], ceiling: number, shared = SHARED, own: string[] = []): string[] {
   return [
     ...shared.filter((shared) => !names.includes(shared)).map((shared) => `no ${shared}`),
-    ...names.filter((item) => MODULE_MEMBERS.includes(item)).map((item) => `loose ${item}`),
+    ...names.filter((item) => MODULE_MEMBERS.includes(item) && !own.includes(item)).map((item) => `loose ${item}`),
     ...(names.length > ceiling ? [`${names.length} ports, above ${ceiling}`] : []),
   ];
 }
 
 for (const host of HOSTS) {
   test(`${host.ports} takes the shared host modules whole and stays within ${host.ceiling} ports`, () => {
-    assert.deepEqual(problems(portNames(readFileSync(new URL(`../${host.file}`, import.meta.url), "utf8"), host.file, host.ports), host.ceiling, host.shared), []);
+    assert.deepEqual(problems(portNames(readFileSync(new URL(`../${host.file}`, import.meta.url), "utf8"), host.file, host.ports), host.ceiling, host.shared, host.own), []);
   });
 }
 
 test("a missing shared module, a loose port that belongs to a module, and a ports list over its ceiling, are named", () => {
   const source = "export interface P { notices: N; session: S; repo: R; view: V; panels: X; preview: Y; status(m: string): void; afterNativePaint(): void; uploadFilesTo(): void }";
   assert.deepEqual(problems(portNames(source, "p.ts", "P"), 8), ["no textIndex", "loose status", "loose afterNativePaint", "loose uploadFilesTo", "9 ports, above 8"]);
+});
+
+test("a host's own members of a module pass loose; another module's do not", () => {
+  const source = "export interface P { notices: N; openNativeNavigation(): void; codePanes: C }";
+  assert.deepEqual(problems(portNames(source, "p.ts", "P"), 3, ["notices"], ["openNativeNavigation"]), ["loose codePanes"]);
 });
 
 test("a host that takes only some modules is held to those, and to the page builder's and Pages & files' members", () => {
