@@ -17,11 +17,13 @@ import type { MoveStep } from "../page-builder/block-move-rules";
 import { type BlockMoves, type MoveAt, type MoveOptions, type Settled } from "../page-builder/block-move";
 import type { ComponentTools } from "../page-builder/components";
 import { type createAgentController } from "../controllers/agent-controller";
-import { type createPageStructure } from "../components/page-structure";
-import { type NativeSite } from "../../shared/native-project";
 import type * as sourceEditor from "../components/source-editor";
 import type { PreviewSelectionController } from "./preview-selection-controller";
 import type { GuardedEdits, Planned, PlanResult, Reads, Stamp } from "../guarded-edit";
+import type { Notices, Preview, Session, View } from "../host-modules";
+import type { createMediaController } from "./media-controller";
+import type { createPagesAndFilesHost } from "../pages-and-files-host";
+import type { createNativeSiteRuntime } from "../native-site-runtime";
 
 /**
  * Workspace values are live host getters; operations stay injected.
@@ -30,54 +32,40 @@ import type { GuardedEdits, Planned, PlanResult, Reads, Stamp } from "../guarded
  * Pure source parsers come directly from shared/html-source.
  */
 export interface PageStructurePorts {
+  // The shared host modules (src/host-modules.ts), each handed over whole; their members are read at call time.
+  readonly notices: Pick<Notices, "errorMessage">;
+  readonly session: Pick<Session, "begin" | "currentLoad" | "draftScope">;
+  readonly view: Pick<View, "restoreFile">;
+  readonly preview: Pick<Preview, "nativePageStyles" | "nativeRouteInfo" | "updateNativePreviewSources">;
+  /** Media's host (src/controllers/media-host.ts): the image's state, badge and popup, and the lazy video, Media and section-background controls. */
+  readonly media: { readonly mediaController: Pick<ReturnType<typeof createMediaController>, "placeState" | "placeFrame" | "editImage" | "mediaButton" | "videoControls"> };
+  /** Pages & files (src/pages-and-files-host.ts): a page's label, for a text change on a page left meanwhile. */
+  readonly pagesAndFiles: { readonly pagesController: Pick<ReturnType<typeof createPagesAndFilesHost>["pagesController"], "pageLabel"> };
+  /** The open site (src/native-site-runtime.ts): its site and its files' texts, drafts included. */
+  readonly runtime: Pick<ReturnType<typeof createNativeSiteRuntime>, "site" | "sources" | "source">;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "selectNode" | "route" | "selectTextAfterUpdate" | "selectAfterUpdate" | "refresh" | "showEditBar" | "hideEditBar"> | undefined;
   readonly editorModule: Pick<typeof sourceEditor, "captureFileModelState" | "captureHistoryHost" | "closeActiveEditGroup" | "isMounted" | "replaceActiveRange" | "replaceActiveRanges" | "runVisualHistory" | "forgetDraftModel">;
   /** Guarded edits (src/guarded-edit.ts): section moves, field writes and text edits are its plans. */
   readonly edits: GuardedEdits;
   readonly appStore: { openFile: { readonly value: string | undefined }; selection: { readonly value: NativePreviewSelection | undefined } };
   readonly componentTools: ComponentTools | undefined;
-  readonly nativeEditableSource: (path: string) => string | undefined;
-  readonly nativeSite: NativeSite | undefined;
   readonly element: <T extends HTMLElement>(id: string) => T;
-  readonly generation: number;
   readonly setupScope: () => string;
-  readonly draftScope: () => { account: string; repoId: number; repo: string; branch: string; } | undefined;
   readonly openNativeNavigation: (pagePath: string) => Promise<void>;
-  readonly nativeSources: (site?: NativeSite | undefined) => Record<string, string>;
-  readonly nativePageStyles: () => string[];
   readonly nativeTextTags: Set<string>;
-  readonly previewSelection: Pick<PreviewSelectionController, "textSelection">;
+  /** The preview's text selection, and the template open in Edit component mode. */
+  readonly previewSelection: Pick<PreviewSelectionController, "textSelection" | "editableTemplatePath">;
   readonly wholeWrapper: (inner: string, tags: string[]) => { open: number; openEnd: number; closeAt: number; closeEnd: number; } | undefined;
   readonly nativeLinkParents: Set<string>;
-  readonly errorMessage: (error: unknown) => void;
   readonly nearestLink: (source: string, node: number[], range: ElementRange | undefined) => { range: ElementRange; node: number[]; } | undefined;
-  readonly nativeRouteInfo: (route: string, site?: NativeSite | undefined) => { title?: string; description?: string; };
   readonly versionView: unknown;
-  readonly nativeEffectiveSource: (path: string, scope?: { account: string; repoId: number; repo: string; branch: string; } | undefined) => string | undefined;
   readonly nativeNamedDescendant: (source: string, range: { start: number; end: number; }) => boolean;
-  readonly mediaPlaceState?: (page: string, src: string, alt: string | undefined) => { state: "described" | "decorative" | "missing"; fileDecorative?: boolean } | undefined;
-  readonly changeMediaPlace?: (page: string, node: number[], decorative: boolean) => Promise<void>;
-  readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
-  /** Lazy video and section-background controls. */
-  readonly mediaVideoControls?: (page: string, node: number[], source: string) => EditBarControl[];
-  /** The Media button on a video, audio, a download or an Online video (slice 119). */
-  readonly mediaButton?: (page: string, node: number[], source: string) => EditBarControl | undefined;
-  /** The Image button's badge ("Square", "Trimmed") and whether its popup is open on this image. */
-  readonly mediaPlaceFrame?: (page: string, node: number[], tag: string) => { badge?: string; open: boolean } | undefined;
-  /** The image popup (shape, focus, Replace) for an image on a page. */
-  readonly editImage?: (target: { path: string; node: number[] }) => void;
   readonly nativePictureSources: (source: string, node: readonly number[]) => boolean;
   /** The card grid controls for a selection, move arrows already left out (cards controller). */
   cardControls(selection: NativePreviewSelection, source: string): EditBarControl[];
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "captureAsk">;
-  readonly announce: (text: string) => void;
   /** A refusal: said in #status and shown on screen. */
   readonly refuse: (reason: string) => void;
-  readonly restoreFile: (path: string, epoch: number, options?: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; }) => Promise<void>;
-  readonly updateNativePreviewSources: () => void;
-  readonly nativeEditableTemplatePath: () => string | undefined;
-  readonly nativePageLabelOf: (file: string) => string;
-  readonly pageStructure: Pick<ReturnType<typeof createPageStructure>, "update"> | undefined;
   readonly locateNativeElementRange: (html: string, path: number[]) => ElementRange | undefined;
   readonly elementPathAt: (html: string, start: number) => number[] | undefined;
   readonly wrapperAround: (inner: string, at: number, names: string[]) => ElementRange | undefined;
@@ -102,7 +90,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     ports.appStore.selection.value?.path === path && ports.appStore.selection.value.node?.join(".") === node.join(".");
   // The open file's editor model now (document, session, revision), for an offer kept past this moment.
   const modelNow = (path: string) => {
-    const scope = ports.draftScope();
+    const scope = ports.session.draftScope();
     return scope && ports.editorModule.captureFileModelState(scope, path);
   };
   // The workspace as one load (account, repository, branch, generation, version view), not the page
@@ -132,10 +120,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
   // What a move came to, said: a refusal or stale bytes as a refusal, a write the editor would not
   // take as an error. `quietGone`: a move that waited for its page drops a repository change unsaid.
   function said(out: Settled, quietGone: boolean): BlockMoved {
-    if (out.status === "moved") { if (out.message) ports.errorMessage(new Error(out.message)); return out.node; }
+    if (out.status === "moved") { if (out.message) ports.notices.errorMessage(new Error(out.message)); return out.node; }
     if (out.status === "stayed") return "stayed";
     if (quietGone && out.status === "stale" && (out.changed === "scope" || out.changed === "generation")) return "stayed";
-    if (out.failed) ports.errorMessage(new Error(out.message));
+    if (out.failed) ports.notices.errorMessage(new Error(out.message));
     else refuse(out.message);
     return "stayed";
   }
@@ -180,12 +168,12 @@ export function createPageStructureController(ports: PageStructurePorts) {
       ports.componentTools?.show(undefined);
       return;
     }
-    const source = ports.nativeEditableSource(path) ?? "";
+    const source = ports.runtime.sources()[path] ?? "";
     const range = node ? ports.locateNativeElementRange(source, node) : undefined;
     // Decoded as the browser reads it, so the bar names it as the page structure does.
     const classValue = range ? startTagAttribute(source, range.tag, "class")?.value : undefined;
     const className = classValue === undefined ? undefined : decodeHtmlEntities(classValue, true);
-    const kind = nativeElementLabel(selection.tag, Boolean(ports.nativeSite && Object.hasOwn(ports.nativeSite.components, selection.tag)), className);
+    const kind = nativeElementLabel(selection.tag, Boolean(ports.runtime.site && Object.hasOwn(ports.runtime.site.components, selection.tag)), className);
     // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
     if (nativeNewLink && !nativeNewLink.shown && (nativeNewLink.path !== path || nativeNewLink.node.join(".") !== node?.join("."))) {
       editor.closeActiveEditGroup(nativeNewLink.path);
@@ -200,7 +188,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // of its start tag, its close tag and everything after it as they were. Otherwise the bar's
     // source, which editOpenPage refuses as stale; its check against the source stays the proof.
     const ownTags = (own: ElementRange): { at: string; own: ElementRange } => {
-      const latest = ports.nativeEditableSource(path) ?? "";
+      const latest = ports.runtime.sources()[path] ?? "";
       const tail = source.length - own.end;
       const before = latest.slice(0, own.tag.end) === source.slice(0, own.tag.end);
       const after = latest.slice(latest.length - tail) === source.slice(own.end);
@@ -211,7 +199,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       return same ? { at: latest, own: found } : { at: source, own };
     };
     const controls: EditBarControl[] = [];
-    if (range && node && ports.nativeSite) {
+    if (range && node && ports.runtime.site) {
       if (selection.tag === "site-header" || selection.tag === "header" || selection.tag === "nav")
         controls.push({ kind: "button", label: "Navigation", onPress: () => void ports.openNativeNavigation(path) });
     }
@@ -250,10 +238,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // Text size is for elements that carry text themselves, not page containers or components.
     const containers = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
     const textual = range?.close && !selection.tag.includes("-") && !containers.has(selection.tag);
-    if (range && textual && ports.nativeSite) {
+    if (range && textual && ports.runtime.site) {
       // The site's own sizes (classes, else variables) when its stylesheets define them (`src/native-text-size.ts`).
-      const sources = ports.nativeSources();
-      const scale = textSizeScale(ports.nativePageStyles().map((sheet) => sources[sheet] ?? ""));
+      const sources = ports.runtime.sources();
+      const scale = textSizeScale(ports.preview.nativePageStyles().map((sheet) => sources[sheet] ?? ""));
       const value = currentTextSize(source, range.tag, scale);
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (value === "custom") options.push({ label: "Custom", value: "custom" });
@@ -377,7 +365,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
               nativeNewLink = undefined;
               preview.selectAfterUpdate(undefined);
               preview.selectTextAfterUpdate(undefined);
-              ports.errorMessage(error);
+              ports.notices.errorMessage(error);
             }
           };
           nativeFormatActions.link = linkIt;
@@ -402,7 +390,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // into one undo step until the field closes.
     const live = (target: number[], tagName: string, build: (latest: string, tag: StartTag) => { start: number; end: number; text: string }[], message: string) => {
       if (!node) return;
-      const latest = ports.nativeEditableSource(path) ?? "";
+      const latest = ports.runtime.sources()[path] ?? "";
       const tag = ports.locateNativeElementRange(latest, target)?.tag;
       if (!tag || tag.name !== tagName) { refuse("The element could not be found in the source."); return; }
       preview.selectAfterUpdate({ path, node });
@@ -414,16 +402,16 @@ export function createPageStructureController(ports: PageStructurePorts) {
         announce(message);
       } catch (error) {
         preview.selectAfterUpdate(undefined);
-        ports.errorMessage(error);
+        ports.notices.errorMessage(error);
       }
     };
     const textLinkRange = textLink ? ports.locateNativeElementRange(source, textLink.node) : undefined;
     const link = selection.link !== undefined && node ? ports.nearestLink(source, node, range)
       : textLink && textLinkRange?.tag.name === "a" ? { range: textLinkRange, node: textLink.node } : undefined;
-    if (link && node && ports.nativeSite) {
+    if (link && node && ports.runtime.site) {
       const href = startTagAttribute(source, link.range.tag, "href");
       const current = href?.value.trim() ?? "";
-      const site = ports.nativeSite;
+      const site = ports.runtime.site;
       // The link just made: its Address opens now, once.
       const fresh = nativeNewLink && nativeNewLink.path === path && nativeNewLink.link.join(".") === link.node.join(".") ? nativeNewLink : undefined;
       const open = Boolean(fresh && !fresh.shown);
@@ -437,7 +425,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         warning: current ? undefined : "No address",
         value: href?.value ?? "",
         placeholder: "Page or web address",
-        suggestions: nativeLinkSuggestions(Object.keys(site.routes), (route) => ports.nativeRouteInfo(route).title, nativeSitePrefix(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH))),
+        suggestions: nativeLinkSuggestions(Object.keys(site.routes), (route) => ports.preview.nativeRouteInfo(route).title, nativeSitePrefix(ports.runtime.source(NATIVE_CONFIG_PATH))),
         open,
         // Beside the address: a new tab (target and rel) and an optional title.
         extras: [
@@ -452,7 +440,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         ],
         onInput: (value) => {
           if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
-          live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", withSitePrefix(value, nativeSitePrefix(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH))))], "Link changed");
+          live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", withSitePrefix(value, nativeSitePrefix(ports.runtime.source(NATIVE_CONFIG_PATH))))], "Link changed");
         },
         onClose: () => {
           editor.closeActiveEditGroup(path);
@@ -510,7 +498,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
           return;
         }
         // The editor would not take the edit: an error, as any failed write.
-        if (outcome.reason === "refused" && next !== undefined) ports.errorMessage(new Error(outcome.message));
+        if (outcome.reason === "refused" && next !== undefined) ports.notices.errorMessage(new Error(outcome.message));
         else refuse(outcome.reason === "stale" ? FIELD_STALE : outcome.message);
       };
       for (const field of fields) {
@@ -554,11 +542,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
       // One Media button (slice 119; the Image button of media ticket 09) opens the image popup: picture,
       // shape, focus and Replace; on an empty picture spot, the picker adds media. The place's shape
       // shows only in its tooltip, so the bar stays short.
-      const frame = node && ports.mediaPlaceFrame?.(path, node, source.slice(range.tag.start, range.tag.end));
+      const frame = node && ports.media.mediaController.placeFrame(path, node, source.slice(range.tag.start, range.tag.end));
       controls.push({ kind: "button", label: "Media", leading: "image", expanded: Boolean(frame?.open), className: "edit-bar__media", names: true,
         title: `Picture: shape, focus and Replace${frame?.badge ? ` · ${frame.badge}` : ""}`,
-        onPress: () => { if (node) { if (ports.editImage) ports.editImage({ path, node }); else void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } } });
-      const description = ports.mediaPlaceState?.(path, src?.value ?? "", alt?.value);
+        onPress: () => { if (node) { void ports.media.mediaController.editImage({ path, node }); } } });
+      const description = ports.media.mediaController.placeState(path, src?.value ?? "", alt?.value);
       controls.push({
         kind: "address",
         label: "Alt text",
@@ -650,11 +638,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
       });
     }
     // The Media button on a video, audio, a download or an Online video leads the bar (slice 119).
-    const media = range && node && ["video", "audio", "a"].includes(range.tag.name) ? ports.mediaButton?.(path, node, source) : undefined;
+    const media = range && node && ["video", "audio", "a"].includes(range.tag.name) ? ports.media.mediaController.mediaButton(path, node, source) : undefined;
     if (media) controls.unshift(media);
     // Play on a video, audio or Online video (slice 65); Background video
     // on a section (lazy, media slice 64), after the move controls.
-    if (range && node && ["video", "audio", "a", "section"].includes(range.tag.name)) controls.push(...ports.mediaVideoControls?.(path, node, source) ?? []);
+    if (range && node && ["video", "audio", "a", "section"].includes(range.tag.name)) controls.push(...ports.media.mediaController.videoControls(path, node, source));
     // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.
     // Non-Sections have the steps' keys, but no move arrow buttons in the bar.
     if (!templateRoot && !section) controls.push(...ports.cardControls(selection, source));
@@ -664,7 +652,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       const allowed = selection.paintedSource === source && !selection.host && pageRemovable(chain);
       // A card's own Remove (cards.ts) stays, an items slot's card included.
       if (template?.template === path) controls.push(...(ports.componentTools?.removeControl(selection, kind) ?? []));
-      else if (Object.values(ports.nativeSite?.routes ?? {}).includes(path) && allowed && !controls.some(control => control.label === "Remove")) {
+      else if (Object.values(ports.runtime.site?.routes ?? {}).includes(path) && allowed && !controls.some(control => control.label === "Remove")) {
         controls.push({ kind: "button", icon: "remove", label: "Remove",
           onPress: () => change([removeEdit(source, range)], selectionAfterRemove(node,
             Boolean(ports.locateNativeElementRange(source, [...node.slice(0, -1), node.at(-1)! + 1]))), `${kind} removed`) });
@@ -675,8 +663,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (ports.componentTools) controls.push(...ports.componentTools.controls(selection));
     // Ask agent: a request about this element for a connected agent, pinned on it.
     const menu = ports.agentController.captureAsk();
-    if (node && menu?.connected() && ports.nativeSite) {
-      const site = ports.nativeSite;
+    if (node && menu?.connected() && ports.runtime.site) {
+      const site = ports.runtime.site;
       void loadAgentSite();
       controls.push({
         kind: "prompt",
@@ -687,12 +675,12 @@ export function createPageStructureController(ports: PageStructurePorts) {
           let module = agentSite;
           if (!module) {
             // Sent before it arrived: the element is told only if the page is still the one asked about.
-            const since = ports.edits.stamp(), source = ports.nativeSources()[path];
+            const since = ports.edits.stamp(), source = ports.runtime.sources()[path];
             module = await loadAgentSite(true);
             if (!module) return "The agent tools could not load. Try again.";
-            if (!since.holds() || source !== ports.nativeSources()[path]) return "The page changed meanwhile. Ask again.";
+            if (!since.holds() || source !== ports.runtime.sources()[path]) return "The page changed meanwhile. Ask again.";
           }
-          const about = module.agentElement({ ...selection, route: preview.route() }, site, ports.nativeSources()[path]);
+          const about = module.agentElement({ ...selection, route: preview.route() }, site, ports.runtime.sources()[path]);
           if (!about) return "This element cannot be pointed out to an agent.";
           try {
             await menu.ask(text, about);
@@ -705,7 +693,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       });
     }
     const model: EditBarModel = {
-      origin: { path, source, stamp: ports.edits.stamp("repository"), revision: `${ports.setupScope()}:${ports.generation}`, node: node?.slice() },
+      origin: { path, source, stamp: ports.edits.stamp("repository"), revision: `${ports.setupScope()}:${ports.session.currentLoad()}`, node: node?.slice() },
       kind, controls, onFormat: (format) => nativeFormatActions[format]?.(),
       onMove, draggable,
       ...ports.componentTools?.identity(selection),
@@ -728,7 +716,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
   function removeEmptyNewLink(fresh: NonNullable<typeof nativeNewLink>) {
     nativeNewLink = undefined;
     const editor = ports.editorModule;
-    const latest = ports.nativeEditableSource(fresh.path) ?? "";
+    const latest = ports.runtime.sources()[fresh.path] ?? "";
     const found = ports.locateNativeElementRange(latest, fresh.link);
     if (!editor || found?.tag.name !== "a" || startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
     const selected = ports.appStore.selection.value?.path === fresh.path && ports.appStore.selection.value.node?.join(".") === fresh.node.join(".");
@@ -747,7 +735,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
    */
   function editOpenPage(path: string, source: string, edits: { start: number; end: number; text: string }[], next: number[] | undefined, message: string) {
     if (ports.appStore.openFile.value !== path || !ports.editorModule.captureHistoryHost(path)) {
-      ports.errorMessage(new Error("The active file changed or is read only."));
+      ports.notices.errorMessage(new Error("The active file changed or is read only."));
       return false;
     }
     const outcome = ports.edits.now(r => r.source(path) !== source ? { refuse: "The source changed. Select the element again and try again." } : {
@@ -758,7 +746,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (outcome.ok) return true;
     if (outcome.reason === "stale") refuse("The source changed. Select the element again and try again.");
     else if (outcome.message.startsWith("The source changed.")) refuse(outcome.message);
-    else ports.errorMessage(new Error(outcome.message));
+    else ports.notices.errorMessage(new Error(outcome.message));
     return false;
   }
 
@@ -844,10 +832,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // The workspace when the text was committed: the same account, repository, branch and load.
     const opening = loadStamp();
     const sameLoad = () => { const moved = opening.changed(); return moved !== "scope" && moved !== "generation"; };
-    const allowed = () => sameLoad() && (path === ports.nativeSite?.routes[ports.nativePreview?.route() ?? ""] || path === ports.nativeEditableTemplatePath());
+    const allowed = () => sameLoad() && (path === ports.runtime.site?.routes[ports.nativePreview?.route() ?? ""] || path === ports.previewSelection.editableTemplatePath());
     if (!allowed()) {
       refuse("Edit the page instance in Structure, or choose Edit for its shared template.");
-      ports.updateNativePreviewSources();
+      ports.preview.updateNativePreviewSources();
       return undefined;
     }
     // The text change as one guarded edit of `path`'s bytes now; `select`: the element after it.
@@ -868,23 +856,23 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // left (another page opened): it goes into that page's draft as one
     // operation rather than being lost. Same account, repository and branch
     // only.
-    const page = Boolean(ports.nativeSite && Object.values(ports.nativeSite.routes).includes(path));
+    const page = Boolean(ports.runtime.site && Object.values(ports.runtime.site.routes).includes(path));
     const draftLeftPage = async () => {
       if (!page || ports.versionView || !sameLoad()) return;
       // Back on the page meanwhile: the edit goes in there.
       if (ports.appStore.openFile.value === path && ports.editorModule.isMounted(path) && allowed()) { applyInEditor(); return; }
       // The step is the open file's, as it is mounted now; the left page is not opened again, nor selected.
       const open = ports.appStore.openFile.value;
-      if (open === undefined || !ports.editorModule.isMounted(open)) { ports.errorMessage(new Error("Open a page before changing these files.")); return; }
+      if (open === undefined || !ports.editorModule.isMounted(open)) { ports.notices.errorMessage(new Error("Open a page before changing these files.")); return; }
       // More letters of this typing queued behind this one: they take its text along.
       const typing = group === undefined ? undefined : typings.get(group);
       if (typing) {
         typing.before ??= before;
         if (typing.queued > 1) return;
       }
-      const label = ports.nativePageLabelOf(path);
+      const label = ports.pagesAndFiles.pagesController.pageLabel(path);
       const outcome = await ports.edits.run(textPlan(`Text changed on ${label}.`, `Undid the text change on ${label}.`, false, unwritten()));
-      if (!outcome.ok) ports.errorMessage(new Error(outcome.message));
+      if (!outcome.ok) ports.notices.errorMessage(new Error(outcome.message));
     };
     return async () => {
     // The click that selected the element may still be opening its file.
@@ -892,7 +880,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       await new Promise((done) => setTimeout(done, 50));
     if (!allowed()) { await draftLeftPage(); return; }
     if (ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path)) {
-      await ports.restoreFile(path, ports.generation, { linkDefaultStyle: false, beforeMount: allowed });
+      await ports.view.restoreFile(path, ports.session.begin(), { linkDefaultStyle: false, beforeMount: allowed });
       if (sameLoad() && !allowed()) { await draftLeftPage(); return; }
       if (!sameLoad() || ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path) || !allowed()) return;
     }
@@ -908,7 +896,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", !live, unwritten()), { anchor: path, ...group ? { group } : {} });
     if (outcome.ok) return;
     preview.refresh();
-    ports.errorMessage(new Error(outcome.message));
+    ports.notices.errorMessage(new Error(outcome.message));
     }
   }
 
@@ -921,14 +909,14 @@ export function createPageStructureController(ports: PageStructurePorts) {
     textEdits: () => nativeTextEditQueue,
     get nativeFormatActions() { return nativeFormatActions; },
     removeRow(path: string, node: number[], source: string | undefined) {
-      if (source === undefined || ports.nativeEffectiveSource(path) !== source || !ports.nativePreview) return false;
+      if (source === undefined || ports.runtime.source(path) !== source || !ports.nativePreview) return false;
       const chain = ["body", ...node.map((_, depth) => ports.locateNativeElementRange(source, node.slice(0, depth + 1))?.tag.name ?? "")];
       const template = ports.componentTools?.mode.now();
       if (template?.template === path) {
         const target: NativePreviewSelection = { path, node, tag: chain.at(-1)!, text: "", reason: "click", selectors: [], paintedSource: source };
         if (!ports.componentTools?.removeControl(target, "Element").length) return false;
         // On a page the bar drawn for the row decides (a card's own Remove, an items slot's card included).
-      } else if (!Object.values(ports.nativeSite?.routes ?? {}).includes(path)) return false;
+      } else if (!Object.values(ports.runtime.site?.routes ?? {}).includes(path)) return false;
       rowRemoval = { path, node: [...node], source, since: ports.edits.stamp(), until: Date.now() + 2000 };
       ports.nativePreview?.selectNode({ path, node }, false);
       return true;
