@@ -37,7 +37,7 @@ const isAsync = (node: TS.FunctionLikeDeclaration) => Boolean(ts.getModifiers(no
 
 /** Every async function in `text` that waits and then writes, at its first such write. A callback inside it counts as
  * its own code; an async function inside it is judged on its own. */
-export function waitThenWrite(file: string, text: string): Finding[] {
+function waitThenWrite(file: string, text: string): Finding[] {
   // Only a file that waits and names a write is parsed (most of src does not).
   const kinds = writes.filter(write => write.files.test(file) && write.text.test(text)).map(write => write.call);
   if (!kinds.length || !/\bawait\b/.test(text)) return [];
