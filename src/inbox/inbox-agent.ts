@@ -90,9 +90,14 @@ export function createInboxAgent(ports: {
           if (reply?.status === "question") { finish(() => reject(new Error("The agent asked a question on its pin.")), false); return; }
           if (reply) { finish(() => resolve(reply.message), true); return; }
           if (!request && seen) { finish(() => reject(new Error("The request was dismissed.")), false); return; }
-          // The agent went away while this waited (Disconnect MCP): a reply still being saved may follow at once.
-          if (!link.connected() && grace === undefined)
-            grace = clock.setTimeout(() => finish(() => reject(new Error("The agent is no longer connected.")), true), DISCONNECT_GRACE_MS);
+          // The agent went away while this waited (Disconnect MCP): a reply still being saved may follow at once. Back
+          // within the grace, the wait goes on as before.
+          if (link.connected()) {
+            if (grace !== undefined) { clock.clearTimeout(grace); grace = undefined; }
+          } else if (grace === undefined) grace = clock.setTimeout(() => {
+            grace = undefined;
+            if (!link.connected()) finish(() => reject(new Error("The agent is no longer connected.")), true);
+          }, DISCONNECT_GRACE_MS);
         });
         if (settled) stop();
       });

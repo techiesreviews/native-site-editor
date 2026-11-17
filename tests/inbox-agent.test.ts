@@ -163,3 +163,26 @@ test("another site opened while the element was read: nothing is asked", async (
   await assert.rejects(agent.suggest(logo), /site changed/);
   assert.deepEqual(asked, []);
 });
+
+test("an agent back within the grace keeps the suggestion waiting, and its request", async () => {
+  let connected = true;
+  const listeners: ((requests: readonly PinRequest[]) => void)[] = [];
+  const dismissed: string[] = [];
+  const held = heldClock();
+  const agent = createInboxAgent({
+    link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: (id) => { dismissed.push(id); } }),
+    element: async () => element,
+    watch: heard => { listeners.push(heard); heard([]); return () => undefined; },
+    clock: held.clock,
+  });
+  const words = agent.suggest(logo);
+  await new Promise(done => setTimeout(done));
+  connected = false;
+  listeners[0]([]);
+  connected = true;
+  listeners[0]([]);
+  held.run(DISCONNECT_GRACE_MS);
+  assert.deepEqual(dismissed, []);
+  listeners[0]([{ id: "req-1", text: "", state: "done", createdAt: 1, repoId: 1, element, reply: { status: "done", message: "Logo", at: 2 } }]);
+  assert.equal(await words, "Logo");
+});
