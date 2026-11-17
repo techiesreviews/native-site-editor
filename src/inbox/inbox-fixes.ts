@@ -31,19 +31,21 @@ export function suggestionWords(reply: string) {
   return line.trim().replace(/^["'“‘«]+|["'”’»]+$/g, "").trim().slice(0, SUGGESTION_LIMIT).trim();
 }
 
-/** Where the element at `at` in `before` is in `after`, when the change between them leaves it be: after the changed
- * stretch (read from the end, so a tag put right before it does not count as a change in it), or before the stretch
- * with its whole start tag (so a like link put after it reads either way, and one put before it never reads as it). */
-function mapOffsets(before: string, after: string, at: number) {
+/** Where the element from `at` to `end` in `before` is in `after`, when the change between them leaves the whole
+ * element be: after the changed stretch (read from the end, so a tag put right before it does not count as a change in
+ * it), or before it (so a like link put after it reads either way). An element changed itself is not followed. */
+function mapOffsets(before: string, after: string, at: number, end: number) {
   const most = Math.min(before.length, after.length), found: number[] = [];
   let tail = 0;
   while (tail < most && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
   if (at >= before.length - tail) found.push(at + after.length - before.length);
   let head = 0;
   while (head < most && before[head] === after[head]) head++;
-  if (head >= before.indexOf(">", at) + 1) found.push(at);
+  if (head >= end) found.push(at);
   return found;
 }
+/** The end of the element whose start tag is at `at` (past its end tag); undefined when none starts there. */
+const elementEnd = (source: string, at: number) => [...descendants(parseSource(source))].find(element => element.tag.start === at)?.end;
 /** A row's kind, file and address without its place among its like (a link's or a video's key ends with it). */
 const family = (item: InboxItem) => item.kind === "link" || item.kind === "video" ? item.key.replace(/\n\d+$/, "") : item.key;
 
@@ -57,11 +59,13 @@ export function createInboxFixes(ports: {
   write(fixes: readonly InboxFix[]): Promise<void>;
   /** Something a row shows changed: draw again. */
   changed(): void;
+  /** An Accept was refused: why, for the editor's status line. */
+  refused?(message: string): void;
 }) {
   const states = new Map<string, FixState>();
   // The element each suggestion is for, as it was asked: its file's text, its offset there and how many rows were
   // like it. A row whose key moved to another element (a like one put before it) loses its suggestion.
-  const anchors = new Map<string, { found: string; at: number; like: number }>();
+  const anchors = new Map<string, { found: string; at: number; end: number; like: number }>();
   let rows: readonly InboxItem[] = [];
   // How many like rows (same kind, file and address) come before it: one put before it moves its key to another element.
   const like = (item: InboxItem, among: readonly InboxItem[]) => among.filter(other => family(other) === family(item) && (other.at ?? 0) < (item.at ?? 0)).length;
@@ -76,8 +80,10 @@ export function createInboxFixes(ports: {
     if (!anchor || item.found === undefined || item.at === undefined) return true;
     if (like(item, among) !== anchor.like) return false;
     if (item.found === anchor.found) return item.at === anchor.at;
-    if (!mapOffsets(anchor.found, item.found, anchor.at).includes(item.at)) return false;
-    anchors.set(item.key, { ...anchor, found: item.found, at: item.at });
+    // The whole element, its tag and everything in it, must be the one asked about, at the place it moved to.
+    const element = anchor.found.slice(anchor.at, anchor.end);
+    if (!mapOffsets(anchor.found, item.found, anchor.at, anchor.end).includes(item.at) || item.found.slice(item.at, item.at + element.length) !== element) return false;
+    anchors.set(item.key, { ...anchor, found: item.found, at: item.at, end: item.at + element.length });
     return true;
   };
   const agent = () => { const now = ports.agent(); return now?.connected() ? now : undefined; };
@@ -86,7 +92,8 @@ export function createInboxFixes(ports: {
   async function ask(item: InboxItem, connected: InboxAgent) {
     const asking: FixState = { status: "thinking" };
     set(item.key, asking);
-    if (item.found !== undefined && item.at !== undefined) anchors.set(item.key, { found: item.found, at: item.at, like: like(item, rows.length ? rows : [item]) });
+    const end = item.found === undefined || item.at === undefined ? undefined : elementEnd(item.found, item.at);
+    if (end !== undefined) anchors.set(item.key, { found: item.found!, at: item.at!, end, like: like(item, rows.length ? rows : [item]) });
     let words = "";
     try { words = suggestionWords(await connected.suggest(item)); } catch { /* Shown as failed on the row's button. */ }
     // The row left the list, or was asked again, meanwhile: this answer is not its own any more.
@@ -106,7 +113,7 @@ export function createInboxFixes(ports: {
     if (!ready.length) return false;
     const refused = ready.filter(({ item, words }) => !valid(item, words));
     if (refused.length) {
-      for (const { item, state } of refused) states.set(item.key, { ...state, invalid: true });
+      for (const { item, state } of refused) states.set(item.key, { status: "suggested", draft: state.draft, invalid: true });
       ports.changed();
       return false;
     }
@@ -117,8 +124,10 @@ export function createInboxFixes(ports: {
     } catch (error) {
       // Refused (the page changed since): each row is back to its suggestion and says why, where Accept was pressed.
       const refused = error instanceof Error ? error.message : String(error);
-      for (const { item, state } of ready) if (states.get(item.key)?.status === "accepting") states.set(item.key, { ...state, refused });
+      for (const { item, state } of ready) if (states.get(item.key)?.status === "accepting") states.set(item.key, { status: "suggested", draft: state.draft, refused });
       ports.changed();
+      // Said on the editor's status line too, for a screen reader.
+      ports.refused?.(refused);
       return false;
     }
     // Accepted until the next check finds it fixed and the row leaves.
@@ -149,6 +158,8 @@ export function createInboxFixes(ports: {
       const state = states.get(key);
       if (state?.status !== "suggested") return;
       states.set(key, { status: "suggested", draft: words });
+      // A refusal or a refused word shown on the row goes once the words change.
+      if (state.refused || state.invalid) ports.changed();
     },
     /** Not now: the row is as it was. */
     dismiss: (key: string) => { if (states.get(key)?.status === "suggested" || states.get(key)?.status === "failed") set(key, undefined); },
@@ -174,6 +185,12 @@ export function createInboxFixes(ports: {
       // Accepted until the next check takes those rows away.
       if (count("accepted")) return { status: "accepted" as const, count: count("accepted") };
       return { status: "ready" as const, count: rows.filter(row => row === undefined || row === "failed").length };
+    },
+    /** Another site, branch or load opened: every suggestion, asked or answered, belongs to the one before. */
+    clear() {
+      states.clear();
+      anchors.clear();
+      ports.changed();
     },
     /** The rows a check lists now: the others' suggestions are forgotten, and an accepted row still listed (its
      * change undone, or not enough) is ready again. */

@@ -48,6 +48,8 @@ export interface InboxPorts {
   /** Edit component mode on a shared part, framing `instance` on its page, with `notes` in its bar. */
   editComponent(tag: string, instance: { path: string; node: number[] } | undefined, notes: readonly string[]): Promise<"mode" | "late" | undefined>;
   error(error: unknown): void;
+  /** Says a message on the editor's status line (#status), for a screen reader. */
+  announce(message: string): void;
 }
 
 const idle = (run: () => void) => typeof requestIdleCallback === "function" ? requestIdleCallback(run, { timeout: 2000 }) : setTimeout(run);
