@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forgetPages, heldPages, pictureVerdict, siteFile, siteItems, type InboxPage, type InboxPart } from "../src/inbox/site-items.ts";
+import { forgetPages, heldPages, partChain, pictureVerdict, siteFile, siteItems, type InboxPage, type InboxPart } from "../src/inbox/site-items.ts";
 
 // The edit bar's verdict stands in: an absent alt or an unmarked empty one is not described yet.
 const rules = {
@@ -224,4 +224,19 @@ test("a link's name is judged as the edit bar judges it: an empty label names no
   const source = `${head("Home")}<a href="/a/" aria-label=""></a><a href="/b/" title="Cart"></a><a href="/c/"><img src="/images/s.svg" alt="Shop"></a><a href="/d/" aria-labelledby="x"></a></body>`;
   const items = siteItems([page("index.html", source)], rules);
   assert.deepEqual(items.filter(item => item.kind === "link").map(item => item.at), [source.indexOf(`<a href="/a/"`)]);
+});
+
+test("the way to a part goes through the parts it sits in, as Edit component mode opens a nested part", () => {
+  const files: Record<string, string> = {
+    "index.html": `<body><site-header></site-header></body>`,
+    "components/site-header/site-header.html": `<header><site-logo></site-logo></header>`,
+    "components/site-logo/site-logo.html": `<img src="/logo.svg">`,
+  };
+  const components = { "site-header": "components/site-header/site-header.html", "site-logo": "components/site-logo/site-logo.html" };
+  assert.deepEqual(partChain("index.html", components, file => files[file], "site-logo"), [
+    { tag: "site-header", path: "index.html", at: files["index.html"].indexOf("<site-header") },
+    { tag: "site-logo", path: "components/site-header/site-header.html", at: files["components/site-header/site-header.html"].indexOf("<site-logo") },
+  ]);
+  assert.deepEqual(partChain("index.html", components, file => files[file], "site-header"), [{ tag: "site-header", path: "index.html", at: files["index.html"].indexOf("<site-header") }]);
+  assert.equal(partChain("index.html", components, file => files[file], "card-note"), undefined);
 });

@@ -149,6 +149,27 @@ function readPage(file: string, source: string): PageRead {
   return page;
 }
 
+/** The way from a page to an instance of the part `target`: each part's instance in turn (its file and its tag's
+ * offset), the page's first, the target's last; none when the page does not show it. A part shown through another
+ * (a logo inside the header) is reached through that one, as Edit component mode opens a nested part. */
+export function partChain(page: string, components: Readonly<Record<string, string>>, source: (file: string) => string | undefined, target: string) {
+  const seen = new Set<string>();
+  const walk = (file: string): { tag: string; path: string; at: number }[] | undefined => {
+    const text = source(file);
+    if (text === undefined || seen.has(file)) return undefined;
+    seen.add(file);
+    const hosts = [...descendants(parseSource(text))].filter(element => Object.hasOwn(components, element.name.toLowerCase()));
+    const direct = hosts.find(element => element.name.toLowerCase() === target);
+    if (direct) return [{ tag: target, path: file, at: direct.tag.start }];
+    for (const host of hosts) {
+      const tag = host.name.toLowerCase(), rest = walk(components[tag]);
+      if (rest) return [{ tag, path: file, at: host.tag.start }, ...rest];
+    }
+    return undefined;
+  };
+  return walk(page);
+}
+
 /** Where an item sits: a page, or a shared part with the pages that show it. */
 interface Place { file: string; where: string; source: string; shared?: InboxItem["shared"] }
 

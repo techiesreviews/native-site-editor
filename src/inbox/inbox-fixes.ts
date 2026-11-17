@@ -30,6 +30,21 @@ export function suggestionWords(reply: string) {
   return line.trim().replace(/^["'“‘«]+|["'”’»]+$/g, "").trim().slice(0, SUGGESTION_LIMIT).trim();
 }
 
+/** Where `at` in `before` is in `after`, when the change between them leaves it be (before or after the changed
+ * stretch); undefined when it sits in the changed stretch. */
+export function mapOffset(before: string, after: string, at: number) {
+  let head = 0;
+  const most = Math.min(before.length, after.length);
+  while (head < most && before[head] === after[head]) head++;
+  let tail = 0;
+  while (tail < most - head && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
+  if (at < head) return at;
+  if (at >= before.length - tail) return at + after.length - before.length;
+  return undefined;
+}
+/** A row's kind, file and address without its place among its like (a link's or a video's key ends with it). */
+const family = (item: InboxItem) => item.kind === "link" || item.kind === "video" ? item.key.replace(/\n\d+$/, "") : item.key;
+
 /** The pages a fix of `item` changes: every page that shows its shared part, else its own. */
 export const pagesOf = (item: InboxItem): readonly string[] => item.shared?.pages ?? [item.page];
 const onPages = (count: number) => `on ${count} page${count === 1 ? "" : "s"}`;
@@ -43,9 +58,25 @@ export function createInboxFixes(ports: {
   error(error: unknown): void;
 }) {
   const states = new Map<string, FixState>();
+  // The element each suggestion is for, as it was asked: its file's text, its offset there and how many rows were
+  // like it. A row whose key moved to another element (a like one put before it) loses its suggestion.
+  const anchors = new Map<string, { found: string; at: number; like: number }>();
+  let rows: readonly InboxItem[] = [];
+  const like = (item: InboxItem, among: readonly InboxItem[]) => among.filter(other => family(other) === family(item)).length;
+  const forget = (key: string) => { states.delete(key); anchors.delete(key); };
   const set = (key: string, state: FixState | undefined) => {
-    if (state) states.set(key, state); else states.delete(key);
+    if (state) states.set(key, state); else forget(key);
     ports.changed();
+  };
+  /** Whether `item` is still the element its suggestion was asked for (following its offset through edits since). */
+  const same = (item: InboxItem, among: readonly InboxItem[]) => {
+    const anchor = anchors.get(item.key);
+    if (!anchor || item.found === undefined || item.at === undefined) return true;
+    if (like(item, among) !== anchor.like) return false;
+    if (item.found === anchor.found) return item.at === anchor.at;
+    if (mapOffset(anchor.found, item.found, anchor.at) !== item.at) return false;
+    anchors.set(item.key, { ...anchor, found: item.found, at: item.at });
+    return true;
   };
   const agent = () => { const now = ports.agent(); return now?.connected() ? now : undefined; };
   const fixable = (item: InboxItem) => item.fix !== undefined;
@@ -53,6 +84,7 @@ export function createInboxFixes(ports: {
   async function ask(item: InboxItem, connected: InboxAgent) {
     const asking: FixState = { status: "thinking" };
     set(item.key, asking);
+    if (item.found !== undefined && item.at !== undefined) anchors.set(item.key, { found: item.found, at: item.at, like: like(item, rows.length ? rows : [item]) });
     let words = "";
     try { words = suggestionWords(await connected.suggest(item)); } catch { /* Shown as failed on the row's button. */ }
     // The row left the list, or was asked again, meanwhile: this answer is not its own any more.
@@ -143,9 +175,15 @@ export function createInboxFixes(ports: {
     /** The rows a check lists now: the others' suggestions are forgotten, and an accepted row still listed (its
      * change undone, or not enough) is ready again. */
     keep(items: readonly InboxItem[]) {
-      const keys = new Set(items.map(item => item.key));
+      rows = items;
+      const listed = new Map(items.map(item => [item.key, item]));
       let dropped = false;
-      for (const [key, state] of [...states]) if (!keys.has(key) || state.status === "accepted") { states.delete(key); dropped ||= keys.has(key); }
+      for (const [key, state] of [...states]) {
+        const item = listed.get(key);
+        if (item && state.status !== "accepted" && same(item, items)) continue;
+        forget(key);
+        dropped ||= Boolean(item);
+      }
       /** Whether a row still listed changed back, so the list must be drawn again. */
       return dropped;
     },

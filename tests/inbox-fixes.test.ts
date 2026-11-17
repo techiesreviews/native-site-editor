@@ -3,7 +3,7 @@
 // edits. A fake agent stands in for the connected one.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createInboxFixes, fixEdits, type InboxAgent, type InboxFix } from "../src/inbox/inbox-fixes.ts";
+import { createInboxFixes, fixEdits, mapOffset, type InboxAgent, type InboxFix } from "../src/inbox/inbox-fixes.ts";
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
 
 const page = `<!doctype html><html><head><title>Home</title></head><body><img src="/images/team.jpg"><a href="/new/"><svg></svg></a><p><a href="/bikes/">click here</a></p><h2>A</h2><h4>Opening hours</h4><video src="/m/fit.mp4" controls></video></body></html>`;
@@ -254,4 +254,34 @@ test("an agent that goes away while Thinking leaves the row failed, never stuck"
   const { fixes } = setup(agent);
   await fixes.suggest(picture);
   assert.equal(fixes.state(picture.key)?.status, "failed");
+});
+
+test("a suggestion stays with its element: one like it put before it takes its key but not its suggestion", async () => {
+  const fake = fakeAgent({ [unnamed.key]: "See all new arrivals" });
+  const { fixes, written } = setup(fake.agent);
+  fixes.keep([unnamed]);
+  const asking = fixes.suggest(unnamed);
+  await fake.release();
+  await asking;
+  // Words typed above it: the same element, further on; the suggestion stays.
+  const above = page.replace("<img", "<p>New</p><img");
+  const moved = { ...unnamed, found: above, at: above.indexOf(`<a href="/new/">`) };
+  assert.equal(fixes.keep([moved]), false);
+  assert.equal(fixes.state(unnamed.key)?.status, "suggested");
+  // Another link to the same address put before it: the first such link (key …0) is now the new one.
+  const copy = `<a href="/new/"><svg></svg></a>`;
+  const twice = above.replace(copy, copy + copy);
+  const first = { ...unnamed, found: twice, at: twice.indexOf(copy) };
+  const second = { ...unnamed, key: unnamed.key.replace(/0$/, "1"), found: twice, at: twice.indexOf(copy) + copy.length };
+  assert.equal(fixes.keep([first, second]), true);
+  assert.equal(fixes.state(unnamed.key), undefined);
+  assert.equal(await fixes.accept(first), false);
+  assert.equal(written.length, 0);
+});
+
+test("an offset follows an edit before or after it, and is lost inside the changed stretch", () => {
+  assert.equal(mapOffset("abcXdef", "abcXdef", 4), 4);
+  assert.equal(mapOffset("abc<a>def", "zzabc<a>def", 3), 5);
+  assert.equal(mapOffset("abc<a>def", "abc<a>defzz", 3), 3);
+  assert.equal(mapOffset("abcdef", "abXYef", 2), undefined);
 });
