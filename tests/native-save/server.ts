@@ -569,6 +569,7 @@ function githubFetch(
 ): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input.toString());
+    // fixed-wait: the fake GitHub's injected latency (GITHUB_MS), set by a spec that needs a slow GitHub.
     if (GITHUB_MS && url.hostname !== "api.cloudflare.com") await new Promise((done) => setTimeout(done, GITHUB_MS));
     const path = url.pathname;
     const method = (init?.method ?? "GET").toUpperCase();
@@ -1520,7 +1521,7 @@ function workerMiddleware(): Connect.NextHandleFunction {
     const id = sessionCookie(req);
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
-      await new Promise((r) => setTimeout(r, delay));
+      await new Promise((r) => setTimeout(r, delay)); // fixed-wait: a publish delay a spec set for its session
     const response = await workerResponse(req, bodyBuffer);
 
     res.statusCode = response.status;

@@ -80,7 +80,7 @@ files), settles every outcome by design.
 
 ## Browser specs
 
-- Wait on observable state; document deliberate fixed waits (enforced by `scripts/check-specs.mjs`).
+- Wait on observable state; document deliberate fixed waits (enforced by the lint rule `tests/no-fixed-wait`).
 - Poll the clipboard for expected content before reading it (enforced by `scripts/check-specs.mjs`). The tests of one worker share the clipboard, so poll for content only this copy has (the Connect to MCP prompt: its token, `tests/native-save/mcp-prompt.ts`).
 - Each test states its fixture group by tag (`@actual`, `@native-static`, its
   own or its describe's; none is default) and runs in that group; a file mixing
