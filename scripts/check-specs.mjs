@@ -15,6 +15,9 @@
 // that `return` the read (poll them at the call site), and reads right after a keyboard
 // copy (Ctrl/Cmd+C), which writes synchronously. Opt out with a
 // `// clipboard-ready: <reason>` comment on the read or the line above it.
+//
+// Fixed waits: `fixedWaits` finds timer waits in browser tests; the lint rule in
+// scripts/eslint-fixed-wait.mjs reports them (`npm run lint`).
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,6 +105,28 @@ export function unreadyClipboardReads(text) {
   return unready;
 }
 
+/**
+ * Offsets of sleeps from node's `timers/promises` (`setTimeout`, `scheduler.wait`), named or through a namespace
+ * import. The import's module name is read from `text`, as `code` blanks string contents.
+ */
+function timerPromiseSleeps(text, code) {
+  const sleeps = [], callees = [];
+  for (const match of code.matchAll(/\bimport\s*(\{[^}]*\}|\*\s*as\s+([\w$]+))\s*from\s*(["'])/g)) {
+    const start = match.index + match[0].length, name = text.slice(start, text.indexOf(match[3], start));
+    if (name !== "timers/promises" && name !== "node:timers/promises") continue;
+    if (match[2]) { callees.push(`${match[2]}\\s*\\.\\s*setTimeout`, `${match[2]}\\s*\\.\\s*scheduler\\s*\\.\\s*wait`); continue; }
+    for (const part of match[1].slice(1, -1).split(",")) {
+      const [imported, local = imported] = part.trim().split(/\s+as\s+/);
+      if (imported === "setTimeout") callees.push(local);
+      else if (imported === "scheduler") callees.push(`${local}\\s*\\.\\s*wait`);
+    }
+  }
+  for (const callee of callees) {
+    for (const match of code.matchAll(new RegExp(`(?<![\\w$.])${callee.replace(/\$/g, "\\$")}\\s*\\(`, "g"))) sleeps.push(match.index);
+  }
+  return sleeps;
+}
+
 /** Line numbers of fixed waits without a reason on the wait or the preceding line. */
 export function fixedWaits(text) {
   const { code, lineComments } = sourceViews(text), comments = lineComments.split("\n");
@@ -130,6 +155,7 @@ export function fixedWaits(text) {
     }
     if (/\bsetTimeout\s*\(/.test(code.slice(argumentsStart, at))) offsets.push(match.index);
   }
+  offsets.push(...timerPromiseSleeps(text, code));
   const optOut = /\/\/\s*fixed-wait:\s*\S/;
   return [...new Set(offsets.map(offset => code.slice(0, offset).split("\n").length))]
     .filter(line => !optOut.test(comments[line - 1]) && !optOut.test(comments[line - 2] ?? ""))
@@ -150,13 +176,12 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const source = readFileSync(file, "utf8"), path = relative(root, file);
     return [
       ...unreadyClipboardReads(source).map(line => `${path}:${line}: clipboard read without a preceding expect.poll on the clipboard`),
-      ...fixedWaits(source).map(line => `${path}:${line}: fixed wait; wait on observable state or add "// fixed-wait: <reason>"`),
       ...fileLevelFixtureChecks(source).map(line => `${path}:${line}: file-level fixture check in a file with plain and tagged tests; move it into the tagged tests`),
     ];
   });
   if (findings.length) {
     console.error(findings.join("\n"));
-    console.error(`check-specs: ${findings.length} finding(s). Poll observable state, give a clipboard-ready / fixed-wait reason, or keep fixture checks inside tagged tests.`);
+    console.error(`check-specs: ${findings.length} finding(s). Poll the clipboard, give a clipboard-ready reason, or keep fixture checks inside tagged tests.`);
     process.exit(1);
   }
 }

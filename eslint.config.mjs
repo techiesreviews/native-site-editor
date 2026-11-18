@@ -25,6 +25,7 @@ const RECEIVER_RULE = {
   message: 'Wrap this global in an arrow: called as a property it gets the wrong receiver and throws "Illegal invocation".',
 };
 const { default: tseslint } = await import("typescript-eslint");
+const { default: fixedWait } = await import("./scripts/eslint-fixed-wait.mjs");
 
 export default tseslint.config(
   { ignores: ["dist/**", "node_modules/**", "public/**", "fixtures/**", ".scratch/**", ".wrangler/**"] },
@@ -58,5 +59,11 @@ export default tseslint.config(
   {
     files: ["tests/**/*.ts", "src/**/*.test.ts"],
     rules: { "no-restricted-syntax": ["error", RECEIVER_RULE, DOUBLE_UNKNOWN] },
+  },
+  // A browser test waits on what the page shows; a timer wait passes on a quiet machine and fails under load.
+  {
+    files: ["tests/**/*.spec.ts", "tests/native-save/**/*.ts", "tests/native-preview/**/*.ts"],
+    plugins: { tests: fixedWait },
+    rules: { "tests/no-fixed-wait": "error" },
   },
 );
