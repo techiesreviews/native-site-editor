@@ -12,7 +12,7 @@
 //   the draft's text, so two tabs that start from the same text make the very
 //   same Yjs items. Each copy has an id of its own (its birth time, then random
 //   bytes, TOOLS-216): two copies of a room that meet are never taken for one;
-//   the older caught-up one stays and the other's tabs join it (`meet`).
+//   the older caught-up one stays and the other's tabs join it (`meet`, src/live-text-copy.ts).
 // - Who starts it: a tab that has been alone in the room starts from its own
 //   draft. A tab that found others there waits for one of them to catch it up
 //   (nothing is stored on the server), then keeps the room's copy; its own
@@ -24,7 +24,7 @@
 //   file again it starts from the room's copy and adds only its own new words:
 //   it resumes its copy when that is still the room's (Yjs merges the two), and
 //   otherwise joins the room's copy and carries over only its own words, placed
-//   by their Yjs ids (`carryIn`), never by comparing texts. A save's commit
+//   by their Yjs ids (`carryIn`, src/live-text-drafts.ts), never by comparing texts. A save's commit
 //   names the copy's state as saved (its `Live-Copy` record, shared/live-copy.ts),
 //   so a tab coming back knows exactly which of its own words another tab saved.
 // - After a new room key or a reconnect, every tab asks again for what it is
@@ -60,7 +60,7 @@
 // caught up, the 20-byte id of the sender's copy (all zero before it has one),
 // a 4-byte Yjs client id (the sender's; in a REPLY, the tab whose request it
 // answers), then a Yjs state vector or update. A frame from another copy of
-// the room makes the two meet (`meet`), and a tab counts as caught up only by a
+// the room makes the two meet (`meet`, src/live-text-copy.ts), and a tab counts as caught up only by a
 // REPLY to its own request: one to someone else's holds only what they lacked.
 //
 // Live sharing is on for every signed-in tab (`liveSharingOn`; Lex, 2026-10-31:
