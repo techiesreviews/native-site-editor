@@ -45,7 +45,7 @@ const callName = (text: string) => {
 };
 const isAsync = (node: TS.FunctionLikeDeclaration) => Boolean(ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword));
 
-/** Every async function in `text` that waits and then writes, at its first such write. A callback inside it counts as
+/** Every async function in `text` that waits and then writes (a wait in the write's own arguments included), at its first such write. A callback inside it counts as
  * its own code; an async function inside it is judged on its own. */
 function waitThenWrite(file: string, text: string): Finding[] {
   // Only a file that waits and names a write is parsed (most of src does not).
@@ -56,18 +56,20 @@ function waitThenWrite(file: string, text: string): Finding[] {
   const found: Finding[] = [];
   const judge = (fn: TS.FunctionLikeDeclaration) => {
     const waits: number[] = [];
-    const calls: { at: number; name: string }[] = [];
+    const calls: { at: number; end: number; name: string }[] = [];
     const visit = (node: TS.Node) => {
       if (node !== fn && isFunction(node) && isAsync(node)) return;
       if (ts.isAwaitExpression(node)) waits.push(node.getEnd());
       if (ts.isForOfStatement(node) && node.awaitModifier) waits.push(node.expression.getEnd());
-      if (ts.isCallExpression(node)) calls.push({ at: node.getStart(tree), name: callName(node.expression.getText(tree)) });
+      if (ts.isCallExpression(node)) calls.push({ at: node.getStart(tree), end: node.getEnd(), name: callName(node.expression.getText(tree)) });
       ts.forEachChild(node, visit);
     };
     if (fn.body) visit(fn.body);
     if (!waits.length) return;
     const first = Math.min(...waits);
-    const write = calls.filter(call => call.at >= first && kinds.some(kind => kind.test(call.name))).sort((a, b) => a.at - b.at)[0];
+    // A call runs after the waits in its own arguments and callee, so those count as before it too.
+    const after = (call: { at: number; end: number }) => call.at >= first || waits.some(wait => wait > call.at && wait < call.end);
+    const write = calls.filter(call => after(call) && kinds.some(kind => kind.test(call.name))).sort((a, b) => a.at - b.at)[0];
     if (write) found.push({ file, line: lineOf(fn.getStart(tree)), wait: lineOf(first), write: write.name, writeLine: lineOf(write.at) });
   };
   const walk = (node: TS.Node) => {
@@ -129,8 +131,10 @@ test("the check finds an await before a write, in the function that waits", () =
   // The draft writes as the editor makes them.
   for (const call of ["draftStore().save(file, text)", "ports.draftStore().remove(file)", "host.store.save(record)", "options.drafts.remove(file)"])
     assert.equal(waitThenWrite("src/x.ts", `async function save(ports) { await ports.read(); ${call}; }`).length, 1, call);
-  // A concise arrow that waits in its body.
-  assert.equal(waitThenWrite("src/x.ts", "const save = async (ports) => ports.edits.run(await ports.plan());").length, 0);
+  // A write runs after the waits in its own arguments or in what it is called on, wherever they sit in the text.
+  for (const code of ["const save = async (ports) => ports.edits.run(await ports.plan());", "async function save(ports) { ports.store.save(\"index.html\", await ports.read()); }",
+    "async function save(ports) { (await ports.drafts()).drafts.remove(file); }"])
+    assert.equal(waitThenWrite("src/x.ts", code).length, 1, code);
   assert.equal(waitThenWrite("src/x.ts", "const save = async (ports) => [await ports.plan(), ports.edits.now(() => 1)];").length, 1);
   assert.deepEqual(waitThenWrite("src/x.ts", "async function outer(ports) { await ports.read(); return async () => { ports.edits.run(() => 1); }; }"), []);
   assert.equal(waitThenWrite("src/x.ts", "const save = async (ports) => { for await (const part of ports.parts()) ports.edits.run(() => part); };").length, 1);
