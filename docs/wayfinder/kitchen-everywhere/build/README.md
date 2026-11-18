@@ -113,8 +113,8 @@ Each move waits for Lex's OK and for the one before it, so a problem in one proj
 | [40 `techies-reviews`](tickets/40-move-techies-reviews.md) | light, plus its own checks | M | claude, **waits for Lex** | 31 |
 | [41 `techies-playground`](tickets/41-move-techies-playground.md) | full | S–M | claude, **waits for Lex** | 40 |
 | [42 `chat`](tickets/42-move-chat.md) | full | S–M | claude, **waits for Lex** | 41 |
-| ~~[43 `creator-studio-poc`](tickets/43-move-creator-studio.md)~~ dropped: Creator Studio retired 2026-11-18 | – | – | `wontfix` |
-| [44 `TechiesTools`, with its Issues as ticket files](tickets/44-move-techiestools.md) | full | M | claude, **waits for Lex** | 43 |
+| ~~[43 `creator-studio-poc`](tickets/43-move-creator-studio.md)~~ dropped 2026-10-30, Creator Studio retired 2026-11-18 | – | – | – | `wontfix` |
+| [44 `TechiesTools`, with its Issues as ticket files](tickets/44-move-techiestools.md) | full | M | claude, **waits for Lex** | 42 |
 | [45 `lexvd-site` and `dogsfitandfun`](tickets/45-move-static-sites.md) | light | S | claude, **waits for Lex** | 44 |
 | [46 `native-site-editor-starter`: in or out](tickets/46-starter-in-or-out.md) | light, or left out | S | claude, **waits for Lex** | 45 |
 | [47 `camframe`, when Lex builds there again](tickets/47-move-camframe.md) | full | M | claude, **waits for Lex** | 44 |
