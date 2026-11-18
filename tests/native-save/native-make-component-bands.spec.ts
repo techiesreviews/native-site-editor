@@ -174,10 +174,15 @@ test("a boxless header selects from canvas and Structure, offers Tone, and keeps
   await make(page, "header", "edit bar");
   const header = frame(page).locator("header");
   await frame(page).locator("main h1").click();
-  await header.hover({ position: { x: 8, y: 35 }, timeout: 15_000 });
+  // Point at the header's right end, clear of the heading's edit bar on the left: the header's
+  // hover style moves it 20 px off the top edge, so it stops counting as the site's top bar and
+  // the edit bar may rise over the header's left end. With CI's wider fonts it rose onto a
+  // pointer at the left, which took the hover off the page.
+  const spot = { x: (await header.boundingBox())!.width - 8, y: 35 };
+  await header.hover({ position: spot, timeout: 15_000 });
   await expectOutline(page, "header", "hover");
   await expect(frame(page).locator("[data-native-selection-box=label]")).toHaveText("block-page-header");
-  await header.click({ position: { x: 8, y: 35 }, timeout: 15_000 });
+  await header.click({ position: spot, timeout: 15_000 });
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Block page header");
   await expectOutline(page, "header");
   await frame(page).locator("main h1").click();
