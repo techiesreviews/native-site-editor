@@ -35,8 +35,9 @@ test("webkit-only viewport hiding and brand styling remain authored", async ({ p
   // The reload shows the site this browser kept first, then folds GitHub's newer head in (TOOLS-242).
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible();
-  const style = await frame(page).locator("html").evaluate(element => ({ width: getComputedStyle(element).scrollbarWidth, display: getComputedStyle(element, "::-webkit-scrollbar").display, thumb: getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor }));
-  expect(style).toEqual({ width: "auto", display: "none", thumb: "rgb(34, 85, 119)" });
+  // The new stylesheet reaches the preview on its own schedule after the fold.
+  await expect.poll(() => frame(page).locator("html").evaluate(element => ({ width: getComputedStyle(element).scrollbarWidth, display: getComputedStyle(element, "::-webkit-scrollbar").display, thumb: getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor })))
+    .toEqual({ width: "auto", display: "none", thumb: "rgb(34, 85, 119)" });
   expect(await (await page.request.get(`${baseURL}/__demo/file?path=${path}`)).text()).toBe(content);
   expect(await storedDrafts(page)).toEqual([]);
 });
