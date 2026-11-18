@@ -1,14 +1,19 @@
 # The full browser suite (every project in playwright.config.ts, default
 # fixture) in 4 shards plus the @actual and @native-static fixture groups,
-# nightly and on "Run workflow". Each run uploads a blob report; the last job
-# merges them into one HTML report, uploaded as the artifact
-# "playwright-report". Every push runs only the @smoke slice
-# (deploy-preview.yml).
+# nightly, on every push to dev and on "Run workflow". Each run uploads a blob
+# report; the last job merges them into one HTML report, uploaded as the
+# artifact "playwright-report", and lists every failure (known flaky ones
+# labeled from tests/known-failures.json) in the run summary. Pull requests
+# and the dev preview run only the @smoke slice (ci.yml, deploy-preview.yml).
 name: Browser tests (full suite)
 
 on:
+  # GitHub runs the schedule from main's copy of this file only, so it tests
+  # main; the push trigger is what tests dev.
   schedule:
     - cron: "23 2 * * *"
+  push:
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -16,7 +21,9 @@ permissions:
 
 concurrency:
   group: browser-tests-${{ github.ref }}
-  cancel-in-progress: true
+  # A push run is never cut short, so every dev run ends with a result: newer
+  # pushes wait as one pending run (GitHub keeps only the newest pending run).
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   test:
@@ -107,6 +114,17 @@ jobs:
           merge-multiple: true
       - name: Merge the shards and tagged groups into one HTML report
         run: npx playwright merge-reports --reporter=html ./all-blob-reports
+      # The test jobs already fail the run; this step only lists what failed,
+      # so it never fails itself.
+      - name: List the failures in the run summary
+        run: |
+          npx playwright merge-reports --reporter=json ./all-blob-reports > results.json
+          {
+            echo '### Browser tests'
+            echo '```'
+            node scripts/agents/suite-summary.mjs results.json 2>&1 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
         with:
           name: playwright-report
