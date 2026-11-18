@@ -7,9 +7,14 @@ import { expect, test, webkit, type Locator, type Page } from "@playwright/test"
 
 const BOARD = "/catalogue.html?repo=native-demo-user/native-demo&branch=main";
 
-async function openBoard(page: Page, baseURL: string | undefined) {
+/**
+ * Opens the board and, unless a test holds its frames (`drawing`), waits for it to settle: a frame still drawing can
+ * take the focus or the selection, and the first view fits again once every part has drawn.
+ */
+async function openBoard(page: Page, baseURL: string | undefined, { drawing = false } = {}) {
   await page.goto(`${baseURL}${BOARD}`);
   await expect(page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true })).toBeVisible();
+  if (!drawing) await settled(page);
 }
 /** Picks a part in the outline and waits for the board to settle on its card. */
 async function flyTo(page: Page, name: string) {
@@ -166,8 +171,6 @@ async function settled(page: Page) {
 test("Space presses a focused button on the canvas instead of panning", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   const zoom = page.getByRole("toolbar", { name: "Zoom" });
-  // A menu drawing in a frame focuses itself (the board then takes focus back, which drops a key press half made).
-  await settled(page);
   const before = await percent(page);
   await zoom.getByRole("button", { name: "Zoom in" }).focus();
   await expect(zoom.getByRole("button", { name: "Zoom in" })).toBeFocused();
@@ -185,7 +188,7 @@ test("an option set while a frame is still loading is the one it draws", async (
     await released;
     await route.continue();
   });
-  await openBoard(page, baseURL);
+  await openBoard(page, baseURL, { drawing: true });
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
   await options.getByRole("switch", { name: "Remove" }).click();
@@ -207,7 +210,7 @@ test("a menu drawing in its frame leaves the board's focus where it was", async 
     await released;
     await route.continue();
   });
-  await openBoard(page, baseURL);
+  await openBoard(page, baseURL, { drawing: true });
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
   const zoomIn = page.getByRole("toolbar", { name: "Zoom" }).getByRole("button", { name: "Zoom in" });
   await zoomIn.focus();
@@ -286,7 +289,6 @@ test("a preview annotation on a card names its files and its stylesheet, inside 
 
 test("a card dragged by its title moves, Escape puts a drag back, the arrows nudge it, and its place outlasts a reload", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
-  await settled(page);
   const card = page.locator("#card-button"), title = card.locator(".cat-card__title");
   await expect(card).not.toHaveAttribute("style", /translate/);
   await flyTo(page, "Button");
@@ -370,7 +372,6 @@ test("a dragged card snaps to another's edge with a guide, and nothing else on t
 
 test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag keeps the card under the pointer", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
-  await settled(page);
   await flyTo(page, "Button");
   const card = page.locator("#card-button"), title = card.locator(".cat-card__title"), board = page.locator(".cat-board");
   const box = (await title.boundingBox())!;
@@ -834,8 +835,6 @@ test("after a click in a live frame, a key there and then Tab into the next card
 test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await openBoard(page, baseURL);
-  // A menu or dialog drawing in a state frame takes focus for a moment, which would take a field's typing with it.
-  await settled(page);
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Badge", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
   const tweak = options.getByRole("region", { name: "Tweak" });
@@ -916,7 +915,6 @@ test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to
 test("the Button's own CSS file edits its live cell only, resets, and Send to agent copies the changed CSS", async ({ page, baseURL }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await openBoard(page, baseURL);
-  await settled(page);
   const outline = page.getByRole("navigation", { name: "Outline" });
   await outline.getByRole("button", { name: "Button", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
