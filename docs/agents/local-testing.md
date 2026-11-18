@@ -22,9 +22,10 @@ run timing through `timing.sh`. Stop only processes you started.
 
 ## Which tests
 
-- Nightly (`browser-tests.yml`): default fixture in 4 shards plus the `@actual`
-  and `@native-static` groups. Pull requests (`ci.yml`, **CI / checks**) and
-  pushes to `dev` (`deploy-preview.yml`): only `@smoke`.
+- Full suite (`browser-tests.yml`): default fixture in 4 shards plus the `@actual`
+  and `@native-static` groups, nightly on `main` and on every push to `dev`; the
+  run summary lists each failure. Pull requests (`ci.yml`, **CI / checks**) and
+  the dev preview (`deploy-preview.yml`): only `@smoke`.
 - Specs a change reaches: `scripts/agents/kit specs --affected` picks them and
   their fixture groups; the commands below run groups by hand.
 - Default group: `port.sh npx playwright test --project=native-save --grep-invert "@actual|@native-static" --workers=1 <files>`
