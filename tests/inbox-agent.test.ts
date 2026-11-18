@@ -6,7 +6,7 @@ import { createInboxAgent, DISCONNECT_GRACE_MS, SUGGESTION_WAIT_MS, suggestionPr
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
 import type { AgentElement } from "../shared/agent.ts";
 import type { PinRequest } from "../src/components/agent-pins.ts";
-import { forEachAwait } from "./support/await-race";
+import { forEachAwait } from "./support/await-race.ts";
 
 const logo: InboxItem = { key: "picture\nheader.html\nimages/logo.svg", kind: "picture", what: "Picture without a description", where: "Site header",
   page: "components/site-header/site-header.html", at: 8, fix: "alt", shared: { tag: "site-header", name: "Site header", pages: ["index.html", "about/index.html"] } };
@@ -191,6 +191,34 @@ test("a suggestion is asked and comes back only on the session it was pressed in
     assert.deepEqual(run.state.dismissed, []);
   });
   assert.equal(awaits, 2);
+});
+
+test("a session ended while the reply is awaited ends the suggestion, and its request is never let go through the new session's agent", async () => {
+  for (const ending of ["list", "timeout", "grace"] as const) {
+    let holds = true, connected = true;
+    const listeners: ((requests: readonly PinRequest[]) => void)[] = [];
+    const dismissed: string[] = [];
+    const timers: (() => void)[] = [];
+    const agent = createInboxAgent({
+      link: () => ({ connected: () => connected, ask: async () => ({ id: "req-1" }), dismiss: (id) => { dismissed.push(id); } }),
+      element: async () => element,
+      stamp: () => ({ holds: () => holds }),
+      watch: heard => { listeners.push(heard); heard([]); return () => undefined; },
+      clock: { setTimeout: (run) => { timers.push(run); return timers.length; }, clearTimeout: () => undefined },
+    });
+    let outcome = "waiting";
+    void agent.suggest(logo).then(() => { outcome = "words"; }, (error: Error) => { outcome = error.message; });
+    await new Promise(done => setTimeout(done));
+    // Another site opens before the menu ever listed the request: the new site's lists never hold it.
+    holds = false;
+    if (ending === "list") listeners[0]([]);
+    if (ending === "timeout") timers[0]();
+    if (ending === "grace") { connected = false; listeners[0]([]); timers.at(-1)!(); }
+    await new Promise(done => setTimeout(done));
+    if (ending === "list") assert.match(outcome, /site changed/, ending);
+    else assert.notEqual(outcome, "words", ending);
+    assert.deepEqual(dismissed, [], ending);
+  }
 });
 
 test("an agent back within the grace keeps the suggestion waiting, and its request", async () => {
