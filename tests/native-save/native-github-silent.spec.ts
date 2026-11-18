@@ -24,13 +24,40 @@ async function snapshotRoute(page: Page, fail: (route: Route) => unknown) {
   return reads;
 }
 
+// The preview frame's document says `ready` with its load number once its runtime has loaded
+// (native-preview-runtime.js); the editor gives it 8 s on the same clock the tests jump
+// (native-preview.ts, the ready watchdog), so a jump made while it still loads reads as a failed chunk.
+async function installClock(page: Page) {
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    addEventListener('message', (event: MessageEvent<{ type?: string; load?: string }>) => {
+      if (event.data?.type === 'ready') (window as Window & { frameReady?: string }).frameReady = event.data.load;
+    });
+  });
+  await page.clock.install();
+}
+
+/** Whether the preview frame, if one is attached, has said `ready` for the document it shows now. */
+async function previewSettled(page: Page) {
+  const frame = await (await page.$('.native-preview-frame'))?.contentFrame();
+  if (!frame) return true;
+  const load = await frame.evaluate(() => document.querySelector('meta[name="ase-frame-load"]')?.getAttribute('content')).catch(() => undefined);
+  return load != null && load === await page.evaluate(() => (window as Window & { frameReady?: string }).frameReady);
+}
+
+/** Jumps the clock once the preview frame has loaded, so only the reads the test holds can time out. */
+async function advance(page: Page, ms: number) {
+  await expect.poll(() => previewSettled(page), { timeout: 30_000 }).toBe(true);
+  await page.clock.fastForward(ms);
+}
+
 // The clock runs in real time; it jumps past each try's 8 s timeout, and a
 // second at a time through the waits between tries until the next goes out.
 async function failFourTries(page: Page, reads: { seen: number }, from = 0) {
   for (let tries = 1; tries <= 4; tries++) {
-    await expect.poll(async () => { if (reads.seen < from + tries) await page.clock.fastForward(1_000); return reads.seen; }, { timeout: 30_000 }).toBe(from + tries);
+    await expect.poll(async () => { if (reads.seen < from + tries) await advance(page, 1_000); return reads.seen; }, { timeout: 30_000 }).toBe(from + tries);
     await expect(notice(page)).toBeHidden();
-    await page.clock.fastForward(8_000);
+    await advance(page, 8_000);
   }
 }
 
@@ -54,14 +81,14 @@ async function expectOpened(page: Page) {
 }
 
 test('a snapshot GitHub never answers is tried four times, then the failed panel offers Try again, which opens the site', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   // Held reads are never answered: the editor's timeout aborts them.
   const reads = await snapshotRoute(page, () => {});
   await page.goto(`${baseURL}/${HASH}`);
   await failFourTries(page, reads);
   await expectFailedOpen(page);
   // The panel stays while the clock runs on, and no fifth try goes out.
-  await page.clock.fastForward(10_000);
+  await advance(page, 10_000);
 
   reads.failing = false;
   await tryAgain(page).click();
@@ -71,11 +98,11 @@ test('a snapshot GitHub never answers is tried four times, then the failed panel
 });
 
 test('a snapshot whose every try fails on the network shows the same panel; Try again opens the site', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const reads = await snapshotRoute(page, (route) => route.abort('failed'));
   await page.goto(`${baseURL}/${HASH}`);
   // Failed tries follow each other as fast as the waits are jumped.
-  await expect.poll(async () => { if (reads.seen < 4) await page.clock.fastForward(1_000); return reads.seen; }, { timeout: 30_000 }).toBe(4);
+  await expect.poll(async () => { if (reads.seen < 4) await advance(page, 1_000); return reads.seen; }, { timeout: 30_000 }).toBe(4);
   await expectFailedOpen(page);
 
   reads.failing = false;
@@ -85,20 +112,20 @@ test('a snapshot whose every try fails on the network shows the same panel; Try 
 });
 
 test('a snapshot answered 503 twice opens the site on its third try, with no notice', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const reads = await snapshotRoute(page, (route) => {
     if (reads.seen === 2) reads.failing = false;
     return route.fulfill({ status: 503, json: { error: 'Service unavailable' } });
   });
   await page.goto(`${baseURL}/${HASH}`);
-  await expect.poll(async () => { if (reads.seen < 3) await page.clock.fastForward(1_000); return reads.seen; }, { timeout: 30_000 }).toBe(3);
+  await expect.poll(async () => { if (reads.seen < 3) await advance(page, 1_000); return reads.seen; }, { timeout: 30_000 }).toBe(3);
   await expectOpened(page);
   await expect(notice(page)).toBeHidden();
   expect(reads.seen).toBe(3);
 });
 
 test('Refresh of a shown site GitHub never answers offers Try again, which reloads it on the same page', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const reads = await snapshotRoute(page, () => {});
   reads.failing = false;
   await page.goto(`${baseURL}/${HASH}`);
@@ -124,7 +151,7 @@ test('Refresh of a shown site GitHub never answers offers Try again, which reloa
 test('a remembered boot whose guessed snapshot GitHub never answers shows the panel after four tries, not eight', async ({ page, baseURL }) => {
   // The guess is the path when the browser kept no copy of the site (src/warm-copy.ts): none is kept here.
   await page.addInitScript(() => { indexedDB.deleteDatabase('native-site-editor-warm-copy'); });
-  await page.clock.install();
+  await installClock(page);
   const reads = await snapshotRoute(page, () => {});
   reads.failing = false;
   // The first open writes the boot memory (src/boot-memory.ts) the reload guesses from.
@@ -139,7 +166,7 @@ test('a remembered boot whose guessed snapshot GitHub never answers shows the pa
   await failFourTries(page, reads, opened);
   await expectFailedOpen(page);
   // No fresh read after the failed guess: four tries in all.
-  await page.clock.fastForward(10_000);
+  await advance(page, 10_000);
 
   reads.failing = false;
   await tryAgain(page).click();
@@ -148,7 +175,7 @@ test('a remembered boot whose guessed snapshot GitHub never answers shows the pa
 });
 
 test('a file GitHub never answers, opened outside an open, shows the plain notice and no Try again', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const snapshot = page.waitForResponse(/\/api\/snapshot\?/);
   await page.goto(`${baseURL}/${HASH}`);
   await expectOpened(page);
@@ -169,7 +196,7 @@ test('a file GitHub never answers, opened outside an open, shows the plain notic
 });
 
 test('a branch list GitHub never answers shows the panel after four tries; Try again chooses the repository again and opens the site', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const reads = { seen: 0, failing: true };
   await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
   // The site remembered from an earlier visit, not named in the address: the open waits for the branch list.
@@ -204,13 +231,13 @@ async function holdFileReads(page: Page, path: string) {
 }
 
 test('the home page GitHub never answers while the site opens fails the open after four tries; Try again opens it', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const reads = await holdFileReads(page, 'index.html');
   await page.goto(`${baseURL}/${HASH}`);
   await failFourTries(page, reads);
   await expectFailedOpen(page);
   // Not read again by the file's own open: four tries in all.
-  await page.clock.fastForward(10_000);
+  await advance(page, 10_000);
   expect(reads.seen).toBe(4);
 
   reads.failing = false;
@@ -219,7 +246,7 @@ test('the home page GitHub never answers while the site opens fails the open aft
 });
 
 test('the file a reopen shows, never answered, offers Try again, which reopens it', async ({ page, baseURL }) => {
-  await page.clock.install();
+  await installClock(page);
   const reads = await holdFileReads(page, 'robots.txt');
   await page.goto(`${baseURL}/#repo=501&branch=main&file=robots.txt`);
   await failFourTries(page, reads);
@@ -238,11 +265,11 @@ test('the file a reopen shows, never answered, offers Try again, which reopens i
 
 test('at 390 px a long Worker message and Try again both fit without clipping', async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 800 });
-  await page.clock.install();
+  await installClock(page);
   const reads = await snapshotRoute(page, (route) => route.fulfill({ status: 503, json: { error: 'GitHub is unavailable. '.repeat(8).trim() } }));
   await page.goto(`${baseURL}/${HASH}`);
   // Every try answers 503; the waits are jumped until the failure shows.
-  await expect.poll(async () => { await page.clock.fastForward(1_000); return notice(page).isVisible(); }, { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => { await advance(page, 1_000); return notice(page).isVisible(); }, { timeout: 30_000 }).toBe(true);
   await expect(notice(page)).toContainText('GitHub is unavailable.');
   const button = tryAgain(page);
   await expect(button).toBeVisible();
