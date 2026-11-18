@@ -91,6 +91,8 @@ test("host Backspace with nothing focused runs the bar's Remove; a sole child se
   const html = '<!doctype html><html><head><title>Delete fixture</title></head><body><main><section><p>Only paragraph</p></section></main></body></html>';
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: html } })).status()).toBe(204);
   await page.reload();
+  // The reload shows the site this browser kept first, then folds GitHub's newer head in (TOOLS-242).
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(frame(page).locator("p")).toBeVisible();
   await editorMounted(page);
   await frame(page).locator("p").click();
