@@ -33,9 +33,10 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
-  // Every request Lex's own browser sends to the preview's address, with the cookies it carried. The preview's service
-  // worker's own requests (its script's update check) are left out: Chromium never reports their headers, so reading
-  // them waits until the worker closes. The cookie jar below holds nothing for the address, so they carry none either.
+  // Every request Lex's own browser sends to the preview's address, with the cookies it carried. Every request the
+  // preview's service worker sends itself is left out: Chromium does not report the headers of some (its script's update
+  // check), so reading them waits until the worker closes. The empty cookie jar for the address, checked below, is what
+  // shows none of them carries a cookie.
   const previewRequests: Promise<{ url: string; cookie?: string }>[] = [];
   const watch = (request: Request) => {
     if (new URL(request.url()).hostname === "localhost" && !request.serviceWorker()) previewRequests.push(request.allHeaders().then((headers) => ({ url: request.url(), cookie: headers.cookie })));
