@@ -149,12 +149,13 @@ test("forced states draw: hover changes the button's colour and focus draws its 
 const percent = async (page: Page) => parseInt(await page.getByRole("toolbar", { name: "Zoom" }).locator("output").innerText(), 10);
 /** Every frame has drawn, the camera holds still (the first view fits again once every part has drawn) and keys reach the board. */
 async function settled(page: Page) {
+  // Each of the board's frames loads the catalogue's own code: on a busy machine drawing them all takes longer than one expect.
   await expect.poll(async () => {
     // The board's own frames (an editor screen's page frame inside one is the sample site's).
     const frames = page.frames().filter((frame) => frame.parentFrame() === page.mainFrame());
     const drawn = await Promise.all(frames.map((frame) => frame.evaluate(() => (document.querySelector(".cat-frame-stage")?.childElementCount ?? 0) > 0).catch(() => false)));
     return frames.length > 0 && drawn.every(Boolean);
-  }).toBe(true);
+  }, { timeout: 60_000 }).toBe(true);
   let last = "";
   const camera = () => page.locator(".cat-world").evaluate((world) => world.style.transform);
   await expect.poll(async () => { const now = await camera(); const still = now === last; last = now; return still; }, { intervals: [300] }).toBe(true);
@@ -285,6 +286,7 @@ test("a preview annotation on a card names its files and its stylesheet, inside 
 
 test("a card dragged by its title moves, Escape puts a drag back, the arrows nudge it, and its place outlasts a reload", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
+  await settled(page);
   const card = page.locator("#card-button"), title = card.locator(".cat-card__title");
   await expect(card).not.toHaveAttribute("style", /translate/);
   await flyTo(page, "Button");
@@ -312,6 +314,8 @@ test("a card dragged by its title moves, Escape puts a drag back, the arrows nud
   await expect.poll(() => card.evaluate((element) => (element as HTMLElement).style.translate)).toBe(placed);
 
   const xBefore = Number(await x.inputValue());
+  // The arrows move the card from the canvas: a frame that took the focus meanwhile has given it back.
+  await expect(page.getByRole("region", { name: "Canvas" })).toBeFocused();
   await page.keyboard.press("Shift+ArrowRight");
   await expect(x).toHaveValue(String(xBefore + 10));
   const nudged = await card.evaluate((element) => (element as HTMLElement).style.translate);
@@ -366,6 +370,7 @@ test("a dragged card snaps to another's edge with a guide, and nothing else on t
 
 test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag keeps the card under the pointer", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
+  await settled(page);
   await flyTo(page, "Button");
   const card = page.locator("#card-button"), title = card.locator(".cat-card__title"), board = page.locator(".cat-board");
   const box = (await title.boundingBox())!;
@@ -383,8 +388,11 @@ test("a drag whose pointer is cancelled puts the card back, and a zoom mid-drag 
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.mouse.move(at.x + 40, at.y + 20, { steps: 4 });
+  const zoomed = await percent(page);
   await page.keyboard.down("Control");
   await page.mouse.wheel(0, 200);
+  // The wheel is not waited for: the next move goes once the zoom shows.
+  await expect.poll(() => percent(page)).toBeLessThan(zoomed);
   await page.keyboard.up("Control");
   await page.mouse.move(at.x + 41, at.y + 20);
   const after = (await title.boundingBox())!;
@@ -1158,9 +1166,12 @@ test("the Progress bar's fill grows from where it was when moved, and its value 
     // The bar has been drawn at 30 before it moves: a style the page has never computed has nothing to grow from.
     const start = parseFloat(getComputedStyle(bar, "::before").width);
     setProgress(bar, { value: 60, label: "Adding" });
-    // The width the fill has one frame after the move: between the two, so it is growing, not jumping.
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const growing = parseFloat(getComputedStyle(bar, "::before").width);
+    // The move starts a transition on the fill (its inline size, which the browser names by the physical width), from
+    // the width it had to the new one: it grows, not jumps.
+    const move = bar.getAnimations({ subtree: true }).find((animation): animation is CSSTransition => animation instanceof CSSTransition && ["width", "inline-size"].includes(animation.transitionProperty));
+    const frames = move?.effect?.getKeyframes() ?? [];
+    const size = (frame: ComputedKeyframe | undefined) => frame?.width ?? frame?.inlineSize;
+    const growing = { running: move?.playState === "running", from: size(frames[0]), to: size(frames.at(-1)) };
     const second = read();
     setProgress(bar, { label: "Adding" });
     const third = read();
@@ -1171,8 +1182,7 @@ test("the Progress bar's fill grows from where it was when moved, and its value 
   expect(drawn.second).toEqual({ mode: "known", now: "60", min: "0", max: "100", fill: "60%", label: "Adding" });
   expect(drawn.third).toEqual({ mode: "unknown", now: null, min: null, max: null, fill: "", label: "Adding" });
   expect(drawn.start).toBeCloseTo(60, 0);
-  expect(drawn.growing).toBeGreaterThan(60);
-  expect(drawn.growing).toBeLessThan(120);
+  expect(drawn.growing).toEqual({ running: true, from: "30%", to: "60%" });
 });
 
 test("with reduced motion the Spinner and the unknown Progress bar slow down, and the known fill stops growing", async ({ page, baseURL }) => {
