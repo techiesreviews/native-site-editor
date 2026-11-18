@@ -111,11 +111,13 @@ export function unreadyClipboardReads(text) {
  */
 function timerPromiseSleeps(text, code) {
   const sleeps = [], callees = [];
-  for (const match of code.matchAll(/\bimport\s*(\{[^}]*\}|\*\s*as\s+([\w$]+))\s*from\s*(["'])/g)) {
-    const start = match.index + match[0].length, name = text.slice(start, text.indexOf(match[3], start));
+  for (const match of code.matchAll(/\bimport\b\s*(?:([\w$]+)\s*(?:,\s*)?)?(\{[^}]*\}|\*\s*as\s+([\w$]+))?\s*from\s*(["'])/g)) {
+    const [, whole, named, namespace, quote] = match;
+    const start = match.index + match[0].length, name = text.slice(start, text.indexOf(quote, start));
     if (name !== "timers/promises" && name !== "node:timers/promises") continue;
-    if (match[2]) { callees.push(`${match[2]}\\s*\\.\\s*setTimeout`, `${match[2]}\\s*\\.\\s*scheduler\\s*\\.\\s*wait`); continue; }
-    for (const part of match[1].slice(1, -1).split(",")) {
+    for (const module of [whole, namespace].filter(Boolean)) callees.push(`${module}\\s*\\.\\s*setTimeout`, `${module}\\s*\\.\\s*scheduler\\s*\\.\\s*wait`);
+    if (!named?.startsWith("{")) continue;
+    for (const part of named.slice(1, -1).split(",")) {
       const [imported, local = imported] = part.trim().split(/\s+as\s+/);
       if (imported === "setTimeout") callees.push(local);
       else if (imported === "scheduler") callees.push(`${local}\\s*\\.\\s*wait`);

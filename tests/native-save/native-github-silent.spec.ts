@@ -37,17 +37,22 @@ async function installClock(page: Page) {
   await page.clock.install();
 }
 
-/** Whether the preview frame, if one is attached, has said `ready` for the document it shows now. */
-async function previewSettled(page: Page) {
-  const frame = await (await page.$('.native-preview-frame'))?.contentFrame();
-  if (!frame) return true;
-  const load = await frame.evaluate(() => document.querySelector('meta[name="ase-frame-load"]')?.getAttribute('content')).catch(() => undefined);
-  return load != null && load === await page.evaluate(() => (window as Window & { frameReady?: string }).frameReady);
+/**
+ * Whether the preview frame, if one is attached, has said `ready` for the load it was last given. The load is read
+ * from the frame's srcdoc, which the editor sets as it arms the watchdog, not from the document still showing.
+ */
+function previewSettled(page: Page) {
+  return page.evaluate(() => {
+    const frame = document.querySelector('.native-preview-frame');
+    if (!frame) return true;
+    const load = /name="ase-frame-load" content="(\d+)"/.exec(frame.getAttribute('srcdoc') ?? '')?.[1];
+    return load !== undefined && load === (window as Window & { frameReady?: string }).frameReady;
+  });
 }
 
 /** Jumps the clock once the preview frame has loaded, so only the reads the test holds can time out. */
 async function advance(page: Page, ms: number) {
-  await expect.poll(() => previewSettled(page), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => previewSettled(page), { message: 'the preview frame says ready for its last load', timeout: 30_000 }).toBe(true);
   await page.clock.fastForward(ms);
 }
 

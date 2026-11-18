@@ -49,6 +49,8 @@ test("the timer-wait rule rejects timeout calls, Promise sleeps and timers/promi
     ["import { setTimeout } from 'timers/promises';\n\nawait setTimeout(50);", 3],
     ['import * as timers from "node:timers/promises";\nawait timers.setTimeout(50);', 2],
     ['import { scheduler } from "node:timers/promises";\nawait scheduler.wait(10);', 2],
+    ['import timers from "node:timers/promises";\nawait timers.setTimeout(1);', 2],
+    ['import timers, { setTimeout as sleep } from "node:timers/promises";\nawait sleep(1);', 2],
   ] as const) assert.deepEqual(lintWaits(source), [["tests/no-fixed-wait", line]], source);
 });
 
