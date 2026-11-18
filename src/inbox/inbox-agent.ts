@@ -6,8 +6,7 @@
 // How a suggestion settles, checked in this order each time the menu tells its requests (or the connection changes):
 //   1. a reply with words: the suggestion, and the request is let go;
 //   2. a reply that asks back: fails, and the request stays on its pin for the user to answer;
-//   3. the request gone after it was seen (dismissed on its pin, or another site opened): fails; nothing is left to let go
-//      here (another site's request stays with that site);
+//   3. the request gone after it was seen (dismissed on its pin, or in another tab): fails; nothing is left to let go here;
 //   4. no agent connected any more: after DISCONNECT_GRACE_MS (a reply the menu was still saving as the agent left
 //      arrives in it and wins, as 1), fails, and the request is let go;
 //   5. SUGGESTION_WAIT_MS with none of these: fails, and the request is let go.

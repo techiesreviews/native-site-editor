@@ -209,14 +209,15 @@ test("a session ended while the reply is awaited ends the suggestion, and its re
     let outcome = "waiting";
     void agent.suggest(logo).then(() => { outcome = "words"; }, (error: Error) => { outcome = error.message; });
     await new Promise(done => setTimeout(done));
+    // The agent leaves first, so its grace starts while the site still holds.
+    if (ending === "grace") { connected = false; listeners[0]([]); }
     // Another site opens before the menu ever listed the request: the new site's lists never hold it.
     holds = false;
     if (ending === "list") listeners[0]([]);
     if (ending === "timeout") timers[0]();
-    if (ending === "grace") { connected = false; listeners[0]([]); timers.at(-1)!(); }
+    if (ending === "grace") timers[1]();
     await new Promise(done => setTimeout(done));
-    if (ending === "list") assert.match(outcome, /site changed/, ending);
-    else assert.notEqual(outcome, "words", ending);
+    assert.match(outcome, { list: /site changed/, timeout: /did not answer in time/, grace: /no longer connected/ }[ending], ending);
     assert.deepEqual(dismissed, [], ending);
   }
 });
