@@ -33,15 +33,12 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
-  // Every request Lex's own browser sends to the preview's address, with the cookies it carried. A request whose worker
-  // (the preview page's service worker) ended before its headers were read, as when its page closes, is left unread.
-  const previewRequests: Promise<{ url: string; cookie?: string; unread?: true }>[] = [];
+  // Every request Lex's own browser sends to the preview's address, with the cookies it carried. The preview's service
+  // worker's own requests (its script's update check) are left out: Chromium never reports their headers, so reading
+  // them waits until the worker closes. The cookie jar below holds nothing for the address, so they carry none either.
+  const previewRequests: Promise<{ url: string; cookie?: string }>[] = [];
   const watch = (request: Request) => {
-    if (new URL(request.url()).hostname !== "localhost") return;
-    previewRequests.push(request.allHeaders().then(
-      (headers) => ({ url: request.url(), cookie: headers.cookie }),
-      (error: Error) => { if (/ closed\b/.test(error.message)) return { url: request.url(), unread: true as const }; throw error; },
-    ));
+    if (new URL(request.url()).hostname === "localhost" && !request.serviceWorker()) previewRequests.push(request.allHeaders().then((headers) => ({ url: request.url(), cookie: headers.cookie })));
   };
   context.on("request", watch);
   await openEditor(lex, baseURL);
@@ -103,7 +100,7 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   await own.goto(link);
   await expect(previewHeading(own)).toHaveText(`${heading} live`, { timeout: 20_000 });
   await own.close();
-  const sent = (await Promise.all(previewRequests)).filter((request) => !request.unread);
+  const sent = await Promise.all(previewRequests);
   expect(sent.length).toBeGreaterThan(2);
   expect(sent.filter((request) => request.cookie)).toEqual([]);
   expect((await context.cookies("http://localhost")).length).toBe(0);
