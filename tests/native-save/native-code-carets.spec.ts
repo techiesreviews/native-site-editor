@@ -341,6 +341,12 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     await openEditor(lex.page, baseURL);
     await editorMounted(anna.page);
     await editorMounted(lex.page);
+    // Lex's caret shows at Anna's only once both tabs are in the room's copy: words he typed before that would reach her
+    // as the copy's catch-up, not as his change, and her tag could not take them back (the last step below).
+    const lexAtAnna = anna.page.locator(".monaco-editor .live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
+    await typeInCode(lex.page, "Edit plain HTML", "", true);
+    await reveal(anna.page, (await source(anna.page)).indexOf("Edit plain HTML") + "Edit plain HTML".length);
+    await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
     // Lex types, and his page shows his words; then Anna types at the end of a line, by the right edge of his narrow pane.
     await typeInCode(lex.page, "Edit plain HTML", ", by Lex,", true);
     await expect.poll(() => source(anna.page), { timeout: 20_000 }).toContain("Edit plain HTML, by Lex,");
@@ -412,7 +418,6 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
 
     // At Anna's, by keyboard: Ctrl+M lets Tab leave the code, Tab reaches Lex's tag, which opens; Enter on its undo takes
     // back his changes, latest first, and focus stays on his tag.
-    const lexAtAnna = anna.page.locator(".monaco-editor .live-caret__flag", { has: anna.page.locator("b", { hasText: "L" }) });
     await reveal(anna.page, (await source(anna.page)).indexOf(", by Lex,") + ", by Lex,".length);
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
     await anna.page.getByRole("textbox", { name: "File source" }).first().focus();
