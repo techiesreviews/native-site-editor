@@ -33,10 +33,15 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   lex.on("pageerror", (error) => pageErrors.push(error.message));
-  // Every request Lex's own browser sends to the preview's address, with the cookies it carried.
-  const previewRequests: Promise<{ url: string; cookie?: string }>[] = [];
+  // Every request Lex's own browser sends to the preview's address, with the cookies it carried. A request whose worker
+  // (the preview page's service worker) ended before its headers were read, as when its page closes, is left unread.
+  const previewRequests: Promise<{ url: string; cookie?: string; unread?: true }>[] = [];
   const watch = (request: Request) => {
-    if (new URL(request.url()).hostname === "localhost") previewRequests.push(request.allHeaders().then((headers) => ({ url: request.url(), cookie: headers.cookie })));
+    if (new URL(request.url()).hostname !== "localhost") return;
+    previewRequests.push(request.allHeaders().then(
+      (headers) => ({ url: request.url(), cookie: headers.cookie }),
+      (error: Error) => { if (/ closed\b/.test(error.message)) return { url: request.url(), unread: true as const }; throw error; },
+    ));
   };
   context.on("request", watch);
   await openEditor(lex, baseURL);
@@ -98,7 +103,7 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   await own.goto(link);
   await expect(previewHeading(own)).toHaveText(`${heading} live`, { timeout: 20_000 });
   await own.close();
-  const sent = await Promise.all(previewRequests);
+  const sent = (await Promise.all(previewRequests)).filter((request) => !request.unread);
   expect(sent.length).toBeGreaterThan(2);
   expect(sent.filter((request) => request.cookie)).toEqual([]);
   expect((await context.cookies("http://localhost")).length).toBe(0);
@@ -275,8 +280,11 @@ test("a second visitor opening the link leaves the first one's page as it is", a
   second.on("pageerror", (error) => pageErrors.push(error.message));
   await second.goto(link);
   await expect(previewHeading(second)).toHaveText(heading, { timeout: 20_000 });
-  // The second visitor's hello reached the first one's page too by now (it goes to the whole room).
-  await second.waitForTimeout(1_000); // fixed-wait: proving a redraw never comes (a negative)
+  // Lex's tab answered the second visitor with a hello to the whole room before the second page could show. A file the
+  // first page asks for now is answered by that tab after it, in order on the same socket: with the answer in, the first
+  // page has heard the hello.
+  const site = first.frames().find((frame) => frame.url().includes("/site/"))!;
+  expect(await site.evaluate(async () => (await fetch("/asked-after-the-hello.txt")).status)).toBe(404);
   expect(await shown.evaluate((frame: HTMLIFrameElement) => (frame.contentWindow as Window & { mark?: number }).mark)).toBe(1);
   await expect(first.locator(".preview-visit__frame")).toHaveCount(1);
 
