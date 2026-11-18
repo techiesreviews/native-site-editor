@@ -45,7 +45,8 @@ const callName = (text: string) => {
 };
 const isAsync = (node: TS.FunctionLikeDeclaration) => Boolean(ts.getModifiers(node)?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword));
 
-/** Every async function in `text` that waits and then writes (a wait in the write's own arguments included), at its first such write. A callback inside it counts as
+/** Every async function in `text` that waits and then writes (a wait in the write's own arguments included), at its
+ * first such write. A callback inside it counts as
  * its own code; an async function inside it is judged on its own. */
 function waitThenWrite(file: string, text: string): Finding[] {
   // Only a file that waits and names a write is parsed (most of src does not).
@@ -135,6 +136,9 @@ test("the check finds an await before a write, in the function that waits", () =
   for (const code of ["const save = async (ports) => ports.edits.run(await ports.plan());", "async function save(ports) { ports.store.save(\"index.html\", await ports.read()); }",
     "async function save(ports) { (await ports.drafts()).drafts.remove(file); }"])
     assert.equal(waitThenWrite("src/x.ts", code).length, 1, code);
+  assert.equal(waitThenWrite("src/x.ts", "async function save(p) { await p.edits.run(await p.plan()); }").length, 1);
+  // A wait inside an async plan handed to the write is the plan's own, not one before the write.
+  assert.deepEqual(waitThenWrite("src/x.ts", "async function save(p) { p.edits.run(async r => { await r(\"a\"); }); await p.later(); }"), []);
   assert.equal(waitThenWrite("src/x.ts", "const save = async (ports) => [await ports.plan(), ports.edits.now(() => 1)];").length, 1);
   assert.deepEqual(waitThenWrite("src/x.ts", "async function outer(ports) { await ports.read(); return async () => { ports.edits.run(() => 1); }; }"), []);
   assert.equal(waitThenWrite("src/x.ts", "const save = async (ports) => { for await (const part of ports.parts()) ports.edits.run(() => part); };").length, 1);
