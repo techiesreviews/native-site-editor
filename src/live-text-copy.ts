@@ -310,7 +310,7 @@ export function makeCopy(s: ShareContext, Y: Yjs, resume: KeptCopy | undefined, 
         clock.clearTimeout(waiting);
         if (failures < START_TRIES) waiting = clock.setTimeout(() => { retrying = true; void begin(caught); }, Math.min(2 ** (failures - 1), 8) * LIVE_TEXT_CATCH_UP_MS);
       }
-      // A save waiting for this start goes on (`caughtUp`); a commit tries again (and waits on). So on every way out.
+      // A save waiting for this start goes on (`caughtUp`, src/live-text.ts); a commit tries again (and waits on). So on every way out.
       if (!synced) foldsReady();
     }
     if (!synced) return;
