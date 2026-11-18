@@ -3,7 +3,7 @@
 // or one made outside) in an order a seed picks. Each tab hears a commit at a moment of its own: the push notice is one
 // more item on its socket's queue, and a focus check reads GitHub's head whenever the run picks it. A tab sharing the
 // page folds the commit into the room's one copy (src/live-text.ts `liveFold`); a save goes through the room
-// (src/live-saves.ts `liveSaves.note`, set by src/live-text.ts). Every run must end with every open tab on one copy and one text, where no word is
+// (src/live-saves.ts `liveSaves.note`, set by src/live-text-kept.ts). Every run must end with every open tab on one copy and one text, where no word is
 // doubled and none that was typed (and not deleted since) is lost; every word of GitHub's text is there exactly once;
 // a word gone in a clash (the latest version shows) is one its own tab's Undo brings back. A failing run names its seed:
 // `LIVE_SEED=<seed> npx tsx --test tests/live-text-converge.test.ts` plays only that one, step by step in the message;
@@ -88,7 +88,7 @@ function fakeClock() {
 function relay() {
   type Item = (() => void) & { what: string };
   const item = (what: string, run: () => void): Item => Object.assign(run, { what });
-  /** `tag`: the starting-text tag of the last frame it sent (src/live-text.ts frames), which names the file version its copy is on. */
+  /** `tag`: the starting-text tag of the last frame it sent (src/live-text-copy.ts frames), which names the file version its copy is on. */
   type Member = { id: string; options: LiveRoomOptions; access: LiveAccess; queue: Item[]; dropped: boolean; seen: boolean; state?: JsonValue; closed: boolean; tag?: string };
   const members: Member[] = [];
   let next = 0;
@@ -283,7 +283,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
     say(`  ${tab.name} hears ${next.sha.slice(0, 7)} (${why}) and folds it into its draft`);
     intoDraft();
   };
-  /** Words a tab's own clash step took out (src/live-text.ts: the latest version shows, the typist's words one Undo away). */
+  /** Words a tab's own clash step took out (src/live-text-github.ts `settle`: the latest version shows, the typist's words one Undo away). */
   const watch = (tab: Tab) => tab.store.subscribe(event => {
     if (event.type !== "text" || event.origin === "shared" || event.origin === "external") return;
     if (!tab.store.peek(draftKey(scope, path), "undo")?.endsWith("'s change")) return;
@@ -409,7 +409,7 @@ async function play(seed: number, length: number, skip: ReadonlySet<string> = ne
   const subtle = crypto.subtle;
   Object.defineProperty(subtle, "digest", { configurable: true, value: async (_: AlgorithmIdentifier, data: BufferSource) =>
     new Uint8Array(createHash("sha256").update(data as Uint8Array).digest()).buffer });
-  // Random bytes from the seed too: an agent's Yjs client id is drawn from them (src/live-text.ts `agentAuthor`), and Yjs
+  // Random bytes from the seed too: an agent's Yjs client id is drawn from them (src/live-text-carets.ts `agentAuthor`), and Yjs
   // orders two words put in at one place by client id, so a random one played the same seed differently now and then.
   const bytes = random(seed ^ 0x2545f491), randomValues = Object.getOwnPropertyDescriptor(crypto, "getRandomValues");
   Object.defineProperty(crypto, "getRandomValues", { configurable: true, writable: true, value: <T extends ArrayBufferView | null>(array: T) => {

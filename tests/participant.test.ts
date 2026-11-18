@@ -36,7 +36,7 @@ test("one agent has the same colour, name and initial on its outline, in the MCP
   const menu = presence.agents().find(item => item.name === "Copy editor")!;
   // The pin, as src/agent-menu-host.ts hands it over: the agent on it and its colour.
   const pin = pinAgent({ state: "seen", agent: copy, colour: presence.colour(copy) })!;
-  // The caret of an agent this tab writes for (src/live-text.ts `carets`): a Yjs client id of its own, its name, its connection.
+  // The caret of an agent this tab writes for (src/live-text-carets.ts `carets`): a Yjs client id of its own, its name, its connection.
   const caret = participants.caret({ author: 9_000_001, name: copy.name, agent: copy.name, who: copy });
 
   const places = { outline, menu, pin, caret };

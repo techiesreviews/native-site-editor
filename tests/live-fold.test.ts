@@ -35,7 +35,7 @@ const text = (doc: Y.Doc) => doc.getText("source").toString();
 function settle(doc: Y.Doc, own: number, typed: Uint8Array) {
   const all = edges(Y, doc), gone = Y.decodeUpdate(typed).ds;
   const { out, back } = clashes(Y, doc, all, edgeTo(all, V1)!, client => client === own, (client, clock) => Y.isDeleted(gone, Y.createID(client, clock)));
-  // As src/live-text.ts: the words coming back first, then this tab's change, made as the difference still left.
+  // As src/live-text-github.ts `settle`: the words coming back first, then this tab's change, made as the difference still left.
   const draft = out.reduce((from, change) => from.slice(0, change.start) + change.text + from.slice(change.end), text(doc));
   if (back) Y.applyUpdate(doc, back);
   const was = doc.clientID, source = doc.getText("source"), left = diffRange(text(doc), draft);
