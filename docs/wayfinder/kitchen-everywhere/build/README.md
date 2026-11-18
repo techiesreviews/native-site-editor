@@ -113,7 +113,7 @@ Each move waits for Lex's OK and for the one before it, so a problem in one proj
 | [40 `techies-reviews`](tickets/40-move-techies-reviews.md) | light, plus its own checks | M | claude, **waits for Lex** | 31 |
 | [41 `techies-playground`](tickets/41-move-techies-playground.md) | full | S–M | claude, **waits for Lex** | 40 |
 | [42 `chat`](tickets/42-move-chat.md) | full | S–M | claude, **waits for Lex** | 41 |
-| [43 `creator-studio-poc`](tickets/43-move-creator-studio.md) | full | M | claude, **waits for Lex** | 42 |
+| ~~[43 `creator-studio-poc`](tickets/43-move-creator-studio.md)~~ dropped: Creator Studio retired 2026-11-18 | – | – | `wontfix` |
 | [44 `TechiesTools`, with its Issues as ticket files](tickets/44-move-techiestools.md) | full | M | claude, **waits for Lex** | 43 |
 | [45 `lexvd-site` and `dogsfitandfun`](tickets/45-move-static-sites.md) | light | S | claude, **waits for Lex** | 44 |
 | [46 `native-site-editor-starter`: in or out](tickets/46-starter-in-or-out.md) | light, or left out | S | claude, **waits for Lex** | 45 |
@@ -177,7 +177,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 - **Given 2026-10-27 (Tuesday pack, Q3):** one OK for 30, 31, 40–46 and 50, in order, stopping at the first problem. The questions inside 40, 43, 44 and 46 take their recommended answers mid-week when easy to undo, and are listed in the next Tuesday pack so he can reverse them. What still waits for a Tuesday:
 - **30:** creating the public repo `techiesreviews/agent-kit` (the name is his to change) and turning on its CI.
 - **31:** a user-level `systemd` timer on his computer that updates the kit every 15 minutes.
-- **40–47:** every change in another project (OK given for 40–46). Questions inside them: what happens to `techies-reviews`' `feat/melapress-course` first (40); `creator-studio-poc`'s landing branch, `dev` or `main`, and whether to wait for its server move (43); which of `TechiesTools`' own agent rules stay as its extras, and closing its 19 GitHub Issues (44); the starter in or out (46); closing `camframe`'s 12 Issues (47).
+- **40–47:** every change in another project (OK given for 40–46). Questions inside them: what happens to `techies-reviews`' `feat/melapress-course` first (40); ~~`creator-studio-poc`'s landing branch, `dev` or `main`, and whether to wait for its server move (43)~~ moot: Creator Studio retired 2026-11-18; which of `TechiesTools`' own agent rules stay as its extras, and closing its 19 GitHub Issues (44); the starter in or out (46); closing `camframe`'s 12 Issues (47).
 - **50:** the `lex-coding` wording, drafted by the lead; the wording itself goes into a Tuesday pack.
 - **Still his, each in its Tuesday pack:** closing `TechiesTools`' 19 and `camframe`'s 12 GitHub Issues (outward-facing).
 - The helper decisions below.
