@@ -87,7 +87,6 @@ import { AGENT_CARETS, cut } from "./live-text-carets";
 import { INBOX_LIMIT, makeCopy, sameTag } from "./live-text-copy";
 import { changesBetween, LIVE_TEXT_CATCH_UP_MS, type AuthorUndo, type Room, type ShareContext, type Store, type Yjs } from "./live-text-shared";
 
-
 /** A version of a file on GitHub: its blob sha and text. */
 export interface LiveVersion {
   sha: string; text: string;
@@ -415,7 +414,6 @@ function shareFile(ports: LiveTextPorts, scope: DraftScope, path: string, ended:
       foldsReady();
     }
   }
-
 
   const authors: AuthorUndo = {
     undo: (author, history) => copy?.authors.undo(author, history) ?? false,

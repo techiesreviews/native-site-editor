@@ -17,7 +17,7 @@
 // - A version is GitHub's blob sha, the same for the same text: a commit bringing back an earlier text exactly (a revert,
 //   A to B to A, often a save) is another occurrence of it, `<sha>~<n>` after n earlier ones on the way to it
 //   (`occurrenceOn`), so the copy's versions stay in GitHub's order and a tab back on A is not taken on to B.
-// - Every version enters on top of the one right before it on GitHub (src/live-text.ts `enter`, from GitHub's history of
+// - Every version enters on top of the one right before it on GitHub (src/live-text-github.ts `enter`, from GitHub's history of
 //   the file), so the copy holds GitHub's versions in GitHub's order whichever tab heard which commit first.
 // - The clash rule (ticket 09, as src/outside-merge.ts): the latest version shows. Where GitHub's change replaced the
 //   words around a tab's own change, that change is undone whole (`clashes`, matched against src/text-merge.ts
@@ -36,7 +36,7 @@ type Doc = import("yjs").Doc;
 export interface Edge {
   /** Its key in `meta`, unique per edge. */
   id: string;
-  /** The version it starts from ("" for the copy's birth) and the one it makes, as 40 hex digits (src/live-text.ts
+  /** The version it starts from ("" for the copy's birth) and the one it makes, as 40 hex digits (src/live-text-github.ts
    * `versionOf`), with `~<n>` for a later occurrence of the same text (`occurrenceOn`). */
   from: string;
   to: string;
@@ -372,7 +372,7 @@ function alignWords(text: string, changes: TextChange[], own: (index: number) =>
  * character at an index and the next one, as one Yjs item would hold them), cut where white space starts or ends. The
  * match picks any of the characters that are alike, so taking out "«21» " from "«21» «11» " can keep "«1" of the one word
  * and "1» " of the other: the word left over then holds characters typed as another word, and a tab carrying its own
- * words over by their Yjs ids (src/live-text.ts `carryIn`) cuts it apart. Each stretch of changes that only take out is
+ * words over by their Yjs ids (src/live-text-drafts.ts `carryIn`) cuts it apart. Each stretch of changes that only take out is
  * made again on its own, between the changes that put text in (GitHub's words coming back), which stay as they are; one
  * that no such runs make is left as it is.
  */

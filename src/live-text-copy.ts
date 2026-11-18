@@ -169,9 +169,9 @@ export function makeCopy(s: ShareContext, Y: Yjs, resume: KeptCopy | undefined, 
     if (s.stopped || HEAD + payload.length > FRAME_LIMIT) return Promise.resolve(false);
     return room.send(frame(kind, payload, id)).catch(() => false);
   };
-  /** The draft now follows the shared copy (outside history: someone else's change). */
   /** A name-tag Undo running in this tab: this tab's own step, recorded in `history`. */
   let taking: { undo: import("yjs").UndoManager; history: string | undefined } | undefined;
+  /** The draft now follows the shared copy (outside history: someone else's change). */
   function follow(changes?: TextChange[], own?: { history: string | undefined }) {
     const now = text.toString(), draft = store.text(scope, path);
     if (draft === undefined || draft === now) return;

@@ -14,7 +14,7 @@ export interface GithubReads {
   repo(): string | undefined;
 }
 
-/** History pages one walk reads at most: src/live-text.ts takes no more than 20 versions back. */
+/** History pages one walk reads at most: src/live-text-github.ts takes no more than 20 versions back. */
 const MAX_PAGES = 3;
 /** A file's version at a commit never changes: kept, up to this many, so each commit's version is read once. */
 const CACHE_LIMIT = 200;
