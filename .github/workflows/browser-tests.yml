@@ -1,6 +1,6 @@
 # The full browser suite (every project in playwright.config.ts, default
 # fixture) in 4 shards plus the @actual and @native-static fixture groups,
-# nightly, on every push to dev and on "Run workflow". Each run uploads a blob
+# nightly, on pushes to dev and on "Run workflow". Each run uploads a blob
 # report; the last job merges them into one HTML report, uploaded as the
 # artifact "playwright-report", and lists every failure (known flaky ones
 # labeled from tests/known-failures.json) in the run summary. Pull requests
@@ -21,8 +21,10 @@ permissions:
 
 concurrency:
   group: browser-tests-${{ github.ref }}
-  # A dev run is never cut short, so every dev run ends with a result: newer
-  # runs wait as one pending run (GitHub keeps only the newest pending run).
+  # A dev run is never cut short, so every dev run ends with a result. Runs
+  # started meanwhile wait as one pending run: GitHub keeps only the newest
+  # pending run, and it tests the newest dev, which holds every push it
+  # replaced.
   cancel-in-progress: ${{ github.ref != 'refs/heads/dev' }}
 
 jobs:

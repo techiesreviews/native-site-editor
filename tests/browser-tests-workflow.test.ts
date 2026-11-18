@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 const workflow = readFileSync(".github/workflows/browser-tests.yml", "utf8");
 const triggers = workflow.match(/^on:\n((?: {2}.*\n|\s*\n)+)/m)?.[1] ?? "";
 
-test("the full suite runs on every push to dev, besides the schedule and Run workflow", () => {
+test("the full suite runs on pushes to dev, besides the schedule and Run workflow", () => {
   assert.match(triggers, /^ {2}push:\n {4}branches: \[dev\]$/m);
   assert.match(triggers, /^ {2}schedule:$/m);
   assert.match(triggers, /^ {2}workflow_dispatch:$/m);
