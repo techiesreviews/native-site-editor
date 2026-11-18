@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createInboxFixes, fixEdits, type InboxAgent, type InboxFix } from "../src/inbox/inbox-fixes.ts";
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
-import { forEachAwait } from "./support/await-race";
+import { forEachAwait } from "./support/await-race.ts";
 
 const page = `<!doctype html><html><head><title>Home</title></head><body><img src="/images/team.jpg"><a href="/new/"><svg></svg></a><p><a href="/bikes/">click here</a></p><h2>A</h2><h4>Opening hours</h4><video src="/m/fit.mp4" controls></video></body></html>`;
 const header = `<header><img src="/images/logo.svg"><a href="/">Home</a></header>`;

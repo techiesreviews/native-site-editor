@@ -52,7 +52,8 @@ Every async writer follows this rule, including writers outside controllers.
   an await, in place of the old one, hides the race it exists to catch.
 - Tests prove it with `tests/support/await-race.ts` (`forEachAwait`). A module whose
   async function waits and then writes needs a test that imports it and calls
-  `forEachAwait` (enforced by `tests/await-race-guard.test.ts`).
+  `forEachAwait` (partly enforced by `tests/await-race-guard.test.ts`, per module and
+  for the writes it knows: see `docs/agents/guardrails.md`).
 
 ## Racing and speculative reads
 

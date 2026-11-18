@@ -12,7 +12,8 @@
 //      arrives in it and wins, as 1), fails, and the request is let go;
 //   5. SUGGESTION_WAIT_MS with none of these: fails, and the request is let go.
 // The request is asked only while the session it was pressed in holds (another site or branch, or a reload, refuses it),
-// and a session ended while it was asked ends the suggestion at once, its request left with its site.
+// and a session ended while it was asked, or while its reply is awaited, ends the suggestion, its request left with its
+// site (never let go through the agent connected after the switch).
 import type { AgentElement } from "../../shared/agent";
 import type { PinRequest } from "../components/agent-pins";
 import { watchReplies } from "../agent-replies";
@@ -80,13 +81,16 @@ export function createInboxAgent(ports: {
           if (grace !== undefined) clock.clearTimeout(grace);
           // Inside watch's first call `stop` is not there yet: it is called once watch returns.
           stop?.();
-          if (letGo) void Promise.resolve(link.dismiss(id)).catch(() => undefined);
+          // A request is let go only on the session it was asked on: the agent connected after a switch is another's.
+          if (letGo && (!session || session.holds())) void Promise.resolve(link.dismiss(id)).catch(() => undefined);
           outcome();
         };
         const timer = clock.setTimeout(() => finish(() => reject(new Error("The agent did not answer in time.")), true), SUGGESTION_WAIT_MS);
         // The request is in the list once the menu tells it; a list without it after that is a dismissal elsewhere (its pin, another tab).
         let seen = false;
         stop = watch(requests => {
+          // Another site, branch or load opened meanwhile: its lists never hold this request, which stays with its site.
+          if (session && !session.holds()) { finish(() => reject(new Error("The site changed while the agent was asked.")), false); return; }
           const request = requests.find(found => found.id === id);
           if (request) seen = true;
           const reply = request?.reply;
