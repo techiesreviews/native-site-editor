@@ -13,12 +13,13 @@ test("the full suite runs on every push to dev, besides the schedule and Run wor
   assert.match(triggers, /^ {2}workflow_dispatch:$/m);
 });
 
-test("a newer push to dev never cancels the dev run in progress", () => {
-  assert.match(workflow, /^ {2}cancel-in-progress: \$\{\{ github\.event_name != 'push' \}\}$/m);
+test("a newer run on dev never cancels the dev run in progress", () => {
+  assert.match(workflow, /^ {2}cancel-in-progress: \$\{\{ github\.ref != 'refs\/heads\/dev' \}\}$/m);
 });
 
 test("the report job lists every failure, known flaky ones labeled, in the run summary", () => {
   const report = workflow.slice(workflow.indexOf("\n  report:\n"));
   assert.match(report, /merge-reports --reporter=json \.\/all-blob-reports > results\.json/);
+  assert.match(report, /- name: List the failures in the run summary\n {8}continue-on-error: true\n/);
   assert.match(report, /node scripts\/agents\/suite-summary\.mjs results\.json[^\n]*\n[\s\S]*>> "\$GITHUB_STEP_SUMMARY"/);
 });

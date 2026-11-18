@@ -21,9 +21,9 @@ permissions:
 
 concurrency:
   group: browser-tests-${{ github.ref }}
-  # A push run is never cut short, so every dev run ends with a result: newer
-  # pushes wait as one pending run (GitHub keeps only the newest pending run).
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  # A dev run is never cut short, so every dev run ends with a result: newer
+  # runs wait as one pending run (GitHub keeps only the newest pending run).
+  cancel-in-progress: ${{ github.ref != 'refs/heads/dev' }}
 
 jobs:
   test:
@@ -115,8 +115,9 @@ jobs:
       - name: Merge the shards and tagged groups into one HTML report
         run: npx playwright merge-reports --reporter=html ./all-blob-reports
       # The test jobs already fail the run; this step only lists what failed,
-      # so it never fails itself.
+      # so it never fails the report job.
       - name: List the failures in the run summary
+        continue-on-error: true
         run: |
           npx playwright merge-reports --reporter=json ./all-blob-reports > results.json
           {
