@@ -308,7 +308,7 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
   await expect(async () => {
     await free.scrollIntoViewIfNeeded();
     await expect(free).toBeInViewport({ ratio: 1, timeout: 1000 });
-  }).toPass();
+  }).toPass({ timeout: 15_000 });
   expect((await free.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await free.click();
   await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeAttached();
