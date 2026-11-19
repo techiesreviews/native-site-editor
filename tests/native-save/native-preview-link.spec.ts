@@ -37,8 +37,8 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   // preview's service worker sends itself is left out: Chromium does not report the headers of some (its script's update
   // check), so reading them waits until the worker closes. The empty cookie jar for the address, checked below, is what
   // shows none of them carries a cookie.
-  // A request made after the read below, whose page closes before its headers come, is left unread (the cookie jar
-  // check covers it too).
+  // Requests made after the read below are not read; a failed header read gives nothing, so it is never left uncaught
+  // (the cookie jar check covers both).
   const previewRequests: Promise<{ url: string; cookie?: string } | undefined>[] = [];
   const watch = (request: Request) => {
     if (new URL(request.url()).hostname === "localhost" && !request.serviceWorker())
