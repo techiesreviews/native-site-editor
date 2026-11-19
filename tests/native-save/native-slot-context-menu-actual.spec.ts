@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { effectiveSource } from "./drafts";
 import { expect, test, type Page } from "@playwright/test";
 
+declare global {
+  // Set in the preview frame once it has held a scroll event (the canvas's own scroll test).
+  interface Window { heldScroll?: boolean }
+}
+
 // Slice 66: canvas and Structure menus share the slot chip actions.
 // Recent work has a title slot, fixed lede and unnamed items slot.
 // ASE_NATIVE_SAVE_FIXTURE=fixtures/actual-starter.
@@ -49,13 +54,18 @@ function homeWithWork() {
     </section-work>${home.slice(end)}`;
 }
 
-async function openMode(page: Page, baseURL: string | undefined, template = workTemplate) {
+// The home page with Recent work as a Section work instance, that instance selected.
+async function showWork(page: Page, baseURL: string | undefined, template = workTemplate) {
   await page.goto(baseURL!);
   for (const [path, content] of [[TEMPLATE, template], ["components/section-work/section-work.css", workCss], ["index.html", homeWithWork()]])
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator("section-work h2:visible").first()).toHaveText("Recent work", { timeout: 30_000 });
   await page.getByRole("treeitem", { name: /^Section work/ }).first().locator(".page-structure__label").click();
+}
+
+async function openMode(page: Page, baseURL: string | undefined, template = workTemplate) {
+  await showWork(page, baseURL, template);
   await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
   await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
@@ -72,20 +82,12 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
     const source = () => effectiveSource(page, baseURL, TEMPLATE);
     const undo = () => page.locator(".code-editor__undo").first().click();
     const open = async () => {
-      // The canvas and the Structure outline are drawn again just after the mode opens: a press on the old one opens
-      // nothing, so it is pressed again until the menu shows.
-      const pressUntilMenu = (press: () => Promise<void>) => expect(async () => {
-        // A menu that opened late is not pressed again (the Actions button would close it).
-        if (!await menu(page).isVisible()) await press();
-        await expect(menu(page)).toBeVisible({ timeout: 1000 });
-      }).toPass({ timeout: 15_000 });
-      if (entry === "canvas") await pressUntilMenu(() => frame(page).locator("section-work p.lede:visible").click({ button: "right" }));
-      else if (entry === "Structure right-click") await pressUntilMenu(() => ledeRow(page).click({ button: "right" }));
+      // The canvas and the Structure outline are drawn again just after the mode opens: one press still opens the menu.
+      if (entry === "canvas") await frame(page).locator("section-work p.lede:visible").click({ button: "right" });
+      else if (entry === "Structure right-click") await ledeRow(page).click({ button: "right" });
       else if (entry === "Structure button") {
-        await pressUntilMenu(async () => {
-          await ledeRow(page).hover();
-          await ledeRow(page).getByRole("button", { name: `Actions for Paragraph ${LEDE}`, exact: true }).click();
-        });
+        await ledeRow(page).hover();
+        await ledeRow(page).getByRole("button", { name: `Actions for Paragraph ${LEDE}`, exact: true }).click();
       } else { await ledeRow(page).focus(); await ledeRow(page).press(entry); }
       await expect(menu(page)).toBeVisible();
     };
@@ -123,6 +125,40 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
   });
 }
 
+// A loaded machine: the canvas scrolls what was chosen into view (the instance, then the part Edit
+// component mode edits), and a right-click lands before that scroll's event does. The scroll is the
+// canvas's own, not the person's, so the menu the right-click opened stays open.
+test("a canvas right-click as Edit component mode opens keeps its menu through the canvas's own scroll", { tag: "@actual" }, async ({ page, baseURL }) => {
+  // The preview frame holds its scroll events until the page sets data-take-scroll (the right-click then comes first).
+  await page.addInitScript(() => {
+    if (location.href !== "about:srcdoc") return;
+    window.addEventListener("scroll", event => {
+      if (document.documentElement?.hasAttribute("data-take-scroll")) return;
+      event.stopImmediatePropagation();
+      window.heldScroll = true;
+    }, true);
+  });
+  await showWork(page, baseURL);
+  await toolbar(page).getByRole("button", { name: "Edit Section work component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", TEMPLATE);
+  await expect(frame(page).locator("[data-native-selection-box='edit-frame']")).toBeVisible();
+  // The canvas scrolled to what was chosen; its scroll event waits.
+  const lede = frame(page).locator("section-work p.lede:visible");
+  expect(await lede.evaluate(() => window.heldScroll === true && window.scrollY > 0)).toBe(true);
+  await lede.click({ button: "right" });
+  await expect(menu(page).getByRole("menuitem")).toHaveText(["Make slot"]);
+  // The scroll's event arrives; whatever the frame says about it has reached the editor a frame later.
+  await lede.evaluate(() => {
+    document.documentElement.setAttribute("data-take-scroll", "");
+    document.dispatchEvent(new Event("scroll"));
+    return new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+  });
+  await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+  expect(await menu(page).isVisible()).toBe(true);
+  await menu(page).getByRole("menuitem", { name: "Make slot", exact: true }).click();
+  await expect.poll(() => effectiveSource(page, baseURL, TEMPLATE)).toBe(workTemplate.replace(`<p class="lede">${LEDE}</p>`, `<slot name="text"><p class="lede">${LEDE}</p></slot>`));
+});
+
 test("roots, nested component contents and outer rows offer no slot menu; items slots do", { tag: "@actual" }, async ({ page, baseURL }) => {
   await openMode(page, baseURL, workTemplate.replace("<card-project></card-project>", '<card-project><p slot="body">Nested fill</p></card-project>')
     .replace("<h2>Section title</h2></slot>", "<h2>Section title</h2><p>More title</p></slot>"));
@@ -131,10 +167,8 @@ test("roots, nested component contents and outer rows offer no slot menu; items 
   await expect(more.locator(":scope > .slot-chip")).toHaveCount(0);
   await more.click({ button: "right" });
   await expect(menu(page)).toHaveCount(0);
-  await expect(async () => {
-    await frame(page).locator("section-work").getByText("More title", { exact: true }).click({ button: "right" });
-    await expect(menu(page).getByRole("menuitem")).toHaveText(["Rename slot", "Remove slot"], { timeout: 1000 });
-  }).toPass();
+  await frame(page).locator("section-work").getByText("More title", { exact: true }).click({ button: "right" });
+  await expect(menu(page).getByRole("menuitem")).toHaveText(["Rename slot", "Remove slot"]);
   await menu(page).getByRole("menuitem", { name: "Rename slot", exact: true }).click();
   await expect(chip(page).locator(".slot-chip__name")).toBeFocused();
   await page.keyboard.press("Escape");

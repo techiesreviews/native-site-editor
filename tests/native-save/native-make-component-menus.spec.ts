@@ -94,7 +94,10 @@ test("preview menu closes on Escape, a preview press, scroll, re-render and wind
   await clickSection(page, "left");
   await expect(menu(page)).toHaveCount(0);
   await previewMenu(page);
-  await frame(page).locator("body").evaluate(() => window.scrollBy(0, 100));
+  // The person scrolling the page (a wheel low in the preview, clear of the menu); the page's own scrolls leave it open.
+  const preview = (await page.locator(".native-preview-frame").boundingBox())!;
+  await page.mouse.move(preview.x + preview.width / 2, preview.y + preview.height - 30);
+  await page.mouse.wheel(0, 100);
   await expect(menu(page)).toHaveCount(0);
   await previewMenu(page);
   await page.evaluate(async () => {
