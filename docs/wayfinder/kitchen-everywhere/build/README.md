@@ -159,6 +159,16 @@ Lex (2026-10-30): the project threads stopped their own kit work and handed it h
 | ~~[73 Motion check in `kit ux`](tickets/73-kit-ux-motion-check.md)~~ dropped | – | – | `wontfix` |
 | ~~[75 House style lines](tickets/75-house-style-native-controls-and-contrast.md)~~ merged into 67 | – | – | `wontfix` (merged) |
 
+## 7. From the tstack review (fleet manager's research, Lex's OK 2026-11-04)
+
+Written, not built. 94 waits on 93 and 95 waits on 94. 93 also waits on the open tickets that share its kit files (listed in its row).
+
+| Slice | Size | Builder | Blocked by |
+| --- | --- | --- | --- |
+| [93 Review round budget: 3 rounds, 5 only for risky areas, stop when only nits are left, later rounds look at changed code only (tstack review, Lex's OK 2026-11-04)](tickets/93-review-round-budget.md) | S | claude | 67, 83, 92, 74, 85, 89, 65, 69, 71, 76, 78, 87 |
+| [94 Proof rule: evidence seen in this session, a "How I proved it" line in every pull request, no proof means a question to Lex (tstack review, Lex's OK 2026-11-04)](tickets/94-proof-rule.md) | S | claude | 93 (both change `review-brief.mjs` and `docs/kitchen.md`) |
+| [95 One watcher per pull request: only the owner watches, children never watch, unwatch at hand-off (tstack review, Lex's OK 2026-11-04)](tickets/95-one-watcher-per-pull-request.md) | XS–S | claude | 94 (`brief-lib.mjs` and `docs/kitchen.md`, which both change) |
+
 ## Suggested waves
 
 The frontier decides; this is one order that keeps to the rules (at most 5 at once).
