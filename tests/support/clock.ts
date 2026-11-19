@@ -8,8 +8,8 @@ export interface ClockPage {
  * Stops the page's installed clock `ahead` ms from where it stands. `pauseAt` needs a time still ahead of the
  * page's clock when the call lands, and a time read from the page and sent back can be passed already on a slow
  * runner ("Cannot fast-forward to the past"). The clock stops before that check, so after such a refusal it
- * stands still, and a time read from it again is ahead for sure. `ahead` is at least 1 ms: the page's `Date.now()`
- * rounds the clock's time down, so the time read is already behind it by a fraction of a millisecond.
+ * stands still, and a time read from it again is ahead for sure. `ahead` is at least 1 ms: a pause at the very time
+ * read back (0 ms ahead) was refused on every try in a real run (native-structure-inplace.spec.ts, TOOLS-355).
  */
 export async function pauseAhead(page: ClockPage, ahead: number) {
   if (!(ahead >= 1)) throw new Error("pauseAhead needs at least 1 ms ahead.");
