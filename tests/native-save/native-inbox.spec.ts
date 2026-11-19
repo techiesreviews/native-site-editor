@@ -197,6 +197,20 @@ test.describe("new checks (TOOLS-253)", () => {
     await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
   });
 
+  test("a shared part's row pressed while the component tools still load opens the part once they have loaded", async ({ page, baseURL }) => {
+    // The component tools' module is held until the row is pressed (a slow machine still fetching it).
+    let release!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; });
+    await page.route(url => url.pathname === "/src/page-builder/components.ts", async route => { await released; await route.continue(); });
+    await seed(page, baseURL);
+    await inboxButton(page).click();
+    await inbox(page).getByRole("button", { name: "Picture without a description, Site header · changes 2 pages" }).click();
+    await expect(inbox(page)).toBeHidden();
+    release();
+    await expect(page.getByRole("button", { name: /^Note: Site header is a shared part\. A change here shows on all 2 pages that use it\./ })).toBeVisible({ timeout: 15_000 });
+    await expect(bar(page).getByRole("button", { name: "Alt text missing", exact: true })).toBeVisible();
+  });
+
   test("Decorative on a shared part's picture marks it in the part, for every page that uses it", async ({ page, baseURL }) => {
     await seed(page, baseURL);
     await inboxButton(page).click();
