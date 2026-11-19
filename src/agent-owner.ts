@@ -3,8 +3,8 @@ import { AgentRecordsError, type AgentCommit, type AgentRecords } from "./agent-
 import { githubScope, same } from "./workspace-session.ts";
 
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
-/** Reloads one takeover makes before drafts that keep changing under it fail it. */
-const TAKEOVER_RELOADS = 3;
+/** How long a takeover keeps reloading drafts that change under it before it fails (ms). */
+export const TAKEOVER_RELOAD_MS = 3000;
 
 /** A tab's admission gate. Only IndexedDB transactions decide ownership. */
 export function createAgentOwner(options: {
@@ -13,11 +13,12 @@ export function createAgentOwner(options: {
   fence: number;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
+  now?: () => number;
 }) {
   const workspace = structuredClone(options.workspace);
   // A command for this owner's workspace, under the workspace session's one rule (src/workspace-session.ts).
   const ours = (command: AgentCommit) => same(githubScope(command.workspace), githubScope(workspace));
-  const { records, reload } = options;
+  const { records, reload, now = Date.now } = options;
   let fence = options.fence, paused = false, takingOver = false;
   const inFlight = new Set<AgentCommit>();
   const conflict = () => new AgentRecordsError("conflict", "Agent ownership changed or admission is paused.");
@@ -44,9 +45,11 @@ export function createAgentOwner(options: {
         await records.pause(workspace, expected);
         await records.reconcile(workspace, pending);
         let snapshot: Snapshot, next: number;
-        // This tab's own drafts may still be written while it reloads (live sharing keeps the room's
-        // copy as one): then the CAS refuses, and the drafts are read and reloaded again, a few times.
-        for (let tries = 1; ; tries++) {
+        // This workspace's drafts may still be written while the tab reloads (live sharing keeps the
+        // room's copy as one, saved at most every 200 ms while someone types): then the CAS refuses, and
+        // the drafts are read and reloaded again until one try fits between saves, for a while.
+        const until = now() + TAKEOVER_RELOAD_MS;
+        for (;;) {
           snapshot = await records.snapshot(workspace);
           if (snapshot.generation !== expected || !snapshot.paused) throw conflict();
           // Reload is observational; its copy cannot change the CAS proof across this await.
@@ -55,7 +58,7 @@ export function createAgentOwner(options: {
             next = (await records.setFence(workspace, expected, expected + 1, snapshot)).generation;
             break;
           } catch (error) {
-            if (tries >= TAKEOVER_RELOADS || !(error instanceof AgentRecordsError && error.code === "conflict")) throw error;
+            if (now() >= until || !(error instanceof AgentRecordsError && error.code === "conflict")) throw error;
           }
         }
         fence = next;
