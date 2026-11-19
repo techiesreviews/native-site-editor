@@ -897,8 +897,9 @@ test("closing at any crypto await of a join, handover, presence or send sends no
       await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
       // Every crypto step of the run has happened once Anna has read the edit, each knows the other, and no crypto call
       // is still running (a fixed wait could end before them on a loaded machine, and the replays would count other
-      // steps; presence frames can be read out of order, so their contents are not waited for). A close stops the run.
-      await until(() => run.closed || (anna!.got.includes("edit") && anna!.peers.size === 1 && run.peers?.size === 1 && running.count === 0), "the edit read, both peers known, no crypto running");
+      // steps; presence frames can be read out of order, so their contents are not waited for). A close stops the run,
+      // once the crypto calls under way have ended, so a send they lead to is still seen by the check.
+      await until(() => running.count === 0 && (run.closed || (anna!.got.includes("edit") && anna!.peers.size === 1 && run.peers?.size === 1)), "the edit read, both peers known, no crypto running");
     })().finally(() => { anna?.live.close(); restore(); });
     return run;
   }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);
