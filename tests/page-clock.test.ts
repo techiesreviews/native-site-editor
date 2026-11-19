@@ -29,7 +29,7 @@ test("pauseAhead throws any other error at once, and a third refusal in a row", 
   assert.deepEqual(stuck.asked, [101, 102, 103]);
 });
 
-test("pauseAhead refuses less than 1 ms ahead: the page's Date.now() is already behind its clock by a fraction", async () => {
+test("pauseAhead refuses less than 1 ms ahead", async () => {
   const { page, asked } = stubPage([1000], [undefined]);
   await assert.rejects(pauseAhead(page, 0), /at least 1 ms/);
   assert.deepEqual(asked, []);
