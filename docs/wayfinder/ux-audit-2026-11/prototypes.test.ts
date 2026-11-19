@@ -1,7 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { existsSync, mkdirSync } from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright';
 
 const root = new URL('./prototypes/', import.meta.url);
@@ -139,22 +138,28 @@ for (const [name, check] of checks) {
     const file = new URL(`${name}.html`, root);
     assert.ok(existsSync(file), `${name}: standalone page exists`);
     browser ??= await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-    const errors: string[] = [];
-    page.on('pageerror', error => errors.push(error.message));
-    await page.route(/^https?:/, route => route.abort());
-    try {
-      await page.goto(file.href);
-      await check(page);
-      assert.deepEqual(errors, []);
-      for (const width of [1440, 390]) {
-        await page.setViewportSize({ width, height: 1000 });
+    for (const width of [1440, 390]) {
+      const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 1000 } });
+      const errors: string[] = [];
+      page.on('pageerror', error => errors.push(error.message));
+      const remote: string[] = [];
+      await page.route(/^https?:/, route => { remote.push(route.request().url()); return route.abort(); });
+      try {
+        await page.goto(file.href);
+        await check(page);
+        assert.deepEqual(errors, []);
+        assert.deepEqual(remote, [], `${name}: no remote requests`);
         for (const colorScheme of ['light', 'dark'] as const) {
           await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' });
           assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${name}: no horizontal overflow at ${width}`);
+          if (process.env.ASE_PROTO_SHOTS === '1') {
+            const folder = new URL('./shots/', import.meta.url);
+            mkdirSync(folder, { recursive: true });
+            await page.screenshot({ path: new URL(`${name}-${width}-${colorScheme}.png`, folder).pathname, fullPage: true });
+          }
         }
-      }
-    } finally { await page.close(); }
+      } finally { await page.close(); }
+    }
   });
 }
 test('index links all eleven standalone pages', async () => {
