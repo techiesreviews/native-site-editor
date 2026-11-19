@@ -116,4 +116,12 @@ test("a row's menu opened just before the tree is drawn again stays open on the 
   await page.locator(`[role=treeitem][data-node="2"]`).click({ button: "right" });
   await page.evaluate(() => redrawSidebar.update(redrawPage("v3", 2, false)));
   assert.equal(await menu.isVisible(), false);
+  // The same from the keyboard: focus the menu held goes to a row, not nowhere.
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v4")));
+  await row().focus();
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v5", 0, false)));
+  assert.equal(await menu.isVisible(), false);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "treeitem");
 }));

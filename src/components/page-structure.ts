@@ -729,7 +729,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const menuName = `Actions for ${kind}${text ? ` ${text}` : ""}`;
     menuOpeners.set(el, { name: menuName, open: openMenu });
     if (hasMenu) {
-      const more = iconButton(`Actions for ${kind}${text ? ` ${text}` : ""}`, null, { title: "More actions", className: "page-structure__action", action: () => {
+      const more = iconButton(menuName, null, { title: "More actions", className: "page-structure__action", action: () => {
         if (menu.isOpen() && menu.opener === more) { menu.close(true); return; }
         openMenu(more);
       } });
@@ -1060,24 +1060,31 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // A row's menu open as the tree is drawn again (Edit component mode settling, a late paint of the same
   // page) opens again on the redrawn row, from the same button or pointer place.
   function render() {
-    const reopen = menu.isOpen() && menu.opener && tree.contains(menu.opener) ? menuOpening : undefined;
+    // A held paint drawn now numbers the rows anew: follow() moves the open menu's row first.
+    if (structure && heldFrom) follow(structure, heldFrom);
+    const open = menu.isOpen() && menu.opener !== undefined && tree.contains(menu.opener);
+    const reopen = open && menuOpening?.path === structure?.path ? menuOpening : undefined;
     // The item a keyboard user had moved to keeps focus.
     const active = document.activeElement;
     const item = active instanceof HTMLElement && menu.element.contains(active) ? active.textContent : undefined;
     redraw();
-    // follow() moved `row` to the element's id in this paint; a row of another name is another element.
-    if (!reopen || reopen.path !== structure?.path) return;
-    const el = rows.get(reopen.row), opener = el && menuOpeners.get(el);
-    if (!el || opener?.name !== reopen.name) return;
-    const anchor = reopen.button !== undefined
-      ? [...el.querySelectorAll<HTMLElement>("button")].find(control => control.getAttribute("aria-label") === reopen.button)
-      : el;
-    if (!anchor || !opener.open(anchor, reopen.at) || item === undefined) return;
+    if (!open) return;
+    // follow() moved `row` to the element's id in this paint (or forgot it, with its element gone); a row of another name is another element.
+    const el = reopen ? rows.get(reopen.row) : undefined;
+    const opener = el && reopen && menuOpeners.get(el)?.name === reopen.name ? menuOpeners.get(el) : undefined;
+    const anchor = !el || !reopen || !opener ? undefined : reopen.button === undefined ? el
+      : [...el.querySelectorAll<HTMLElement>("button")].find(control => control.getAttribute("aria-label") === reopen.button);
+    if (!anchor || !opener?.open(anchor, reopen?.at)) {
+      // The menu cannot come back: focus it held goes to the row (its element's, else the tree's own).
+      const row = el ?? [...rows.values()].find(other => other.tabIndex === 0) ?? visibleRows()[0];
+      if (item !== undefined && row && (document.activeElement === null || document.activeElement === document.body)) focusRowOnly(row);
+      return;
+    }
+    if (item === undefined) return;
     [...menu.element.querySelectorAll<HTMLElement>("[role^='menuitem']")].find(entry => entry.textContent === item)?.focus();
   }
 
   function redraw() {
-    if (structure && heldFrom) follow(structure, heldFrom);
     menu.close(false);
     rows.clear();
     items.clear();
@@ -1085,6 +1092,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     rootAlias = undefined;
     slotRows.clear();
     inMain.clear();
+    const moveTarget = focusAfterRender;
     let focused = focusAfterRender ?? focusedRow();
     // A settled move's focus waits while its row has focus, for the render that shows its bytes.
     const settledMove = focusAfterMove && focusedRow() === focusAfterMove.from ? focusAfterMove : undefined;
@@ -1193,9 +1201,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (activeField) editingModule?.closeField(activeField);
     // A row moved into a folded container (Alt+→) shows before it takes focus.
     if (focused && rows.has(focused)) { reveal(rows.get(focused)!); focusRowOnly(rows.get(focused)!); }
-    // Drawn without the row that had focus (a paint with no rows yet): the next redraw that shows it gives it focus.
-    // (A row given focus back by this redraw is not remembered again, so it is tried once.)
-    else if (focused && focused === rowFocused && (document.activeElement === null || document.activeElement === document.body)) focusLost = { id: focused, path: structure.path };
+    // Drawn without the row that had focus, or a move's target row (a paint with no rows yet): the next redraw
+    // that shows it gives it focus. (A row given focus back by this redraw is not remembered again: tried once.)
+    else if (focused && (focused === rowFocused || focused === moveTarget) && (document.activeElement === null || document.activeElement === document.body)) focusLost = { id: focused, path: structure.path };
     else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
   }
 
