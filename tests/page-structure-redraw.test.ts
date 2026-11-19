@@ -8,11 +8,13 @@ import type { NativeStructure, NativeStructureItem } from "../src/components/nat
 declare global {
   var redrawFactory: typeof createPageStructure;
   var redrawSidebar: ReturnType<typeof createPageStructure>;
-  var redrawPage: (painted: string) => NativeStructure;
+  var redrawPage: (painted: string, above?: number, box?: boolean) => NativeStructure;
+  var menuRuns: string[];
 }
 
 // Page Structure alone in a browser page: a heading, a section with a paragraph in it and a last
-// paragraph; the section's row has a menu. `run` gets the page with `redrawSidebar` showing it.
+// paragraph (`above` new paragraphs before them; `box` false leaves the section out); the section's
+// row has a menu whose runs land in `menuRuns`. `run` gets the page with `redrawSidebar` showing it.
 async function inBrowser(run: (page: import("@playwright/test").Page) => Promise<void>) {
   const bundle = await build({
     stdin: { contents: "import { createPageStructure } from './src/components/page-structure'; globalThis.redrawFactory = createPageStructure;", resolveDir: process.cwd() },
@@ -25,14 +27,17 @@ async function inBrowser(run: (page: import("@playwright/test").Page) => Promise
     await page.addScriptTag({ content: "globalThis.__name = (fn) => fn;" + bundle.outputFiles[0].text });
     await page.evaluate(() => {
       const item = (tag: string, node: number[], text: string, children: NativeStructureItem[] = []): NativeStructureItem => ({ tag, node, text, heading: "", slot: "", children });
-      globalThis.redrawPage = (painted: string): NativeStructure => ({ path: "index.html", paintedSource: painted, items: [
-        item("h1", [0], "Title"), item("section", [1], "Box", [item("p", [1, 0], "Inside")]), item("p", [2], "Last")] });
+      globalThis.redrawPage = (painted: string, above = 0, box = true): NativeStructure => ({ path: "index.html", paintedSource: painted, items: [
+        ...Array.from({ length: above }, (_, at) => item("p", [at], `New ${at}`)), item("h1", [above], "Title"),
+        ...box ? [item("section", [above + 1], "Box", [item("p", [above + 1, 0], "Inside")])] : [], item("p", [above + (box ? 2 : 1)], "Last")] });
+      globalThis.menuRuns = [];
       const host = document.createElement("div"); document.body.append(host);
       const outside = document.createElement("input"); outside.id = "outside"; document.body.append(outside);
       globalThis.redrawSidebar = redrawFactory(host, {
         pageSource: () => "", announce: () => {}, onSelect: () => {},
         label: (entry: NativeStructureItem) => ({ kind: entry.tag, text: entry.text }),
-        menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" ? [{ label: "Make component", run: () => {} }] : [],
+        menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" ? ["Make component", "Remove"].map(label =>
+          ({ label, run: () => { menuRuns.push(`${label} ${entry.text} at ${entry.node.join(".")}`); } })) : [],
       } satisfies PageStructureHandlers);
       redrawSidebar.update(redrawPage("v0"));
     });
@@ -56,6 +61,9 @@ test("a redraw that empties the tree gives focus back to the row that had it onc
   // No page at all for a moment (the preview reloading), then the page again.
   await page.evaluate(() => { redrawSidebar.update(undefined); redrawSidebar.update(redrawPage("v2")); });
   assert.equal(await focusedNode(page), "1");
+  // A paint of the page with no rows yet, then its rows.
+  await page.evaluate(() => { redrawSidebar.update({ path: "index.html", paintedSource: "v-none", items: [] }); redrawSidebar.update(redrawPage("v2b")); });
+  assert.equal(await focusedNode(page), "1");
   // Focus that went elsewhere meanwhile stays there.
   await page.evaluate(() => redrawSidebar.update({ path: "", items: [] }));
   await page.locator("#outside").focus();
@@ -69,10 +77,10 @@ test("a row's menu opened just before the tree is drawn again stays open on the 
   const row = () => page.locator(`[role=treeitem][data-node="1"]`);
   const menu = page.getByRole("menu");
   await row().click({ button: "right" });
-  assert.deepEqual(await menu.getByRole("menuitem").allTextContents(), ["Make component"]);
+  assert.deepEqual(await menu.getByRole("menuitem").allTextContents(), ["Make component", "Remove"]);
   await page.evaluate(() => redrawSidebar.refresh());
   assert.equal(await menu.isVisible(), true);
-  assert.deepEqual(await menu.getByRole("menuitem").allTextContents(), ["Make component"]);
+  assert.deepEqual(await menu.getByRole("menuitem").allTextContents(), ["Make component", "Remove"]);
   // A new paint of the page draws the rows again too.
   await page.evaluate(() => redrawSidebar.update(redrawPage("v1")));
   assert.equal(await menu.isVisible(), true);
@@ -86,4 +94,26 @@ test("a row's menu opened just before the tree is drawn again stays open on the 
   await page.evaluate(() => redrawSidebar.refresh());
   assert.equal(await menu.isVisible(), true);
   assert.equal(await row().getByRole("button", { name: "Actions for section Box", exact: true }).getAttribute("aria-expanded"), "true");
+  await page.keyboard.press("Escape");
+
+  // Opened from the keyboard and moved down to Remove: Remove keeps focus through the redraw.
+  await row().focus();
+  await page.keyboard.press("Shift+F10");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Remove");
+  await page.evaluate(() => redrawSidebar.refresh());
+  assert.equal(await menu.isVisible(), true);
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Remove");
+  await page.keyboard.press("Escape");
+
+  // A paint that adds a row above renumbers the section ("1" becomes "2"): the menu follows it, and its action is the section's.
+  await row().click({ button: "right" });
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v2", 1)));
+  assert.equal(await menu.isVisible(), true);
+  await menu.getByRole("menuitem", { name: "Make component" }).click();
+  assert.deepEqual(await page.evaluate(() => menuRuns), ["Make component Box at 2"]);
+  // A paint without the section: its menu goes with it, and no other row's opens in its place.
+  await page.locator(`[role=treeitem][data-node="2"]`).click({ button: "right" });
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v3", 2, false)));
+  assert.equal(await menu.isVisible(), false);
 }));
