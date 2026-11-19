@@ -253,7 +253,7 @@ test("another file's paint keeps the typing field connected, with its text and c
     await expect(field).toBeFocused();
     // Keep the typing pause pending while the other file's paint arrives.
     await page.clock.install();
-    await pauseAhead(page, 0);
+    await pauseAhead(page, 1);
     await field.evaluate((field: HTMLTextAreaElement) => {
       field.value = "Typing stays";
       field.dispatchEvent(new Event("input", { bubbles: true }));
