@@ -6,7 +6,7 @@ import { goTo, type GoPorts } from "../src/inbox/inbox-go.ts";
 import type { InboxItem } from "../src/inbox/inbox-item.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 
-const files: Readonly<Record<string, string>> = {
+const files: Record<string, string> = {
   "index.html": "<!doctype html><html><head><title></title></head><body><site-header></site-header></body></html>",
   "components/site-header/site-header.html": "<header><site-logo></site-logo></header>",
   "components/site-logo/site-logo.html": `<img src="/images/logo.svg">`,
@@ -18,8 +18,9 @@ const logo: InboxItem = { key: "picture\ncomponents/site-logo/site-logo.html\nim
 // The browser's parser stands in: every tag is found, at a path named by its offset.
 const pathAt = (_source: string, at: number) => [at];
 
-/** The editor as going to a spot sees it, with what it did while the session held (`acts`) and after (`stale`). */
-function editor(race?: AwaitRace) {
+/** The editor as going to a spot sees it, with what it did while the session held (`acts`) and after (`stale`).
+ * `meanwhile` runs while the component tools load. */
+function editor(race?: AwaitRace, meanwhile: (opened: (page: string) => void) => void = () => {}) {
   const state = { live: true, acts: [] as string[], stale: [] as string[] };
   let opened: string | undefined;
   const act = (what: string) => { (state.live ? state.acts : state.stale).push(what); };
@@ -33,8 +34,9 @@ function editor(race?: AwaitRace) {
     stamp: () => ({ holds: () => state.live }),
     open: wrap("open", async (page: string) => { act(`open ${page}`); opened = page; }),
     pageDetails: (page: string) => act(`details ${page}`),
+    tools: wrap("tools", async () => { meanwhile(page => { opened = page; }); }),
     editComponent: wrap("editComponent", async (tag: string, instance: { path: string; node: number[] } | undefined, notes: readonly string[]) => {
-      act(`mode ${tag} ${instance?.path ?? "code"}${notes.length ? `: ${notes.join(" ")}` : ""}`);
+      act(`mode ${tag} ${instance ? `${instance.path}@${instance.node.join(".")}` : "code"}${notes.length ? `: ${notes.join(" ")}` : ""}`);
       return "mode" as const;
     }),
     select: (request: { path: string; node: number[] }, later: boolean) => act(`select ${request.path} ${request.node.join(".")}${later ? " later" : ""}`),
@@ -50,14 +52,14 @@ test("a page's title opens Page settings on that page; a shared part opens Edit 
   await goTo(logo, part.ports, pathAt);
   assert.deepEqual(part.state.acts, [
     "open index.html",
-    "mode site-header index.html: Site logo, inside Site header, is a shared part. A change here shows on the one page that uses it.",
-    "mode site-logo components/site-header/site-header.html",
+    "mode site-header index.html@55: Site logo, inside Site header, is a shared part. A change here shows on the one page that uses it.",
+    "mode site-logo components/site-header/site-header.html@8",
     "select components/site-logo/site-logo.html 0",
   ]);
 });
 
 test("going to a row's spot acts only on the session it was pressed on (await race)", async () => {
-  for (const [item, count] of [[title, 1], [logo, 3]] as const) {
+  for (const [item, count] of [[title, 1], [logo, 4]] as const) {
     const awaits = await forEachAwait(race => {
       const { state, ports } = editor(race);
       return { state, done: goTo(item, ports, pathAt) };
@@ -67,4 +69,18 @@ test("going to a row's spot acts only on the session it was pressed on (await ra
     });
     assert.equal(awaits, count, item.kind);
   }
+});
+
+test("a shared part's spot is read once the component tools have loaded: from the page as it is then, and not at all once another page opened", async () => {
+  // Typed into while the tools loaded: the header now stands further on, and is framed where it stands.
+  const home = files["index.html"];
+  try {
+    const typed = editor(undefined, () => { files["index.html"] = home.replace("<body>", "<body><p>typed</p>"); });
+    await goTo(logo, typed.ports, pathAt);
+    assert.equal(typed.state.acts[1].split(":")[0], "mode site-header index.html@67");
+  } finally { files["index.html"] = home; }
+  // Another page opened while the tools loaded: the go ends there, nothing is framed or selected.
+  const moved = editor(undefined, open => open("about/index.html"));
+  await goTo(logo, moved.ports, pathAt);
+  assert.deepEqual(moved.state.acts, ["open index.html"]);
 });

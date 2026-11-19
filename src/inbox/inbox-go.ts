@@ -9,7 +9,7 @@ import type { InboxPorts } from "./inbox-host";
 import { partChain } from "./site-items";
 
 /** The editor as going to a spot uses it. */
-export interface GoPorts extends Pick<InboxPorts, "source" | "showing" | "route" | "stamp" | "open" | "pageDetails" | "editComponent" | "select"> {
+export interface GoPorts extends Pick<InboxPorts, "source" | "showing" | "route" | "stamp" | "open" | "pageDetails" | "tools" | "editComponent" | "select"> {
   readonly appStore: { readonly openFile: { readonly value: string | undefined } };
   site(): { readonly components: Readonly<Record<string, string>> } | undefined;
 }
@@ -30,8 +30,13 @@ async function goToShared(item: InboxItem, shared: NonNullable<InboxItem["shared
   const stamp = ports.stamp();
   if (!showing && page) await ports.open(page);
   if (!stamp.holds()) return;
+  // The component tools may still be loading (a slow machine): the part's place is read once they have, from the page
+  // as it is then, and another page opened meanwhile ends it.
+  const opened = ports.appStore.openFile.value;
+  await ports.tools();
+  if (!stamp.holds() || ports.appStore.openFile.value !== opened) return;
   // The part's instance on the page, through the parts it sits in (a logo inside the header): each opened in turn.
-  const chain = page === undefined ? undefined : partChain(page, components, read, shared.tag);
+  const chain = page === undefined ? undefined : partChain(page, ports.site()?.components ?? {}, read, shared.tag);
   const steps = (chain ?? []).map(step => {
     const text = ports.source(step.path);
     return { ...step, node: text === undefined ? undefined : pathAt(text, step.at) };

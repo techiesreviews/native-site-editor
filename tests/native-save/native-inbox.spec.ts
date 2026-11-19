@@ -199,10 +199,12 @@ test.describe("new checks (TOOLS-253)", () => {
 
   test("a shared part's row pressed while the component tools still load opens the part once they have loaded", async ({ page, baseURL }) => {
     // The component tools' module is held until the row is pressed (a slow machine still fetching it).
-    let release!: () => void;
-    const released = new Promise<void>(resolve => { release = resolve; });
-    await page.route(url => url.pathname === "/src/page-builder/components.ts", async route => { await released; await route.continue(); });
+    let release!: () => void, reach!: () => void;
+    const released = new Promise<void>(resolve => { release = resolve; }), reached = new Promise<void>(resolve => { reach = resolve; });
+    await page.route(url => url.pathname === "/src/page-builder/components.ts", async route => { reach(); await released; await route.continue(); });
     await seed(page, baseURL);
+    // The editor has asked for the tools, and they are held.
+    await reached;
     await inboxButton(page).click();
     await inbox(page).getByRole("button", { name: "Picture without a description, Site header · changes 2 pages" }).click();
     await expect(inbox(page)).toBeHidden();
