@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createAgentOwner } from "../src/agent-owner.ts";
+import { createAgentOwner, TAKEOVER_RELOAD_MS } from "../src/agent-owner.ts";
 import { AgentRecordsError, indexedDbAgentRecords, type AgentCommit, type AgentRecords } from "../src/agent-records.ts";
 import { draftDatabaseName, draftKey, indexedDbDrafts, type SavedDraft } from "../src/drafts.ts";
 import { payloadIdentity, workspaceKey, type AgentReceipt } from "../shared/agent-command.ts";
@@ -326,20 +326,36 @@ test("a draft written during takeover is reloaded, and the takeover still moves 
   assert.equal((fake.stores.get("drafts")!.get(key) as SavedDraft).content, "the room's copy");
 });
 
-test("drafts that keep changing during takeover leave it failed and paused after three reloads", async () => {
+// Someone in the room keeps typing: the room's copy is saved again and again, and the takeover reloads
+// until one try fits between two saves, however many that takes within its time.
+test("drafts saved again and again during takeover are reloaded until a try fits between saves", async () => {
   const { fake, records } = setup();
   const manual = indexedDbDrafts(draftDatabaseName, fake.factory);
   let reloads = 0;
   const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {
+    if (++reloads <= 5) await manual.write([[key, { ...draft, content: `typed ${reloads}` }]]);
+  } });
+  assert.equal((await owner.takeover()).fence, 1);
+  assert.equal(reloads, 6);
+  assert.equal(owner.paused, false);
+  assert.equal((fake.stores.get("drafts")!.get(key) as SavedDraft).content, "typed 5");
+});
+
+test("drafts that change under every try leave the takeover failed and paused once its time is up", async () => {
+  const { fake, records } = setup();
+  const manual = indexedDbDrafts(draftDatabaseName, fake.factory);
+  let reloads = 0, time = 0;
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, now: () => time, reload: async () => {
+    time += TAKEOVER_RELOAD_MS / 4;
     await manual.write([[key, { ...draft, content: `typed ${++reloads}` }]]);
   } });
   await assert.rejects(owner.takeover(), code("conflict"));
-  assert.equal(reloads, 3);
+  assert.equal(reloads, 4);
   assert.equal(owner.paused, true);
   assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 0, paused: true });
 });
 
-test("a takeover that lost the fence to another tab while reloading does not try again", async () => {
+test("a takeover that lost the fence to another tab while reloading does not reload again", async () => {
   const { fake, records } = setup();
   let reloads = 0;
   const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {
@@ -403,7 +419,7 @@ for (const disturbance of ["revocation", "takeover"]) test(`${disturbance} distu
   assert.equal(count, 2);
 });
 
-test("manual writes disturb every takeover await; reload/CAS preserve current drafts", async () => {
+test("manual writes disturb every takeover await; the takeover reloads them and still moves the fence", async () => {
   const count = await forEachAwait((race) => {
     const { fake, records } = setup();
     const tracked: AgentRecords = {
@@ -414,10 +430,11 @@ test("manual writes disturb every takeover await; reload/CAS preserve current dr
       setFence: race.port("generation CAS", (...args) => records.setFence(...args)),
     };
     const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: race.port("reload", async () => {}) });
-    return { fake, records, owner, manual: indexedDbDrafts(draftDatabaseName, fake.factory), done: owner.takeover([command()]).catch((error: unknown) => { assert.ok(code("conflict")(error)); }) };
+    return { fake, records, owner, manual: indexedDbDrafts(draftDatabaseName, fake.factory), done: owner.takeover([command()]) };
   }, async ({ manual }) => {
     await manual.write([[key, { ...draft, content: "manual" }]]);
-  }, async ({ fake, records }) => {
+  }, async ({ fake, records, owner }) => {
+    assert.equal(owner.fence, 1); assert.equal(owner.paused, false);
     assert.equal((fake.stores.get("drafts")!.get(key) as SavedDraft).content, "manual");
     await assert.rejects(records.commit(command()), code("conflict"));
     assert.equal(fake.stores.get("receipts")!.size, 0, "0 late commits");
