@@ -226,11 +226,14 @@ function pick(id,event){
  if(mode==='today'){selection=[id];}
  else if(event.shiftKey || event.ctrlKey || event.metaKey || toggle){selection=selection.includes(id)?selection.filter(n=>n!==id):[...selection,id];}
  else selection=[id];
- render();
+ render();$(`[data-tree="${id}"]`)?.focus();
 }
+function contiguous(){const indices=elements.map((e,i)=>selection.includes(e.id)?i:-1).filter(i=>i>=0);return indices.length>0&&indices.at(-1)-indices[0]+1===indices.length;}
 function operate(action){
  if(!selection.length&&action!=='paste')return;
- remember(snapshot());
+ if(action==='wrap'&&(!contiguous()||wrapped))return;
+ if(action==='paste'&&!clipboard.length)return;
+ if(action!=='copy')remember(snapshot());
  if(action==='wrap'){wrapped=true;groupIds=[...selection];}
  if(action==='unwrap'){wrapped=false;groupIds=[];}
  if(action==='copy')clipboard=structuredClone(elements.filter(e=>selection.includes(e.id)));
@@ -238,18 +241,18 @@ function operate(action){
  render();announce('Elements '+action);
 }
 function render(){
- const treeNode=e=>`<button class="node" data-tree="${e.id}" aria-pressed="${selection.includes(e.id)}" aria-label="Tree: ${e.name}">${esc(e.name)}</button>`;
- const canvasNode=e=>`<button class="canvas-node" data-canvas="${e.id}" aria-pressed="${selection.includes(e.id)}" aria-label="Canvas: ${e.name}">${e.name.startsWith('Heading')?'<h3>Thoughtful design.</h3>':e.name.startsWith('Paragraph')?'<p>A small studio with a thoughtful approach.</p>':'View our work'}</button>`;
+ const treeNode=e=>`<button class="node" data-tree="${e.id}" aria-pressed="${selection.includes(e.id)}" aria-label="Tree: ${esc(e.name)}">${esc(e.name)}</button>`;
+ const canvasNode=e=>`<button class="canvas-node" data-canvas="${e.id}" aria-pressed="${selection.includes(e.id)}" aria-label="Canvas: ${esc(e.name)}">${e.name.startsWith('Heading')?'<h3>Thoughtful design.</h3>':e.name.startsWith('Paragraph')?'<p>A small studio with a thoughtful approach.</p>':'View our work'}</button>`;
  function withGroup(node,canvas){let html='',seen=false;for(const e of elements){if(wrapped&&groupIds.includes(e.id)){if(!seen){html+=(canvas?'<div class="panel" data-wrapper>':'<div class="panel" data-group><button class="node component" id="select-group">Div</button>')+elements.filter(n=>groupIds.includes(n.id)).map(node).join('')+'</div>';seen=true;}}else html+=node(e);}return html;}
  $('#selection-tree').innerHTML=withGroup(treeNode,false);
  $('#selection-canvas').innerHTML=withGroup(canvasNode,true);
  $('#select-group')?.addEventListener('click',()=>{selection=[...groupIds];render();});
- $('#selection-actions').innerHTML=mode==='after'?button('Select several',`id="multi-toggle" aria-pressed="${toggle}"`)+button('Wrap',`data-op="wrap" ${selection.length<1||wrapped?'disabled':''}`)+button('Unwrap',`data-op="unwrap" ${!wrapped||!groupIds.every(id=>selection.includes(id))?'disabled':''}`)+ib(clipboard.length?'Elements copied':'Copy elements','copy','data-op="copy"')+button('Paste elements',`data-op="paste" ${!clipboard.length?'disabled':''}`):ib('Duplicate selected element','copy','id="duplicate-one"');
+ $('#selection-actions').innerHTML=mode==='after'?button('Select several',`id="multi-toggle" aria-pressed="${toggle}"`)+button('Wrap',`data-op="wrap" ${!contiguous()||wrapped?'disabled':''}`)+button('Unwrap',`data-op="unwrap" ${!wrapped||!groupIds.every(id=>selection.includes(id))?'disabled':''}`)+ib(clipboard.length?'Elements copied':'Copy elements','copy','data-op="copy"')+button('Paste elements',`data-op="paste" ${!clipboard.length?'disabled':''}`):ib('Duplicate selected element','copy','id="duplicate-one"');
  if($('#multi-toggle'))$('#multi-toggle').onclick=()=>{toggle=!toggle;render();};
  if($('#duplicate-one'))$('#duplicate-one').onclick=()=>{remember(snapshot());const e=elements.find(e=>e.id===selection[0]);elements.push({id:Math.max(...elements.map(e=>e.id))+1,name:e.name+' copy'});render();};
  $$('[data-tree],[data-canvas]').forEach(b=>b.onclick=e=>pick(+(b.dataset.tree||b.dataset.canvas),e));
  $$('[data-op]').forEach(b=>b.onclick=()=>operate(b.dataset.op));
 }
-document.addEventListener('keydown',e=>{if(mode!=='after'||e.target.closest('input,textarea'))return;if((e.ctrlKey||e.metaKey)&&['c','v'].includes(e.key.toLowerCase())){e.preventDefault();operate(e.key.toLowerCase()==='c'?'copy':'paste');}});
+document.addEventListener('keydown',e=>{if(mode!=='after'||!e.target.closest('#selection-tree,#selection-canvas'))return;if((e.ctrlKey||e.metaKey)&&['c','v'].includes(e.key.toLowerCase())){e.preventDefault();operate(e.key.toLowerCase()==='c'?'copy':'paste');}});
 
 switchMode('today');</script></body></html>

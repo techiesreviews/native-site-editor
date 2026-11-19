@@ -12,9 +12,14 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.getByRole('button', { name: 'Duplicate', exact: true }).count(), 0);
     await p.keyboard.press('Escape');
     await p.getByRole('button', { name: 'After', exact: true }).click();
+    await p.getByRole('button', { name: 'Site header menu', exact: true }).click();
+    await p.keyboard.press('Escape');
+    assert.match(await p.locator('#preview .selection').innerText(), /Site header/);
+    assert.ok(await p.getByRole('button', { name: 'Move element up', exact: true }).isDisabled());
     await p.getByRole('button', { name: 'Recent work menu', exact: true }).click();
     await p.getByRole('button', { name: 'Duplicate', exact: true }).click();
     assert.equal(await p.locator('[data-node]').count(), 4);
+    assert.ok(await p.evaluate(() => document.activeElement !== document.body));
     await p.getByRole('button', { name: 'Recent work copy menu', exact: true }).click();
     await p.getByRole('button', { name: 'Move up', exact: true }).click();
     assert.match(await p.locator('[data-node]').nth(1).innerText(), /copy/);
@@ -65,6 +70,14 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     await p.getByRole('button', { name: 'Back to media', exact: true }).click();
     await p.getByRole('button', { name: 'Open Studio desk', exact: true }).click();
     assert.equal(await p.getByLabel('Description', { exact: true }).inputValue(), 'New saved description');
+    await p.getByLabel('Collection', { exact: true }).selectOption('Work');
+    await p.getByRole('button', { name: 'Back to media', exact: true }).click();
+    await p.getByRole('button', { name: 'Open Studio desk', exact: true }).click();
+    assert.equal(await p.getByLabel('Collection', { exact: true }).inputValue(), 'Work');
+    await p.getByRole('button', { name: 'Save details', exact: true }).click();
+    await p.getByRole('button', { name: 'Back to media', exact: true }).click();
+    await p.getByRole('button', { name: 'Open Studio desk', exact: true }).click();
+    assert.equal(await p.getByLabel('Collection', { exact: true }).inputValue(), 'Work');
   }],
   ['05-clean-paste', async p => {
     await p.getByRole('button', { name: 'Paste sample', exact: true }).click();
@@ -77,6 +90,22 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('#copy [style]').count(), 0);
     await p.getByRole('button', { name: 'Undo paste', exact: true }).click();
     assert.equal(await p.locator('#copy').innerText(), 'A small studio with a thoughtful approach.');
+    await p.locator('#copy').focus();
+    await p.locator('#copy').evaluate(node => {
+      const selection = getSelection(), range = document.createRange();
+      range.selectNodeContents(node.querySelector('p')!); range.collapse(false);
+      selection!.removeAllRanges(); selection!.addRange(range);
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/html', '<p style="font-family:serif">New <strong>paragraph</strong></p><ul><li>One</li><li>Two</li></ul>');
+      clipboardData.setData('text/plain', 'New paragraph One Two');
+      node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData }));
+    });
+    assert.match(await p.locator('#copy').innerText(), /A small studio with a thoughtful approach/);
+    assert.equal(await p.locator('#copy > p').count(), 2);
+    assert.equal(await p.locator('#copy li').count(), 2);
+    await p.locator('#copy').press('Control+z');
+    assert.equal(await p.locator('#copy').innerText(), 'A small studio with a thoughtful approach.');
+    await p.getByRole('button', { name: 'Paste sample', exact: true }).click();
   }],
   ['06-unique-anchors', async p => {
     await p.getByRole('button', { name: 'Duplicate section', exact: true }).click();
@@ -89,7 +118,13 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('[data-anchor="work-3"] a').getAttribute('href'), '#work-3');
   }],
   ['07-multi-select', async p => {
+    await p.getByRole('button', { name: 'Tree: Heading', exact: true }).click();
+    await p.getByRole('button', { name: 'Tree: Button', exact: true }).click({ modifiers: ['Shift'] });
+    assert.equal(await p.locator('[data-tree][aria-pressed="true"]').count(), 1);
     await p.getByRole('button', { name: 'After', exact: true }).click();
+    await p.getByRole('button', { name: 'Tree: Heading', exact: true }).click();
+    await p.getByRole('button', { name: 'Tree: Button', exact: true }).click({ modifiers: ['Shift'] });
+    assert.ok(await p.getByRole('button', { name: 'Wrap', exact: true }).isDisabled());
     await p.getByRole('button', { name: 'Tree: Heading', exact: true }).click();
     await p.getByRole('button', { name: 'Canvas: Paragraph', exact: true }).click({ modifiers: ['Shift'] });
     assert.equal(await p.locator('[data-tree][aria-pressed="true"]').count(), 2);
@@ -129,6 +164,9 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('#shared-brand').textContent(), 'Audit Studio');
     await p.getByRole('button', { name: 'Save on both pages', exact: true }).click();
     assert.equal(await p.getByRole('button', { name: 'Saved on both pages', exact: true }).count(), 1);
+    await p.getByRole('button', { name: 'Undo', exact: true }).click();
+    assert.ok(await p.getByRole('button', { name: 'Save shared change', exact: true }).isEnabled());
+    await p.getByRole('button', { name: 'Save shared change', exact: true }).click();
   }],
   ['10-client-bar', async p => {
     await p.getByRole('button', { name: 'After', exact: true }).click();

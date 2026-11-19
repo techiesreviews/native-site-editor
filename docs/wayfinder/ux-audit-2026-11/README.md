@@ -30,14 +30,14 @@ The baseline is the local audit at `f2dfe9d27`, captured on 19–20 November 202
 
 ## Sources
 
-- Audit: `/home/ubulex/Projects/chat/output/nse-ux-audit-2026-11-19/audit.md`, including **What already works well** and **Could not reach**.
-- Research: `/home/ubulex/Projects/chat/output/nse-ux-audit-2026-11-19/other-editors-research.md` (15 recommendations, 25 patterns).
+- Audit: the lead’s November 19–20 local UX audit, including **What already works well** and **Could not reach**. Its nine findings are referenced by NSE identifiers in the table above.
+- Research: the lead’s **How other visual editors handle elements and components** report (15 recommendations, 25 patterns, November 19–20). Relevant tools and pattern numbers are named in the table above.
 - Catalogue shells: `../atomic-catalogue/prototypes/51-page-structure.html` and `../atomic-catalogue/prototypes/59-command-palette.html`.
 - Existing styling v3: `../styling/prototypes/03-styling-panel.html`, especially `effective`, `chipsHtml`, `propRow` and the property/group clear handlers.
 
 ## Validation
 
-Run the focused interaction checks through Agent Kit from the repository root:
+These are manual-only focused checks, intentionally outside the application test and type-check configuration because this task may change only this folder. Run them through Agent Kit from the repository root:
 
 ```sh
 ASE_OWNER=gpt-nse-ux-protos scripts/agents/port.sh scripts/agents/kit unit docs/wayfinder/ux-audit-2026-11/prototypes.test.ts

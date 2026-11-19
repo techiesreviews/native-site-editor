@@ -220,9 +220,9 @@ document.addEventListener('keydown',e=>{
 
 const initial='<p>A small studio with a thoughtful approach.</p>';
 const sample='<p style="font-family:serif;color:red">Meet our <strong>small studio</strong>.</p><p>Explore <a href="/work/">our work</a>.</p><ul><li>Brand identity</li><li>Web design</li></ul>';
-let html;
-function reset(){html=initial;$('#paste-mode').value='clean';$('#undo-paste').disabled=true;}
-function restore(s){html=s;}
+let html,lastPaste;
+function reset(){html=initial;lastPaste=false;$('#paste-mode').value='clean';$('#undo-paste').disabled=true;}
+function restore(s){html=s;lastPaste=false;}
 function render(){ $('#copy').innerHTML=html;$('#sample-view').innerHTML=sample;$('#paste-choice').hidden=mode==='today'; }
 function clean(input){
  const doc=new DOMParser().parseFromString(input,'text/html');
@@ -237,10 +237,34 @@ function clean(input){
  };
  const result=document.createElement('div');doc.body.childNodes.forEach(n=>result.append(walk(n)));return result.innerHTML;
 }
-function paste(rich,plain){remember($('#copy').innerHTML);html=mode==='after'&&$('#paste-mode').value==='clean'?clean(rich||esc(plain).split(/\n\s*\n/).map(s=>'<p>'+s.replace(/\n/g,'<br>')+'</p>').join('')):esc(plain.replace(/\s+/g,' ').trim());render();$('#undo-paste').disabled=false;announce('Pasted');}
+function paste(rich,plain,atCaret=false){
+ const copy=$('#copy');remember(copy.innerHTML);
+ const content=mode==='after'&&$('#paste-mode').value==='clean'?clean(rich||esc(plain).split(/\n\s*\n/).map(s=>'<p>'+s.replace(/\n/g,'<br>')+'</p>').join('')):esc(plain.replace(/\s+/g,' ').trim());
+ if(atCaret){
+  const selection=getSelection();
+  let range=selection.rangeCount?selection.getRangeAt(0):null;
+  if(!range||!copy.contains(range.commonAncestorContainer)){range=document.createRange();range.selectNodeContents(copy);range.collapse(false);}
+  range.deleteContents();
+  const fragment=range.createContextualFragment(content);
+  const node=range.startContainer.nodeType===Node.ELEMENT_NODE?range.startContainer:range.startContainer.parentElement;
+  const block=node.closest('p');
+  if(block&&block.parentElement===copy&&fragment.querySelector('p,ul,ol')){
+   const tailRange=range.cloneRange();tailRange.setEnd(block,block.childNodes.length);
+   const tail=tailRange.extractContents();
+   const after=document.createElement('p');after.append(tail);
+   const last=fragment.lastChild;block.after(fragment);
+   if(after.textContent)last.after(after);
+   if(!block.textContent)block.remove();
+   range.setStartAfter(last);range.collapse(true);
+  }else{const last=fragment.lastChild;range.insertNode(fragment);if(last)range.setStartAfter(last);range.collapse(true);}
+  selection.removeAllRanges();selection.addRange(range);html=copy.innerHTML;
+ }else{html=content;render();}
+ lastPaste=true;$('#undo-paste').disabled=false;announce('Pasted');
+}
 $('#sample').onclick=()=>paste(sample,'Meet our small studio. Explore our work. Brand identity Web design');
-$('#copy').onpaste=e=>{e.preventDefault();paste(e.clipboardData.getData('text/html'),e.clipboardData.getData('text/plain'));};
-$('#copy').oninput=()=>{html=$('#copy').innerHTML;};
+$('#copy').onpaste=e=>{e.preventDefault();paste(e.clipboardData.getData('text/html'),e.clipboardData.getData('text/plain'),true);};
+$('#copy').oninput=()=>{html=$('#copy').innerHTML;lastPaste=false;};
+$('#copy').onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&lastPaste){e.preventDefault();$('#undo').click();$('#undo-paste').disabled=!history.length;}};
 $('#undo-paste').onclick=()=>{$('#undo').click();$('#undo-paste').disabled=!history.length;};
 
 switchMode('today');</script></body></html>

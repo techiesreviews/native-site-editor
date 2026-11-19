@@ -230,23 +230,26 @@ function act(action){
  if(action==='up'&&selected>0) {[nodes[selected-1],nodes[selected]]=[nodes[selected],nodes[selected-1]];selected--;}
  if(action==='down'&&selected<nodes.length-1){[nodes[selected+1],nodes[selected]]=[nodes[selected],nodes[selected+1]];selected++;}
  if(action==='component') nodes[selected]='Component: '+nodes[selected];
- render();attachPopovers();announce('Page structure updated');
+ render();attachPopovers();$(`[data-select="${selected}"]`)?.focus();announce('Page structure updated');
 }
 function render(){
  $('#tree').innerHTML=nodes.map((n,i)=>`<div class="row" data-node aria-current="${selected===i}"><button class="node" data-select="${i}">${esc(n)}</button>${ib(n+' menu','dots',`data-menu="${i}" popovertarget="row-menu"`)}</div>`).join('');
  $('#preview').innerHTML=nodes.map((n,i)=>`<button class="canvas-node ${i===selected?'selection':''}" data-select="${i}"><h3>${esc(n)}</h3></button>`).join('');
- $('#canvas-actions').innerHTML=ib('Duplicate element','copy',`data-action="duplicate" ${!nodes.length?'disabled':''}`)+ib('Move element up','up',`data-action="up" ${selected===0?'disabled':''}`)+ib('Move element down','down',`data-action="down" ${selected===nodes.length-1?'disabled':''}`)+ib('Remove selected element','trash',`data-action="remove" ${!nodes.length?'disabled':''}`);
- $('#row-menu').innerHTML=`<button class="p-menu-item" data-action="component">Make component</button>`+(mode==='after'?`<button class="p-menu-item" data-action="duplicate">${icon('copy')}Duplicate</button><button class="p-menu-item" data-action="up" ${selected===0?'disabled':''}>${icon('up')}Move up</button><button class="p-menu-item" data-action="down" ${selected===nodes.length-1?'disabled':''}>${icon('down')}Move down</button><hr><button class="p-menu-item danger" data-action="remove">${icon('trash')}Remove</button>`:'');
- $$('[data-select]').forEach(b=>b.onclick=()=>{selected=+b.dataset.select;render();attachPopovers();});
+ $('#canvas-actions').innerHTML=ib('Duplicate element','copy',`data-action="duplicate" ${!nodes.length?'disabled':''}`)+ib('Move element up','up',`data-action="up" ${selected<=0?'disabled':''}`)+ib('Move element down','down',`data-action="down" ${selected>=nodes.length-1?'disabled':''}`)+ib('Remove selected element','trash',`data-action="remove" ${!nodes.length?'disabled':''}`);
+ $('#row-menu').innerHTML=`<button class="p-menu-item" data-action="component">Make component</button>`+(mode==='after'?`<button class="p-menu-item" data-action="duplicate">${icon('copy')}Duplicate</button><button class="p-menu-item" data-action="up" ${selected<=0?'disabled':''}>${icon('up')}Move up</button><button class="p-menu-item" data-action="down" ${selected>=nodes.length-1?'disabled':''}>${icon('down')}Move down</button><hr><button class="p-menu-item danger" data-action="remove">${icon('trash')}Remove</button>`:'');
+ $$('[data-select]').forEach(b=>b.onclick=()=>{selected=+b.dataset.select;render();attachPopovers();$(`[data-select="${selected}"]`)?.focus();});
  $$('[data-menu]').forEach(b=>b.addEventListener('click',()=>{selected=+b.dataset.menu;refreshMenu();}));
  $$('[data-action]').forEach(b=>b.onclick=()=>act(b.dataset.action));
 }
 function refreshMenu(){
+ $$('#preview [data-select]').forEach((r,i)=>r.classList.toggle('selection',i===selected));
+ $('[aria-label="Move element up"]').disabled=selected<=0;
+ $('[aria-label="Move element down"]').disabled=selected>=nodes.length-1;
  const p=$('#row-menu');
  p.querySelector('[data-action=up]')?.toggleAttribute('disabled',selected===0);
  p.querySelector('[data-action=down]')?.toggleAttribute('disabled',selected===nodes.length-1);
  $$('[data-node]').forEach((r,i)=>r.setAttribute('aria-current',String(i===selected)));
 }
-$('#confirm-remove').onclick=()=>{remember({nodes,selected});nodes.splice(selected,1);selected=Math.min(selected,nodes.length-1);render();attachPopovers();};
+$('#confirm-remove').onclick=()=>{remember({nodes,selected});nodes.splice(selected,1);selected=Math.min(selected,nodes.length-1);render();attachPopovers();$(`[data-select="${selected}"]`)?.focus();};
 
 switchMode('today');</script></body></html>
