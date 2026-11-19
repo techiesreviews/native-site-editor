@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { pauseAhead } from "../support/clock";
 
 // The open repository's row in the project selector names its branch, and
 // a flyout out of the row lists the branches (the current one marked for assistive tech) with
@@ -85,7 +86,7 @@ test("hovering the open repository's row lists its branches beside the menu, and
   // `performance` too, and Monaco's input-latency measure then throws on every key.
   // The timers this check needs are all set after it.
   await page.clock.install();
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+  await pauseAhead(page, 1_000);
   await page.mouse.move(row.x + row.width - 4, row.y + row.height + 30, { steps: 4 });
   await page.clock.runFor(100);
   await page.mouse.move(beside.x + 20, beside.y + 50, { steps: 4 });
