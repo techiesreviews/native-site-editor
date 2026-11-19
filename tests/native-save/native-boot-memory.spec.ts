@@ -34,17 +34,25 @@ test.beforeEach(async ({ page }) => {
 // it); `hold` keeps the session's answer until released. Their file contents
 // are marked (`data-guess` on the page's first h1), so a marked page proves
 // the guess was used.
+// Only the next document's reads count: the first boot keeps reading the rest
+// of the site after its first paint (src/site-loading.ts, the text index), and
+// such a read can still leave the old document while the reload is under way.
+// The next document is the one a main-frame navigation request commits (a hash
+// change commits without one and keeps the document).
 async function watchGuesses(page: Page, options: { hold?: boolean; snapshotFrom?: string } = {}) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const state = { chosen: false, early: [] as string[], late: [] as string[] };
+  const state = { navigating: false, fresh: false, chosen: false, early: [] as string[], late: [] as string[] };
+  page.on('request', (request) => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) state.navigating = true; });
+  page.on('framenavigated', (frame) => { if (frame === page.mainFrame() && state.navigating) state.fresh = true; });
   await page.route('**/api/session', async (route) => {
     const response = await route.fetch();
     if (options.hold) await gate;
     await route.fulfill({ response });
   });
-  page.on('request', (request) => { if (/\/api\/branches\?/.test(request.url())) state.chosen = true; });
+  page.on('request', (request) => { if (state.fresh && /\/api\/branches\?/.test(request.url())) state.chosen = true; });
   const reads = async (route: Route) => {
+    if (!state.fresh) return route.continue();
     const url = new URL(route.request().url());
     (state.chosen ? state.late : state.early).push(url.pathname + url.search);
     if (state.chosen) return route.continue();
