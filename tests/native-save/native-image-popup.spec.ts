@@ -304,8 +304,11 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
   await expect(menu).toBeInViewport({ ratio: 1 });
   expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
   const free = popup(page).getByRole("menuitemradio", { name: "Free", exact: true });
-  await free.scrollIntoViewIfNeeded();
-  await expect(free).toBeInViewport({ ratio: 1 });
+  // The menu can settle after a scroll that found Free already shown: scrolled to again until it is whole.
+  await expect(async () => {
+    await free.scrollIntoViewIfNeeded();
+    await expect(free).toBeInViewport({ ratio: 1, timeout: 1000 });
+  }).toPass();
   expect((await free.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await free.click();
   await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeAttached();
