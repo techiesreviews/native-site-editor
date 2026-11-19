@@ -19,7 +19,15 @@ interface Options {
   run: (command: AgentCommand) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   /** The reply with what changed since the agent's last call added (ticket 10; src/agent-part.ts `tellAgent`). */
   tell?: (request: AgentEdit | AgentStatus, result: AgentReadResult) => Promise<AgentReadResult>;
+  /** The clock of the race retry's time limit (ms, never stepping back); tests pass their own. */
+  now?: () => number;
 }
+/**
+ * How long an edit that keeps losing the race to another change of its file (the user typing elsewhere in it)
+ * is prepared again, beyond its first three runs, before it is refused (ms). On a slow machine one preparation
+ * can outlast several keys, so a count alone refuses an edit the user never clashed with.
+ */
+export const AGENT_RACE_RETRY_MS = 5000;
 type Request = AgentEdit | AgentStatus;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 
@@ -71,7 +79,7 @@ function ownFiles(request: AgentEdit | AgentStatus, command: AgentCommand, outco
 
 /** Receipts precede preparation: replacements must never run twice against their own output. */
 export function createAgentEditTools(options: Options) {
-  const { records, workspace, ports } = options;
+  const { records, workspace, ports, now = () => performance.now() } = options;
   const waiting = (id: string): AgentReadResult => ({ ok: true, value: { requestId: id, state: "waiting", message: WAITING_MESSAGE } });
   const refusal = (id: string, message: string): AgentReadResult => ({ ok: true, value: { requestId: id, state: "conflict", message } });
   /**
@@ -239,6 +247,7 @@ export function createAgentEditTools(options: Options) {
           check();
         };
         let outcome: Awaited<ReturnType<Options["run"]>>;
+        const until = now() + AGENT_RACE_RETRY_MS;
         for (let attempt = 1; ; attempt++) {
           await leaveUser();
           // A text write's file is its agent's own from before its draft shows (a parallel read's catch-up
@@ -255,8 +264,8 @@ export function createAgentEditTools(options: Options) {
             // typing): prepared again on that text, it lands while its own part is unchanged (ticket 10). Decided
             // by proofs, not wording: no receipt or cancellation kept for it (nothing was changed by the attempt,
             // so its proofs hold again until the next run), an outcome that is not unknown, and its file's text
-            // moved (below). A reason of its own stands.
-            if (attempt > 2 || unknownOutcome(error)) throw error;
+            // moved (below). A reason of its own stands. Three runs, and more for a while (AGENT_RACE_RETRY_MS).
+            if ((attempt > 2 && now() >= until) || unknownOutcome(error)) throw error;
             const kept = await records.status(workspace, request.id, request.grantId);
             if (kept.status !== "unknown") throw error;
             ran = false;

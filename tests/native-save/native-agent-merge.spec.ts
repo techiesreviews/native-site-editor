@@ -91,17 +91,24 @@ test("an agent rewrites the heading while Lex types in the next sentence: both l
     const read = await agent.call("read_file", { path: file });
 
     // The agent rewrites the heading while Lex types in the sentence after it, a key every 30 ms from before the agent's
-    // call until after its change has landed: keys land while the change is prepared, saved and shown.
+    // call until after its change has landed: keys land while the change is prepared, saved and shown. Lex goes on
+    // typing for as long as the change takes (a slow machine takes longer), then types the end of his sentence.
     await caretAfter(lex.page, "Edit plain HTML");
-    const typed = ", by Lex, who keeps on typing while the agent works on the heading above, and on, and on, and still on after it lands,";
-    let typingDone = false;
-    const typing = lex.page.keyboard.type(typed, { delay: 30 }).then(() => { typingDone = true; });
+    let typed = "", callEnded = false;
+    const type = async (text: string) => { await lex.page.keyboard.type(text, { delay: 30 }); typed += text; };
+    const typing = (async () => {
+      await type(", by Lex, who keeps on typing while the agent works on the heading above,");
+      while (!callEnded) await type(" and on,");
+      await type(" and still on after it lands,");
+    })();
     // A failure below closes the page under the typing: the failure is what is reported.
     typing.catch(() => undefined);
-    const landed = await agent.call("edit_file", { path: file, expectedHash: read.hash, requestId: "agent-heading", waitSeconds: 0,
-      edits: [{ oldText: "A native browser preview", newText: "A preview the agent wrote" }] });
+    let landed: unknown;
+    try {
+      landed = await agent.call("edit_file", { path: file, expectedHash: read.hash, requestId: "agent-heading", waitSeconds: 0,
+        edits: [{ oldText: "A native browser preview", newText: "A preview the agent wrote" }] });
+    } finally { callEnded = true; }
     expect(landed).toMatchObject({ state: "applied" });
-    expect(typingDone, "the change landed while Lex was still typing").toBe(false);
     await typing;
     for (const tab of [lex, anna]) {
       await expect.poll(() => source(tab.page), { timeout: 20_000 }).toContain(">A preview the agent wrote</h1>");

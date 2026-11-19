@@ -12,7 +12,7 @@ import { installOutlineDocument } from "./support/outline-document";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
-import { createAgentEditTools } from "../src/agent-tools-edit";
+import { AGENT_RACE_RETRY_MS, createAgentEditTools } from "../src/agent-tools-edit";
 import { READ_TEXTS, readText, rememberText, tellAgent } from "../src/agent-part";
 import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
@@ -1196,6 +1196,36 @@ test("an edit that loses a race with another change to its file is prepared agai
   assert.match(clash.part.text, />Rapid</);
   assert.equal(clash.part.hash, await textHash(home.replace(">Fast<", ">Rapid<")));
   assert.equal(ran.length, 3);
+});
+
+test("an edit that keeps losing the race to the user's typing elsewhere in its file is prepared again for a while, not three times, and lands", async () => {
+  // The user types in the next sentence while the agent's edit is prepared: on a slow machine each preparation
+  // can outlast several keys, so several runs in a row find the file changed under them.
+  const f = await fixture(), home = files["index.html"], hash = f.context.site!.outlines[0].hash;
+  let clock = 0, lose = 0, typed = home;
+  const ran: AgentCommand[] = [];
+  const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, now: () => clock, run: async command => {
+    ran.push({ ...command });
+    if (lose > 0) {
+      lose--;
+      clock += 1000;
+      typed = typed.replace("<h1>Welcome", "<h1>Welcome!");
+      f.context.drafts.length = 0;
+      f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(typed), content: typed });
+      throw raceLost();
+    }
+    return f.run(request("write_file", { path: command.path, content: command.content, expectedHash: null }, `${command.id}-landed`)).then(() => ({ message: "Applied.", result: { path: command.path } }));
+  } });
+  lose = 4;
+  const landed = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "typing-1"), 0, () => true));
+  assert.equal(landed.state, "applied", JSON.stringify(landed));
+  assert.equal(ran.length, 5);
+  assert.equal(ran[4].content, typed.replace(">Fast<", ">Quick<"));
+  // Still losing once the while is over (AGENT_RACE_RETRY_MS): refused, with nothing more run.
+  clock = 0; ran.length = 0; lose = 99; typed = home; f.context.drafts.length = 0;
+  const refused = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "typing-2"), 0, () => true));
+  assert.equal(refused.state, "conflict");
+  assert.equal(ran.length, AGENT_RACE_RETRY_MS / 1000);
 });
 
 test("an edit prepared again after a race waits when it now changes the part the user types in (ticket 52 holds on retry)", async t => {
