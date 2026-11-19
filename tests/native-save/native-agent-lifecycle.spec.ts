@@ -407,6 +407,8 @@ test("freeze/resume (document lifecycle events): a frozen owner keeps its socket
     await expect.poll(() => h.traffic.commands().length).toBe(count + 1);
     expect(h.traffic.ready()).toHaveLength(1);
     expect(await durable(page)).toEqual(before);
+    // No second delivery of that command came after it.
+    expect(h.traffic.commands()).toHaveLength(count + 1);
   } finally { await h.client.close(); }
 });
 

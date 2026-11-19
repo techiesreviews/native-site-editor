@@ -849,12 +849,17 @@ test("a tab's socket that opened never asks for its status when it drops; one re
 });
 
 /** Every Web Crypto call the participants make, as await points `forEachAwait` can disturb. Returns the undo. */
-function cryptoPorts(race: AwaitRace) {
+/** Wraps every crypto call as an await-race port; with `running`, counts the calls not settled yet. */
+function cryptoPorts(race: AwaitRace, running?: { count: number }) {
   const subtle = crypto.subtle;
   const names = ["generateKey", "encrypt", "decrypt", "wrapKey", "unwrapKey", "deriveBits", "deriveKey", "importKey", "exportKey"] satisfies (keyof SubtleCrypto)[];
   for (const name of names) {
     const original: (...args: unknown[]) => Promise<unknown> = Reflect.get(subtle, name);
-    Object.defineProperty(subtle, name, { configurable: true, value: race.port(name, (...args: unknown[]) => Reflect.apply(original, subtle, args) as Promise<unknown>) });
+    const call = (...args: unknown[]) => {
+      if (running) running.count++;
+      return (Reflect.apply(original, subtle, args) as Promise<unknown>).finally(() => { if (running) running.count--; });
+    };
+    Object.defineProperty(subtle, name, { configurable: true, value: race.port(name, call) });
   }
   return () => { for (const name of names) Reflect.deleteProperty(subtle, name); };
 }
@@ -878,7 +883,7 @@ const noStaleWrite = async (run: { sentAfter: number; own: ReturnType<typeof fak
 
 test("closing at any crypto await of a join, handover, presence or send sends nothing more and leaves no timers", async () => {
   const points = await forEachAwait(race => {
-    const restore = cryptoPorts(race), shared = fakeClock(), h = relayHarness();
+    const running = { count: 0 }, restore = cryptoPorts(race, running), shared = fakeClock(), h = relayHarness();
     const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, peers: undefined as ReadonlyMap<string, LivePeer> | undefined, done: Promise.resolve() as Promise<unknown> };
     // The baseline run gets no assertion call: each run undoes its own crypto ports and closes its holder.
     let anna: ReturnType<typeof participant> | undefined;
@@ -890,11 +895,10 @@ test("closing at any crypto await of a join, handover, presence or send sends no
       await joiner.ready().catch(() => undefined);
       joiner.setPresence({ name: "Joiner" });
       await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
-      // Every crypto step of the run has happened once Anna has read the edit and each has read the other's presence
-      // (a fixed wait could end before them on a loaded machine, and the replays would count other steps). A close
-      // stops the run: nothing more is sent or read.
-      const named = (peers: ReadonlyMap<string, LivePeer> | undefined, name: string) => [...peers?.values() ?? []].some(peer => (peer.state as { name?: string } | undefined)?.name === name);
-      await until(() => run.closed || (anna!.got.includes("edit") && named(anna!.peers, "Joiner") && named(run.peers, "Anna")), "the edit and both presences read");
+      // Every crypto step of the run has happened once Anna has read the edit, each knows the other, and no crypto call
+      // is still running (a fixed wait could end before them on a loaded machine, and the replays would count other
+      // steps; presence frames can be read out of order, so their contents are not waited for). A close stops the run.
+      await until(() => run.closed || (anna!.got.includes("edit") && anna!.peers.size === 1 && run.peers?.size === 1 && running.count === 0), "the edit read, both peers known, no crypto running");
     })().finally(() => { anna?.live.close(); restore(); });
     return run;
   }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);

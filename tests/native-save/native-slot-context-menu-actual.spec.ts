@@ -75,7 +75,8 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
       // The canvas and the Structure outline are drawn again just after the mode opens: a press on the old one opens
       // nothing, so it is pressed again until the menu shows.
       const pressUntilMenu = (press: () => Promise<void>) => expect(async () => {
-        await press();
+        // A menu that opened late is not pressed again (the Actions button would close it).
+        if (!await menu(page).isVisible()) await press();
         await expect(menu(page)).toBeVisible({ timeout: 1000 });
       }).toPass({ timeout: 15_000 });
       if (entry === "canvas") await pressUntilMenu(() => frame(page).locator("section-work p.lede:visible").click({ button: "right" }));
