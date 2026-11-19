@@ -22,8 +22,8 @@
   // callback URLs (and EDITOR_ORIGIN below, so setup and sign-in use it).
   "workers_dev": true,
   "preview_urls": false,
-  // Workers Logs keep the causes of unexpected errors (logged in worker/app.ts).
-  "observability": { "enabled": true },
+  // Workers Logs are off: they add cost (Lex, 2026-11-19). Unexpected errors are still logged in worker/app.ts.
+  "observability": { "enabled": false },
   // `wrangler deploy` and `wrangler dev` build the editor's UI first.
   "build": { "command": "npm run build:ui" },
   "vars": {
