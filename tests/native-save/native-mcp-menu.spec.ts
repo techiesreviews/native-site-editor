@@ -457,7 +457,9 @@ test("a press whose own takeover fails tries it once: the problem dot, nothing c
   // fixed-wait: a second takeover would begin at once after the first failed; it would show by now.
   await page.waitForTimeout(1_000);
   const states = await page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates ?? []);
-  expect(states.filter(state => state === "taking-over"), `one takeover in ${states.join(", ")}`).toHaveLength(1);
+  // The menu rewrites data-state on every repaint, the same state too: count the changes into taking-over.
+  const takeovers = states.filter((state, at) => state === "taking-over" && states[at - 1] !== "taking-over");
+  expect(takeovers, `one takeover in ${states.join(", ")}`).toHaveLength(1);
   expect(states.at(-1)).toBe("takeover-failed");
   expect((await dot(page)).color).toBe(await danger(page));
   await onlyLabel(page, "Connect to MCP");

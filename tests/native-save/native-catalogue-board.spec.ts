@@ -241,6 +241,8 @@ test("below the wide layout, a screen's label opens the Options sheet, with the 
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Sharing, one panel", exact: true }).click();
   const board = page.locator(".cat-board"), label = page.locator('#card-sharing-panel [data-width="390"][data-theme="dark"]').locator(":scope > .cat-label");
   await expect(board).toHaveAttribute("data-sheet", "options");
+  // Escape reaches the board once a state cell that focused itself while drawing has given the keyboard back.
+  await settled(page);
   await page.keyboard.press("Escape");
   await expect(board).not.toHaveAttribute("data-sheet", /./);
   await stillBox(page.locator("#card-sharing-panel"));
