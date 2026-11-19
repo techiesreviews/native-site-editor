@@ -13,7 +13,7 @@
   // request.signal fires when an MCP client closes its response (2026-07-28 cancellation, worker/mcp.ts).
   "compatibility_flags": ["enable_request_signal"],
   "workers_dev": false,
-  "observability": { "enabled": true },
+  "observability": { "enabled": false },
   // build:preview adds the planning mock-ups at /mockups/ (MOCKUPS=1, vite-mockups.ts) and the
   // catalogue board at /catalogue.html they open on (CATALOGUE=1, vite.config.ts); production has neither.
   "build": { "command": "npm run build:preview" },

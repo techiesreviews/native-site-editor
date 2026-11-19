@@ -17,7 +17,7 @@
   "compatibility_date": "2026-09-17",
   "workers_dev": true,
   "preview_urls": false,
-  "observability": { "enabled": true },
+  "observability": { "enabled": false },
   // The link's page is part of the editor's build (preview-visit.html).
   "build": { "command": "npm run build:ui" },
   "assets": {
