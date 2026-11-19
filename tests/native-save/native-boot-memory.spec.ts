@@ -37,14 +37,17 @@ test.beforeEach(async ({ page }) => {
 // Only the next document's reads count: the first boot keeps reading the rest
 // of the site after its first paint (src/site-loading.ts, the text index), and
 // such a read can still leave the old document while the reload is under way.
-// The next document is the one a main-frame navigation request commits (a hash
-// change commits without one and keeps the document).
+// The next document is the one a main-frame navigation request's answer commits
+// (a hash change or replaceState commits with no such answer and keeps the document).
 async function watchGuesses(page: Page, options: { hold?: boolean; snapshotFrom?: string } = {}) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const state = { navigating: false, fresh: false, chosen: false, early: [] as string[], late: [] as string[] };
-  page.on('request', (request) => { if (request.isNavigationRequest() && request.frame() === page.mainFrame()) state.navigating = true; });
-  page.on('framenavigated', (frame) => { if (frame === page.mainFrame() && state.navigating) state.fresh = true; });
+  const state = { answered: false, fresh: false, chosen: false, early: [] as string[], late: [] as string[] };
+  page.on('response', (response) => {
+    const request = response.request();
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) state.answered = true;
+  });
+  page.on('framenavigated', (frame) => { if (frame === page.mainFrame() && state.answered) state.fresh = true; });
   await page.route('**/api/session', async (route) => {
     const response = await route.fetch();
     if (options.hold) await gate;
@@ -105,8 +108,9 @@ test('a file whose SHA moved is not shown from the guess; the fresh content pain
 test("another account's memory is not used", async ({ page, baseURL }) => {
   const memory = await firstBoot(page, baseURL);
   await editMemory(page, (m) => { m.login = 'someone-else'; }, memory);
-  await watchGuesses(page);
+  const { state } = await watchGuesses(page);
   await page.reload();
+  await expect.poll(() => state.early.some((read) => read.startsWith('/api/files')), 'the guess was read').toBe(true);
   await expect(preview(page).locator('.hero h1')).toBeVisible();
   await expect(page.locator('#status')).toContainText('Up to date with main');
   await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
@@ -134,8 +138,9 @@ test('a draft of the page wins over the remembered base', async ({ page, baseURL
     const key = 'astro-site-editor:draft:v1:' + JSON.stringify([scope.account, scope.repoId, scope.branch, 'index.html']);
     localStorage.setItem(key, JSON.stringify({ ...scope, version: 1, path: 'index.html', baseSha, original, content: original.replace('<h1', '<h1 data-draft="1"'), updatedAt: Date.now() }));
   }, [original, sha(memory, 'index.html')] as const);
-  await watchGuesses(page);
+  const { state } = await watchGuesses(page);
   await page.reload();
+  await expect.poll(() => state.early.some((read) => read.startsWith('/api/files')), 'the guess was read').toBe(true);
   await expect(preview(page).locator('.hero h1[data-draft]')).toBeVisible();
   await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
 });
