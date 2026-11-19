@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Prototype · Unique anchors on duplicate · Today / After</title>
+<!-- Planning prototype only. Inline, offline, fake data; no application source changes.
+ Shell, theme tokens and catalogue parts adapted from atomic-catalogue/prototypes/51-page-structure.html
+ and 59-command-palette.html. Baseline: November audit at f2dfe9d27. -->
+<style>:root {
+  color-scheme: light dark;
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+
+  --primary: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --primary-hover: oklch(from var(--primary) calc(l * 0.85) c h);
+  --on-primary: var(--color-primary-lightest);
+  --surface: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h));
+  --background: light-dark(oklch(from var(--color-primary-lighter) 97% c h), var(--color-primary-darkest));
+  --surface-subtle: light-dark(var(--color-primary-lighter), oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h));
+  --surface-raised: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 32% min(c, 0.035) h));
+  --surface-input: light-dark(var(--color-primary-lightest), oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h));
+  --surface-toolbar: light-dark(oklch(from var(--color-primary-lighter) 92% c h), oklch(from var(--color-primary-darker) l min(c, 0.025) h));
+  --text: light-dark(var(--color-primary-darkest), var(--color-primary-lighter));
+  --muted: light-dark(oklch(from var(--color-primary-dark) l min(c, 0.045) h), oklch(from var(--color-primary-light) 80% min(c, 0.035) h));
+  --link: light-dark(var(--color-primary-dark), oklch(from var(--color-primary) 80% min(c, 0.12) h));
+  --line: light-dark(var(--color-primary-light), oklch(from var(--color-primary-darker) 36% min(c, 0.04) h));
+  --focus: light-dark(var(--primary), var(--color-primary-light));
+  --shadow-color: light-dark(oklch(from var(--color-primary-darkest) l c h / 0.18), oklch(from var(--color-primary-darkest) 5% c h / 0.35));
+  --warning-bg: light-dark(oklch(from var(--color-warning) 96% 0.03 h), oklch(from var(--color-warning) 28% 0.03 h));
+  --warning-fg: light-dark(oklch(from var(--color-warning) 38% 0.07 h), oklch(from var(--color-warning) 87% 0.08 h));
+  --success-bg: light-dark(oklch(from var(--color-success) 96% 0.03 h), oklch(from var(--color-success) 28% 0.03 h));
+  --success-fg: light-dark(oklch(from var(--color-success) 38% 0.07 h), oklch(from var(--color-success) 87% 0.08 h));
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --component: light-dark(var(--color-component), oklch(from var(--color-component) 72% 0.16 h));
+  --component-surface: light-dark(oklch(from var(--color-component) 96% 0.03 h), oklch(from var(--color-component) 28% 0.05 h));
+  --component-text: light-dark(oklch(from var(--color-component) 42% 0.17 h), oklch(from var(--color-component) 85% 0.1 h));
+  --slot-surface: oklch(from var(--color-component) 47% 0.21 h);
+  --agent-presence: var(--color-success);
+  --on-media: oklch(100% 0 none);
+  --preview-paper: oklch(100% 0 none);
+  --panel-surface: var(--surface-raised);
+  --pressed: light-dark(var(--primary), var(--color-primary-light));
+  --on-pressed: light-dark(var(--on-primary), var(--color-primary-darkest));
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --shadow: 0 12px 32px var(--shadow-color);
+  --shadow-small: 0 2px 6px var(--shadow-color);
+  --type-badge: 11px; --type-small: 12px; --type-base: 13px; --type-title: 15px; --type-heading: 20px;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-small: 4px; --radius: 6px; --radius-panel: 8px; --radius-dialog: 12px;
+  --size-icon: 24px; --size-compact: 28px; --size-control: 32px; --size-touch: 44px;
+  --panel-padding: 6px;
+
+  /* After only: the catalogue's new shared values (slices 02 and 03). */
+  --space-4xs: 2px; --space-3xs: 4px; --space-2xs: 6px; --space-xs: 8px; --space-s: 12px; --space-m: 16px; --space-l: 24px;
+  --radius-full: 999px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --dur-hover: 120ms; --dur-press: 150ms; --dur-tooltip: 180ms; --dur-menu: 200ms;
+
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+
+:root { --frame-wide: 88rem; --stage-height: 36rem; --picture-height: 20rem; --inspector-width: 20rem; --tree-width: 17rem; --gutter: clamp(0.75rem, 0.5rem + 1vw, 1.5rem); --type-display: clamp(1.75rem, 1.25rem + 2cqi, 3rem); --type-prototype: clamp(1.15rem, 1rem + 0.6vw, 1.45rem); }
+*, *::before, *::after { box-sizing: border-box; min-inline-size: 0; }
+html { scrollbar-gutter: stable; }
+body { margin: 0; -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, a, summary { touch-action: manipulation; }
+button { cursor: pointer; }
+a { color: var(--link); }
+:focus-visible { outline: var(--focus-ring); outline-offset: var(--space-4xs); }
+button:disabled { color: var(--muted); cursor: default; }
+button:active:not(:disabled), a:active { background-color: var(--current); }
+@media (hover: hover) and (pointer: fine) { button:hover:not(:disabled), a:hover { background-color: var(--hover); } }
+@media (prefers-reduced-motion: no-preference) { button { transition: transform var(--dur-press) var(--ease-out); } button:active:not(:disabled) { transform: scale(0.97); } }
+.mock { display: grid; grid-template-columns: minmax(var(--gutter), 1fr) minmax(0, var(--frame-wide)) minmax(var(--gutter), 1fr); gap: var(--space-m) 0; padding-block: var(--space-l); }
+.mock > * { grid-column: 2; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: var(--type-prototype); text-wrap: balance; }
+h2 { font-size: var(--type-title); }
+h3 { font-size: var(--type-heading); }
+.strip, .toolbar, .row, .actions, .site-head { display: flex; gap: var(--space-xs); align-items: center; }
+.strip { flex-wrap: wrap; }
+.strip > a { margin-inline-end: auto; padding: var(--space-xs); }
+.seg { display: inline-flex; padding: var(--space-4xs); gap: var(--space-4xs); background: var(--surface-subtle); border-radius: var(--radius); }
+.seg button { border: 0; border-radius: var(--radius-small); background: transparent; color: var(--muted); padding-inline: var(--space-s); min-block-size: var(--size-control); font-weight: 600; }
+.seg button[aria-pressed=true] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.p-button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-xs); min-block-size: var(--size-control); padding-inline: var(--space-s); border: 0; border-radius: var(--radius); background: var(--surface-subtle); color: var(--text); white-space: nowrap; }
+.p-button[data-tone=primary] { background: var(--primary); color: var(--on-primary); }
+.p-button[data-tone=danger], .danger { color: var(--danger-fg); }
+.p-button[aria-pressed=true] { background: var(--pressed); color: var(--on-pressed); }
+.p-icon-button { display: inline-grid; place-items: center; flex: none; inline-size: var(--size-control); block-size: var(--size-control); border: 0; border-radius: var(--radius); background: transparent; color: var(--muted); padding: 0; }
+.icon { inline-size: var(--space-m); block-size: var(--space-m); fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.app { position: relative; isolation: isolate; background: var(--surface); box-shadow: var(--shadow-small); border-radius: var(--radius-panel); container: app / inline-size; }
+.toolbar { min-block-size: var(--size-touch); padding: var(--space-2xs) var(--space-s); background: var(--surface-toolbar); border-radius: var(--radius-panel) var(--radius-panel) 0 0; }
+.toolbar > :last-child { margin-inline-start: auto; }
+.work { display: flex; flex-wrap: wrap; align-items: start; padding: var(--space-m); gap: var(--space-m); min-block-size: var(--stage-height); }
+.tree { flex: 1 1 var(--tree-width); background: var(--surface-subtle); border-radius: var(--radius-panel); padding: var(--space-xs); display: grid; gap: var(--space-4xs); }
+.tree h2 { padding: var(--space-xs); color: var(--muted); font-size: var(--type-small); font-weight: 500; }
+.tree .row { gap: var(--space-4xs); min-block-size: var(--size-control); border-radius: var(--radius); }
+.tree .row[aria-current=true], [aria-pressed=true].node, [aria-pressed=true].canvas-node { background: var(--current); }
+.node { flex: 1; border: 0; background: transparent; text-align: start; min-block-size: var(--size-control); padding-inline: var(--space-xs); border-radius: var(--radius); }
+.canvas { flex: 999 1 0; min-inline-size: min(100%, 50%); display: grid; gap: var(--space-m); }
+.paper { background: var(--surface-input); border-radius: var(--radius); box-shadow: var(--shadow-small); container: paper / inline-size; }
+.site-head { justify-content: space-between; flex-wrap: wrap; padding: var(--space-m); }
+.site-head strong { font-size: var(--type-title); }
+.site-head nav { display: flex; gap: var(--space-s); }
+.site-head button { border: 0; background: none; padding: var(--space-xs); }
+.hero { padding: clamp(1rem, 0.75rem + 3cqi, 3rem); display: grid; gap: var(--space-m); }
+.hero h3 { font: 500 var(--type-display)/1.15 Georgia, serif; text-wrap: balance; }
+.hero p { max-inline-size: 60ch; font-size: var(--type-title); line-height: 1.65; }
+.selection { outline: var(--focus-ring); outline-offset: var(--space-3xs); }
+.component { color: var(--component-text); background: var(--component-surface); }
+.editbar { display: flex; gap: var(--space-3xs); flex-wrap: wrap; align-items: center; padding: var(--space-2xs); border-radius: var(--radius-panel); background: var(--surface-toolbar); box-shadow: var(--shadow-small); inline-size: fit-content; max-inline-size: 100%; }
+.panel { background: var(--surface); box-shadow: var(--shadow-small); border-radius: var(--radius-panel); padding: var(--space-m); display: grid; gap: var(--space-m); }
+.field { display: grid; gap: var(--space-2xs); }
+label, .muted { color: var(--muted); }
+input:not([type=checkbox]), select, textarea { inline-size: 100%; min-block-size: var(--size-control); border: 0; background: var(--surface-input); border-radius: var(--radius-small); padding: var(--space-xs); box-shadow: inset 0 -1px var(--control-line); }
+textarea { min-block-size: calc(var(--size-touch) * 2); resize: block; }
+input:user-invalid { box-shadow: inset 0 -2px var(--danger-fg); }
+.actions { flex-wrap: wrap; }
+.actions > :last-child { margin-inline-start: auto; }
+.code { font: var(--type-small)/1.7 var(--font-mono); background: var(--surface-subtle); padding: var(--space-m); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+[popover], dialog { border: 0; color: var(--text); background: var(--surface); border-radius: var(--radius-panel); box-shadow: var(--shadow); padding: var(--space-s); inline-size: min(24rem, calc(100vw - var(--space-l))); max-block-size: calc(100dvh - var(--space-l)); overflow: auto; }
+[popover] { margin: 0; inset: auto; }
+@supports (position-area: block-end) { [popover] { position-area: block-end span-inline-end; position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline; margin-block-start: var(--space-xs); } }
+[popover] h2, dialog h2 { margin-block-end: var(--space-s); }
+.p-menu-item { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); text-align: start; border: 0; background: transparent; padding: var(--space-xs); border-radius: var(--radius); }
+.p-menu-item span:last-child { margin-inline-start: auto; color: var(--muted); }
+hr { border: 0; border-block-start: 1px solid var(--line); margin-block: var(--space-xs); }
+dialog::backdrop { background: color-mix(in oklch, var(--background) 70%, transparent); }
+[popover] form, dialog form { display: grid; gap: var(--space-s); }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: clip; clip-path: inset(50%); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: var(--space-m); }
+.picture { display: grid; place-items: center; min-block-size: var(--picture-height); border-radius: var(--radius); background: var(--surface-subtle); color: var(--muted); }
+.picture svg { inline-size: 70%; block-size: auto; max-block-size: var(--picture-height); }
+.canvas-node { display: block; inline-size: 100%; border: 0; background: transparent; color: var(--text); border-radius: var(--radius); padding: var(--space-m); text-align: start; }
+.canvas-node[aria-pressed=true] { outline: var(--focus-ring); outline-offset: var(--space-4xs); }
+@media (pointer: coarse), (width <= 650px) { :is(.p-button,.seg button,.p-menu-item,.node,input:not([type=checkbox]),select) { min-block-size: var(--size-touch); } .p-icon-button { inline-size: var(--size-touch); block-size: var(--size-touch); } input, textarea, select { font-size: 16px; } .work { padding: var(--space-xs); } }
+
+#sections { display:grid; gap:var(--space-m); }</style></head>
+<body data-mode="today"><main class="mock"><h1>Unique anchors on duplicate</h1><div class="strip"><a href="index.html">All prototypes</a><div class="seg" role="group" aria-label="Comparison"><button data-mode-button="today" aria-pressed="true">Today</button><button data-mode-button="after" aria-pressed="false">After</button></div><button class="p-button" id="restart">Restart</button></div><section class="app" aria-label="Editor prototype"><header class="toolbar"><strong>Larkspur Studio</strong><span id="page-name">Home</span><button class="p-icon-button" id="undo" aria-label="Undo" title="Undo" disabled><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 4-4 4 4 4M4 8h9a7 7 0 0 1 0 14"/></svg></button></header><div id="scene"><div class="work"><div class="canvas"><div class="editbar"><button class="p-button" id="duplicate">Duplicate section</button></div><div id="sections"></div><details class="panel" open><summary>Source</summary><pre class="code" id="anchor-source"></pre></details></div></div></div></section><p id="announce" class="sr-only" role="status" aria-live="polite"></p></main><script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icons = {
+ dots:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+ copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/>',
+ up:'<path d="m5 14 7-7 7 7"/>', down:'<path d="m5 10 7 7 7-7"/>',
+ trash:'<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/>',
+ back:'<path d="m14 5-7 7 7 7"/>', search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
+ link:'<path d="m10 8 3-3a4 4 0 0 1 6 6l-3 3M14 16l-3 3a4 4 0 0 1-6-6l3-3M8 16l8-8"/>',
+ x:'<path d="m6 6 12 12M18 6 6 18"/>', undo:'<path d="m8 4-4 4 4 4M4 8h9a7 7 0 0 1 0 14"/>',
+ component:'<path d="m12 3 9 9-9 9-9-9Z"/>', pencil:'<path d="m15 4 5 5-11 11H4v-5ZM12 7l5 5"/>',
+ code:'<path d="m8 6-6 6 6 6M16 6l6 6-6 6"/>', picture:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="2"/><path d="m3 17 6-5 4 3 4-4 4 5"/>'
+};
+const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.component}</svg>`;
+const ib = (name, glyph, attributes='') => `<button class="p-icon-button" aria-label="${esc(name)}" title="${esc(name)}" ${attributes}>${icon(glyph)}</button>`;
+const button = (name, attributes='') => `<button class="p-button" ${attributes}>${esc(name)}</button>`;
+const announce = text => $('#announce').textContent = text;
+let mode = 'today';
+let history = [];
+function remember(value) { history.push(structuredClone(value)); $('#undo').disabled = false; }
+function closePopovers() { $$('[popover]:popover-open').forEach(p => p.hidePopover()); }
+function attachPopovers() {
+  $$('[popover]').forEach(p => {
+    if (p.dataset.wired) return;
+    p.dataset.wired = 'true';
+    let trigger;
+    p.addEventListener('beforetoggle', e => { if(e.newState === 'open') trigger = document.activeElement; });
+    p.addEventListener('toggle', e => {
+      if(e.newState === 'open') p.querySelector('button,input,select,textarea')?.focus();
+      else if(trigger?.isConnected) trigger.focus();
+    });
+    p.addEventListener('keydown', e => {
+      const controls = [...p.querySelectorAll('button:not(:disabled),input,select,textarea,a[href]')];
+      if(e.key === 'Tab' && controls.length) {
+        const first=controls[0], last=controls.at(-1);
+        if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+        else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+      }
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+        if(document.activeElement?.matches('input,textarea,select')) return;
+        e.preventDefault();
+        const i=controls.indexOf(document.activeElement), delta=e.key==='ArrowDown'?1:-1;
+        controls[(i+delta+controls.length)%controls.length]?.focus();
+      }
+    });
+  });
+}
+function switchMode(next) {
+  closePopovers(); mode=next; history=[];
+  document.body.dataset.mode=mode;
+  $$('[data-mode-button]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.modeButton===mode)));
+  $('#undo').disabled=true;
+  reset(); render(); attachPopovers();
+}
+$$('[data-mode-button]').forEach(b=>b.onclick=()=>switchMode(b.dataset.modeButton));
+$('#restart').onclick=()=>switchMode(mode);
+$('#undo').onclick=()=>{ if(history.length){ restore(history.pop()); render(); attachPopovers(); $('#undo').disabled=!history.length; announce('Undone'); } };
+document.addEventListener('keydown',e=>{
+ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.target.closest('input,textarea,[contenteditable]')){e.preventDefault();$('#undo').click();}
+ if(e.key==='Escape') closePopovers();
+});
+
+
+let anchors;
+function reset(){anchors=['work'];}
+function restore(s){anchors=s;}
+function render(){
+ $('#sections').innerHTML=anchors.map((a,i)=>`<section class="panel ${i===anchors.length-1?'selection':''}" data-anchor="${a}" id="${a}" tabindex="0"><h3>Recent work${i?' copy':''}</h3><label class="field">Anchor name<input value="${a}" readonly aria-label="Anchor name ${i+1}"></label><a href="#${a}">View this work</a></section>`).join('');
+ $('#anchor-source').textContent=anchors.map(a=>`<section-recent-work id="${a}">\n  <a href="#${a}">View this work</a>\n</section-recent-work>`).join('\n');
+}
+$('#duplicate').onclick=()=>{remember(anchors);let name='work';if(mode==='after'){let n=2;while(anchors.includes(name))name='work-'+n++;}anchors.push(name);render();$$('[data-anchor]').at(-1).focus();announce('Section duplicated with anchor '+name);};
+
+switchMode('today');</script></body></html>
