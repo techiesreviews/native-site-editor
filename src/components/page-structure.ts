@@ -1085,7 +1085,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const followed = !el && menuOpening && menuTree && structure?.path === menuTree.path ? mover(menuTree, structure)(menuOpening.row) : undefined;
       const row = el ?? (followed === undefined ? undefined : rows.get(followed)) ?? [...rows.values()].find(other => other.tabIndex === 0) ?? visibleRows()[0];
       if (item !== undefined && (document.activeElement === null || document.activeElement === document.body)) {
-        if (row) focusRowOnly(row);
+        if (row) { reveal(row); focusRowOnly(row); }
         else if (menuOpening && menuTree) focusLost = { id: menuOpening.row, path: menuTree.path, from: menuTree };
       }
       return;
@@ -1219,7 +1219,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // Drawn without the row that had focus (named in the tree drawn before), or a move's target row: the next
     // redraw that shows its element gives it focus. A row given focus back here is not remembered again.
     else if (focused && (focused === rowFocused || focused === moveTarget) && (document.activeElement === null || document.activeElement === document.body)) {
-      focusLost = { id: focused, path: structure.path, ...focused === moveTarget ? {} : { from: previousTree ?? structure } };
+      const from = previousTree ?? structure;
+      focusLost = focused === moveTarget ? { id: focused, path: structure.path } : { id: focused, path: from.path, from };
     }
     else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
   }

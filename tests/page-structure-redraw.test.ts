@@ -94,6 +94,13 @@ test("a redraw that empties the tree gives focus back to the row that had it onc
   await page.locator("#outside").focus();
   await page.evaluate(() => redrawSidebar.update(redrawPage("v3")));
   assert.equal(await focusedNode(page), "outside");
+  // Another page drawn without that row: its own later paints give no row of theirs that focus.
+  await row("1").focus();
+  await page.evaluate(() => {
+    redrawSidebar.update({ ...redrawPage("a1"), path: "about.html", items: redrawPage("a1").items.slice(0, 1) });
+    redrawSidebar.update({ ...redrawPage("a2"), path: "about.html" });
+  });
+  assert.equal(await page.evaluate(() => document.activeElement === document.body), true);
 }));
 
 // Edit component mode settling, or a late paint, draws the tree again just after a row's menu
@@ -234,4 +241,14 @@ test("a template row's menu opens again on a redraw of the same bytes, and stays
   // A paragraph added above: the second row now stands for what was the first.
   await page.evaluate(() => { templateBytes = "new\na\nb"; redrawSidebar.refresh(); });
   assert.equal(await menu.isVisible(), false);
+  // R6-11 in Edit component mode: a keyboard-opened template row menu closed by a change to a page row
+  // below gives focus to that same template row.
+  await second.focus();
+  const focusedRow = () => page.evaluate(() => { const el = document.activeElement as HTMLElement | null; return el?.dataset.node ?? el?.localName; });
+  const own = await focusedRow();
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => { const next = redrawPage("v-t1"); next.items[2] = { ...next.items[2], text: "Renamed" }; redrawSidebar.update(next); });
+  assert.equal(await menu.isVisible(), false);
+  assert.equal(await focusedRow(), own);
 }));
