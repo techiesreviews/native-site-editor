@@ -429,8 +429,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     previewElementMenu?.close(false);
     previewElementMenu?.element.remove();
     previewElementMenu = createRowMenu(ports.app);
-    // The component tools never run before the first paint: they load two frames and a beat after it
-    // (the runtime reports the structure just before the frame presents it), for the preview painted.
+    // The component tools load two frames and a beat after the first paint (the runtime reports the
+    // structure just before the frame presents it), for the preview painted; an action that needs them
+    // sooner (the element menu, New component, an Inbox row's shared part) loads them itself.
     let toolsDue = false;
     const toolsAfterPaint = () => {
       if (toolsDue) return;
