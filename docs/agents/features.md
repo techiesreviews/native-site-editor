@@ -577,7 +577,7 @@ its number unused.
 
 ### F-bar-11 Right-click element menu
 - Try: Right-click a section in the page.
-- Good: A menu of the actions that fit it (Make component on containers only); Escape, a press or a scroll closes it (B4, B5).
+- Good: A menu of the actions that fit it (Make component on containers only); Escape, a press or your scroll closes it (B4, B5), while the page scrolling itself (bringing what you chose into view, Edit component mode showing its part) leaves it open.
 - Files: `src/components/element-menu.ts`, `src/page-builder-host.ts`
 - Phone: no
 - Spec: `tests/native-save/native-make-component-menus.spec.ts`
