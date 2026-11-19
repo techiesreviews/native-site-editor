@@ -206,6 +206,7 @@ test("Lex and Anna type in one paragraph on the page and end identical; each see
       expect(presses, "each press takes back at least one of Anna's letters").toBeLessThan(annaTyped.length);
       await undo.click();
       await expect.poll(() => leadText(lex.page), { timeout: 20_000 }).not.toBe(was);
+      expect(await leadText(lex.page), "a press takes back only Anna's words").toContain(lexTyped.trim());
     }
     for (const tab of [lex, anna]) {
       await expect.poll(async () => (await lead(tab.page).textContent())?.replace(/\s+/g, " ").trim(), { timeout: 20_000 }).toBe(`${before.trim()}${lexTyped}`);

@@ -37,11 +37,12 @@ test("pauseAhead refuses less than 1 ms ahead", async () => {
   assert.deepEqual(asked, []);
 });
 
-test("pauseAhead pauses ahead of the latest frame's clock: a preview frame running ahead of the page, a frame gone left out", async () => {
+test("pauseAhead pauses ahead of the latest frame's clock: a preview frame running ahead of the page, a frame gone left out, the page's own error kept", async () => {
   const { page, asked } = stubPage([1000, 1001], [past(), undefined], [1020, 1021], "gone");
   await pauseAhead(page, 1);
   assert.deepEqual(asked, [1021, 1022]);
-  const none = stubPage([], [], "gone");
-  none.page.frames = () => [{ evaluate: async () => { throw new Error("Frame was detached"); } }];
-  await assert.rejects(pauseAhead(none.page, 1), /any frame/);
+  const closed = stubPage([], []);
+  closed.page.frames = () => [{ evaluate: async () => { throw new Error("Target page, context or browser has been closed"); } }];
+  await assert.rejects(pauseAhead(closed.page, 1), /has been closed/);
+  assert.deepEqual(closed.asked, []);
 });
