@@ -198,7 +198,7 @@ test.describe("new checks (TOOLS-253)", () => {
   });
 
   test("a shared part's row pressed while the component tools still load opens the part once they have loaded", async ({ page, baseURL }) => {
-    // The component tools' module is held until the row is pressed (a slow machine still fetching it).
+    // The component tools' module is held until the row's press has closed the Inbox (a slow machine still fetching it).
     let release!: () => void, reach!: () => void;
     const released = new Promise<void>(resolve => { release = resolve; }), reached = new Promise<void>(resolve => { reach = resolve; });
     await page.route(url => url.pathname === "/src/page-builder/components.ts", async route => { reach(); await released; await route.continue(); });
