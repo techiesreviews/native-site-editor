@@ -24,6 +24,10 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('[data-node]').count(), 3);
   }],
   ['02-link-popup', async p => {
+    await p.getByRole('button', { name: 'Link selected words', exact: true }).click();
+    const todayWords = await p.locator('#words').boundingBox(), todayPopup = await p.locator('#link-popup').boundingBox();
+    assert.ok(todayWords && todayPopup && todayPopup.y < todayWords.y + todayWords.height);
+    await p.keyboard.press('Escape');
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.getByRole('button', { name: 'Link selected words', exact: true }).click();
     const a = await p.locator('#words').boundingBox(), b = await p.locator('#link-popup').boundingBox();
@@ -33,6 +37,9 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('#words a').getAttribute('href'), '/about/');
   }],
   ['03-canvas-page', async p => {
+    await p.getByRole('button', { name: 'About', exact: true }).click({ modifiers: ['Control'] });
+    assert.equal(await p.locator('#page-name').textContent(), 'Home');
+    assert.match(await p.locator('#page-heading').textContent() ?? '', /About/);
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.getByRole('button', { name: 'About', exact: true }).click({ modifiers: ['Control'] });
     assert.equal(await p.locator('#page-name').textContent(), 'About');
@@ -40,6 +47,11 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.match(await p.locator('#page-heading').textContent() ?? '', /About/);
   }],
   ['04-media-details', async p => {
+    await p.getByRole('button', { name: 'Open Studio desk', exact: true }).click();
+    await p.getByLabel('Description', { exact: true }).fill('Unfinished description');
+    await p.getByRole('button', { name: 'Back to media', exact: true }).click();
+    await p.getByRole('button', { name: 'Open Studio desk', exact: true }).click();
+    assert.equal(await p.getByLabel('Description', { exact: true }).inputValue(), 'Saved desk illustration');
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.getByRole('button', { name: 'Open Studio desk', exact: true }).click();
     await p.getByLabel('Description', { exact: true }).fill('Unfinished description');
@@ -55,6 +67,8 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.getByLabel('Description', { exact: true }).inputValue(), 'New saved description');
   }],
   ['05-clean-paste', async p => {
+    await p.getByRole('button', { name: 'Paste sample', exact: true }).click();
+    assert.equal(await p.locator('#copy p,#copy li,#copy a').count(), 0);
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.getByRole('button', { name: 'Paste sample', exact: true }).click();
     assert.equal(await p.locator('#copy p').count(), 2);
@@ -65,6 +79,8 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('#copy').innerText(), 'A small studio with a thoughtful approach.');
   }],
   ['06-unique-anchors', async p => {
+    await p.getByRole('button', { name: 'Duplicate section', exact: true }).click();
+    assert.deepEqual(await p.locator('[data-anchor]').evaluateAll(nodes => nodes.map(n => n.getAttribute('data-anchor'))), ['work', 'work']);
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.getByRole('button', { name: 'Duplicate section', exact: true }).click();
     await p.getByRole('button', { name: 'Duplicate section', exact: true }).click();
@@ -86,6 +102,10 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     assert.equal(await p.locator('[data-tree]').count(), 5);
   }],
   ['08-command-search', async p => {
+    await p.keyboard.press('Control+k');
+    await p.getByLabel('Search commands', { exact: true }).fill('heading');
+    await p.getByLabel('Search commands', { exact: true }).press('Enter');
+    assert.equal(await p.locator('[data-element]').count(), 4);
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.keyboard.press('Control+k');
     await p.getByLabel('Search commands', { exact: true }).fill('heading');

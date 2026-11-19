@@ -246,7 +246,7 @@ function edit(kind,trigger){
  if(kind==='image')$$('[data-picture]').forEach(b=>b.onclick=()=>{remember(snap());picture=b.dataset.picture;closePopovers();render();attachPopovers();});
  else {
   remember(snap());
-  $('#client-value').oninput=e=>{if(kind==='heading'){heading=e.target.value;$('#client-heading').textContent=heading;}else{const value=e.target.value;if(/^(https?:\/\/|\/|#|mailto:)/i.test(value)){link=value;$('#client-link').href=link;}}};
+  $('#client-value').oninput=e=>{if(kind==='heading'){heading=e.target.value;$('#client-heading').textContent=heading;}else{const value=e.target.value;if(/^(https?:\/\/|\/|#|mailto:)/i.test(value)&&!value.startsWith('//')){link=value;$('#client-link').href=link;e.target.setCustomValidity('');}else e.target.setCustomValidity('Use a page, web address or email link.');}};
   $('#client-form').onsubmit=e=>{e.preventDefault();closePopovers();};
  }
 }
