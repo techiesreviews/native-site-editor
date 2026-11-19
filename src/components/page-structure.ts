@@ -379,6 +379,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // a template row's bytes) and a row of the same `name`: any change could put another element in its place.
   let menuOpening: { path: string; rows: string; row: string; name: string; painted?: string; button?: string; at?: { x: number; y: number } } | undefined;
   const menuOpeners = new WeakMap<HTMLElement, { name: string; painted?: string; open: (anchor: HTMLElement, at?: { x: number; y: number }) => boolean }>();
+  // Edit component mode's parts as last drawn, by template path (a nested mode's are left out): a part a
+  // closed menu was opened on is followed from them, as page rows are from the tree.
+  const drawnTemplates = new Map<string, readonly NativeStructureItem[]>();
   // A move that opened its file first and settled before the tree showed its bytes (`moved`): the
   // render that shows them focuses `to`'s row, while `from`'s row (the row moved) still has focus.
   let focusAfterMove: { from: string; to: string; path: string; page: boolean; moved: string | undefined } | undefined;
@@ -645,6 +648,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (opened.current) rootAlias = { key: templateKey(opened.path, opened.root), id, path: opened.path, node: [...opened.root], painted: (modeRows ?? template)?.source };
       el.dataset.templatePath = opened.path;
     } else templateRoots.delete(item);
+    if (modeRows && !modeRows.nested) drawnTemplates.set(modeRows.path, modeRows.items);
     if (modeRows?.nested) outerRows.add(item);
     if (modeRows) framedRows.add(item); else framedRows.delete(item);
     const slotModel = !template && !modeRows && structure?.path ? handlers.componentSlots?.(structure.path, item.node) : undefined;
@@ -1070,7 +1074,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // The item a keyboard user had moved to keeps focus.
     const active = document.activeElement;
     const item = active instanceof HTMLElement && menu.element.contains(active) ? active.textContent : undefined;
-    const menuTree = drawnTree;
+    const menuTree = drawnTree, menuTemplates = new Map(drawnTemplates);
     redraw();
     if (!open) return;
     // The same rows as when it opened: the same id names the same element (a row of another name is another element).
@@ -1080,10 +1084,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const anchor = !el || !reopen || !opener ? undefined : reopen.button === undefined ? el
       : [...el.querySelectorAll<HTMLElement>("button")].find(control => control.getAttribute("aria-label") === reopen.button);
     if (!anchor || !opener?.open(anchor, reopen?.at)) {
-      // The menu cannot come back: focus it held goes to its element's row (followed from the tree the menu
-      // was drawn in), else the tree's own; with no rows drawn, the next redraw that shows its element gives it focus.
-      const followed = !el && menuOpening && menuTree && structure?.path === menuTree.path ? mover(menuTree, structure)(menuOpening.row) : undefined;
-      const row = el ?? (followed === undefined ? undefined : rows.get(followed)) ?? [...rows.values()].find(other => other.tabIndex === 0) ?? visibleRows()[0];
+      // The menu cannot come back: focus it held goes to its element's row (the same row while its opener still
+      // matches, else followed from the rows drawn with the menu), else the tree's own; with no rows drawn, the
+      // next redraw that shows its element gives it focus.
+      const followed = opener ? reopen?.row : menuOpening && menuTree ? followDrawn(menuOpening.row, menuTree, menuTemplates) : undefined;
+      const row = (followed === undefined ? undefined : rows.get(followed)) ?? [...rows.values()].find(other => other.tabIndex === 0) ?? visibleRows()[0];
       if (item !== undefined && (document.activeElement === null || document.activeElement === document.body)) {
         if (row) { reveal(row); focusRowOnly(row); }
         else if (menuOpening && menuTree) focusLost = { id: menuOpening.row, path: menuTree.path, from: menuTree };
@@ -1098,6 +1103,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     menu.close(false);
     rows.clear();
     items.clear();
+    drawnTemplates.clear();
     movable.clear();
     rootAlias = undefined;
     slotRows.clear();
@@ -1339,6 +1345,15 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   function mover(before: NativeStructure, after: NativeStructure) {
     const rowOf = before.items === after.items ? undefined : followRows(before.items, after.items);
     return (id: string) => !rowOf || id.startsWith("@") ? id : rowOf(id);
+  }
+  // Where row `id`, drawn with the page's `tree` and Edit component mode's `templates`, is in the rows drawn now:
+  // a page row followed through the page, a template's part through that template's parts (undefined: gone).
+  function followDrawn(id: string, tree: NativeStructure, templates: ReadonlyMap<string, readonly NativeStructureItem[]>) {
+    if (!id.startsWith("@")) return structure?.path === tree.path ? mover(tree, structure)(id) : undefined;
+    const at = id.lastIndexOf(":"), path = id.slice(1, at);
+    const before = templates.get(path), after = drawnTemplates.get(path);
+    const part = before && after ? followRows(before, after)(id.slice(at + 1)) : undefined;
+    return part === undefined ? undefined : `@${path}:${part}`;
   }
   // The same page drawn again with rows added, removed or moved above others (Undo, Redo, an edit in
   // code, Edit component mode ending as its instance moved, paints held while typing): folds, the mark
