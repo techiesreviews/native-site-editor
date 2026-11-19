@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page, type WebSocketRoute } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { pauseAhead } from "../support/clock";
 
 // The MCP menu's three states (Lex, 2026-10-23): Connect to MCP, Wait for MCP, Disconnect MCP.
 // One button and its dot; feedback on the button itself, never a toast, hint or link.
@@ -1444,7 +1445,7 @@ test("a press while the failed prompt's reconnect is under way makes one prompt 
   const { action, made, token } = await failedPromptReconnecting(page, context, baseURL);
   // Time stands still from here: a press that waited out the reconnect's backoff never prompts.
   await page.clock.install();
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
+  await pauseAhead(page, 100);
   await action.click();
   // Copied stays while the clock stands still (Wait for MCP follows it).
   await expect(action).toHaveText("Copied");

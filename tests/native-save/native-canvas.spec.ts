@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { selectText } from "./click-text";
 import { editorMounted } from "./drafts";
+import { pauseAhead } from "../support/clock";
 
 // The canvas (page builder, canvas slice; docs/page-builder/canvas.md):
 // breakpoints and a draggable frame width, hover labels, the selection's
@@ -437,7 +438,7 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   // `performance` too, and Monaco's input-latency measure then throws on every key.
   // The timers this check needs are all set after it.
   await page.clock.install();
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+  await pauseAhead(page, 1_000);
   await page.mouse.click(box.x + 30, box.y + box.height / 2);
   await page.mouse.click(clearBox.x + clearBox.width / 2, clearBox.y + clearBox.height / 2);
   const seen = await pointed.jsonValue();
