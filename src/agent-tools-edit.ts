@@ -24,8 +24,9 @@ interface Options {
 }
 /**
  * How long an edit that keeps losing the race to another change of its file (the user typing elsewhere in it)
- * is prepared again, beyond its first three runs, before it is refused (ms). On a slow machine one preparation
- * can outlast several keys, so a count alone refuses an edit the user never clashed with.
+ * is prepared again, beyond its first three runs, before it is refused (ms), counted from the first race it
+ * lost since it last waited for the user to leave its part. On a slow machine one preparation can outlast
+ * several keys, so a count alone refuses an edit the user never clashed with.
  */
 export const AGENT_RACE_RETRY_MS = 5000;
 type Request = AgentEdit | AgentStatus;
@@ -228,7 +229,7 @@ export function createAgentEditTools(options: Options) {
          */
         const leaveUser = async () => {
           const free = userPart(command, () => pin.away());
-          if (!free || request.operation !== "edit") return;
+          if (!free || request.operation !== "edit") return false;
           if (!flight.waited) {
             await records.wait(workspace, request.id, request.grantId, identity!);
             check();
@@ -245,11 +246,13 @@ export function createAgentEditTools(options: Options) {
           // Shown, it lands on the text now; on its own site not shown, there (finishAgentTextElsewhere).
           if (!pin.away()) await landWaited(command, ports.source?.(command.path));
           check();
+          return true;
         };
         let outcome: Awaited<ReturnType<Options["run"]>>;
-        const until = now() + AGENT_RACE_RETRY_MS;
+        // The race retry's time limit, from the first race lost since the edit last waited for the user.
+        let until: number | undefined;
         for (let attempt = 1; ; attempt++) {
-          await leaveUser();
+          if (await leaveUser()) until = undefined;
           // A text write's file is its agent's own from before its draft shows (a parallel read's catch-up
           // must not tell it back); a page command's hash is known only once it lands (below).
           if (command.operation === "write_file")
@@ -265,6 +268,7 @@ export function createAgentEditTools(options: Options) {
             // by proofs, not wording: no receipt or cancellation kept for it (nothing was changed by the attempt,
             // so its proofs hold again until the next run), an outcome that is not unknown, and its file's text
             // moved (below). A reason of its own stands. Three runs, and more for a while (AGENT_RACE_RETRY_MS).
+            until ??= now() + AGENT_RACE_RETRY_MS;
             if ((attempt > 2 && now() >= until) || unknownOutcome(error)) throw error;
             const kept = await records.status(workspace, request.id, request.grantId);
             if (kept.status !== "unknown") throw error;
