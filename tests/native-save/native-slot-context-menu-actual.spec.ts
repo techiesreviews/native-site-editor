@@ -72,15 +72,19 @@ for (const entry of ["canvas", "Structure right-click", "Structure button", "Shi
     const source = () => effectiveSource(page, baseURL, TEMPLATE);
     const undo = () => page.locator(".code-editor__undo").first().click();
     const open = async () => {
-      if (entry === "canvas") {
-        await expect(async () => {
-          await frame(page).locator("section-work p.lede:visible").click({ button: "right" });
-          await expect(menu(page)).toBeVisible({ timeout: 1000 });
-        }).toPass();
-      } else if (entry === "Structure right-click") await ledeRow(page).click({ button: "right" });
+      // The canvas and the Structure outline are drawn again just after the mode opens: a press on the old one opens
+      // nothing, so it is pressed again until the menu shows.
+      const until = (press: () => Promise<void>) => expect(async () => {
+        await press();
+        await expect(menu(page)).toBeVisible({ timeout: 1000 });
+      }).toPass();
+      if (entry === "canvas") await until(() => frame(page).locator("section-work p.lede:visible").click({ button: "right" }));
+      else if (entry === "Structure right-click") await until(() => ledeRow(page).click({ button: "right" }));
       else if (entry === "Structure button") {
-        await ledeRow(page).hover();
-        await ledeRow(page).getByRole("button", { name: `Actions for Paragraph ${LEDE}`, exact: true }).click();
+        await until(async () => {
+          await ledeRow(page).hover();
+          await ledeRow(page).getByRole("button", { name: `Actions for Paragraph ${LEDE}`, exact: true }).click();
+        });
       } else { await ledeRow(page).focus(); await ledeRow(page).press(entry); }
       await expect(menu(page)).toBeVisible();
     };
