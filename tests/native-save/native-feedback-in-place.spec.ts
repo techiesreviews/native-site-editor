@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
 import { openSiteSettings } from "./site-settings-open";
+import { pauseAhead } from "../support/clock";
 
 // Atomic catalogue 07: no toasts. A result is said in the #status live region (heard by screen
 // readers) and shows where it happened; Undo is the top bar's. A Media screen's inline warning
@@ -95,6 +96,10 @@ test("Files, ⋯, Copy path: the check shows on that ⋯ button, and the live re
   const more = line.getByRole("button", { name: "Actions for index.html", exact: true });
   const dots = await more.innerHTML();
   await more.click();
+  // The check shows for a moment (1.6 s, src/ui/done-mark.ts): the page's clock stands still while it is looked at, so a
+  // loaded machine cannot let it end first. Installed here, not before the page loads (Monaco's input-latency measure).
+  await page.clock.install();
+  await pauseAhead(page, 1);
   await page.getByRole("menu", { name: "Actions for index.html" }).getByRole("menuitem", { name: "Copy path", exact: true }).click();
   expect(await page.evaluate(() => (window as Window & { copied?: string }).copied)).toBe("index.html");
   await expect(more).toHaveAttribute("data-done", "");
@@ -106,6 +111,7 @@ test("Files, ⋯, Copy path: the check shows on that ⋯ button, and the live re
   await expect(page.locator("#status")).toHaveText("Copied index.html");
   await expect(toast(page)).toHaveCount(0);
   // It goes back to the dots by itself.
+  await page.clock.resume();
   await expect(more).not.toHaveAttribute("data-done", "");
   expect(await more.innerHTML()).toBe(dots);
   await expect(more).toHaveAccessibleName("Actions for index.html");
