@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { openEditor } from "../support/scenarios";
 import { circleOnTop } from "./caret-flags";
-import { editorMounted } from "./drafts";
+import { editorMounted, storedDraft } from "./drafts";
 import { openLiveRoom, type LiveRoomSocket } from "../../src/live-room";
 import type { JsonValue } from "../../shared/agent-command";
 
@@ -46,17 +46,22 @@ async function typeInCode(page: Page, after: string, text: string, phone = false
   if (!phone) await page.keyboard.type(text);
 }
 
-/** An agent connected over MCP (from a third tab, as the fixture's own account, with live sharing off) joins the page's
- * room as the relay lets agents in (a bearer token, from Node), and says it works in Claude Code (as `name`) with its
- * caret where `follow`'s is; with `claim`, it says it is that person's author id. An agent's own text joins the copy
- * through the tab that receives its commands (am-25, native-agent-merge.spec.ts). */
-async function agentAt(browser: Browser, baseURL: string, follow: string, { name = "Claude Code", claim }: { name?: string; claim?: string } = {}) {
+/** An agent connected over MCP (from a third tab, as the fixture's own account) joins the page's room as the relay lets
+ * agents in (a bearer token, from Node), and says it works in Claude Code (as `name`) with its caret where `follow`'s is;
+ * with `claim`, it says it is that person's author id. An agent's own text joins the copy through the tab that receives
+ * its commands (am-25, native-agent-merge.spec.ts). `copy` is the room's text of the page (the others' unsaved words). */
+async function agentAt(browser: Browser, baseURL: string, follow: string, copy: string, { name = "Claude Code", claim }: { name?: string; claim?: string } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await openEditor(page, baseURL);
+  // The third tab shares live too: the room's copy reaches it as a draft of its own. Connect to MCP waits until that
+  // draft is kept, as a person's press a moment after opening would: a draft written while the press takes the site
+  // over fails the takeover (src/agent-records.ts, setFence), and the press then makes no token.
+  await editorMounted(page);
+  await expect.poll(async () => (await storedDraft(page, file))?.content, { timeout: 20_000 }).toBe(copy);
   await page.locator(".repository-menu__trigger").click();
-  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST", { timeout: 20_000 });
   await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await made).json() as { token: string };
   const connect = (url: string) => new Promise<LiveRoomSocket>((resolve, reject) => {
@@ -226,7 +231,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
     expect(dark.letter).not.toBe(paint.letter);
     await lex.page.emulateMedia({ colorScheme: "light" });
     // An agent in the room: its circle holds the icon of its program, its name on hover.
-    agent = await agentAt(browser, baseURL!, "Lex");
+    agent = await agentAt(browser, baseURL!, "Lex", await source(lex.page));
     const agentAtLex = lex.page.locator('.monaco-editor .live-caret__flag[data-agent][aria-label="Claude Code"]');
     await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
     await expect(agentAtLex).toHaveAccessibleName("Claude Code");
@@ -245,7 +250,7 @@ test("Lex and Anna type in the code pane and see each other's carets; an agent s
       await editor.getAction("editor.unfoldAll")?.run();
       editor.setScrollTop(editor.getTopForLineNumber(line));
     });
-    const impostor = await agentAt(browser, baseURL!, "Lex", { name: "Impostor", claim: "Anna" });
+    const impostor = await agentAt(browser, baseURL!, "Lex", await source(lex.page), { name: "Impostor", claim: "Anna" });
     try {
       const impostorAtLex = lex.page.locator('.monaco-editor .live-caret__flag[aria-label="Impostor"]');
       const pane = lex.page.locator(".code-editor .monaco-editor").first();
@@ -373,7 +378,7 @@ test("on a phone the tag opens on a tap with 44 px targets inside the pane, even
     }, { timeout: 20_000 }).toBe(true);
     // An agent at the same place (its tag never has an undo) opens to the side with room: its tag stays in the pane with
     // more than a letter of its name; when it leaves, its caret goes.
-    const agent = await agentAt(browser, baseURL!, longName);
+    const agent = await agentAt(browser, baseURL!, longName, await source(lex.page));
     try {
       const agentAtLex = lex.page.locator('.monaco-editor .live-caret__flag[aria-label="Claude Code"]');
       await expect(agentAtLex).toBeVisible({ timeout: 20_000 });
