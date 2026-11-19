@@ -3,6 +3,8 @@ import { AgentRecordsError, type AgentCommit, type AgentRecords } from "./agent-
 import { githubScope, same } from "./workspace-session.ts";
 
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
+/** Reloads one takeover makes before drafts that keep changing under it fail it. */
+const TAKEOVER_RELOADS = 3;
 
 /** A tab's admission gate. Only IndexedDB transactions decide ownership. */
 export function createAgentOwner(options: {
@@ -41,12 +43,22 @@ export function createAgentOwner(options: {
         // Durable pause serializes even an unresponsive old tab against admission.
         await records.pause(workspace, expected);
         await records.reconcile(workspace, pending);
-        const snapshot = await records.snapshot(workspace);
-        if (snapshot.generation !== expected || !snapshot.paused) throw conflict();
-        // Reload is observational; its copy cannot change the CAS proof across this await.
-        await reload(structuredClone(snapshot));
-        const changed = await records.setFence(workspace, expected, expected + 1, snapshot);
-        fence = changed.generation;
+        let snapshot: Snapshot, next: number;
+        // This tab's own drafts may still be written while it reloads (live sharing keeps the room's
+        // copy as one): then the CAS refuses, and the drafts are read and reloaded again, a few times.
+        for (let tries = 1; ; tries++) {
+          snapshot = await records.snapshot(workspace);
+          if (snapshot.generation !== expected || !snapshot.paused) throw conflict();
+          // Reload is observational; its copy cannot change the CAS proof across this await.
+          await reload(structuredClone(snapshot));
+          try {
+            next = (await records.setFence(workspace, expected, expected + 1, snapshot)).generation;
+            break;
+          } catch (error) {
+            if (tries >= TAKEOVER_RELOADS || !(error instanceof AgentRecordsError && error.code === "conflict")) throw error;
+          }
+        }
+        fence = next;
         // Reload/CAS can suspend the tab: one transaction rechecks ownership and every
         // authorization before exposing outcomes, with no await after it. Evicted or
         // revoked receipts now remain unknown; a superseded takeover stays paused.
