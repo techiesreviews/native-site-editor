@@ -325,10 +325,14 @@ test("a card dragged by its title moves, Escape puts a drag back, the arrows nud
 
   await page.reload();
   await expect(page.locator("#card-button")).toHaveAttribute("style", new RegExp(nudged.replace(/[.]/g, "\\.")));
+  // The reloaded board's frames draw again and may take the keys meanwhile (a press or a typed X would go to the frame).
+  await settled(page);
   // Picked in the outline, the arrows move it straight away.
-  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true }).click();
+  const picked = page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Button", exact: true });
+  await picked.click();
   const shown = page.getByRole("complementary", { name: "Options" }).getByRole("spinbutton", { name: "Y" });
   const yBefore = Number(await shown.inputValue());
+  await expect(picked).toBeFocused();
   await page.keyboard.press("Shift+ArrowDown");
   await expect(shown).toHaveValue(String(yBefore + 10));
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("catalogue:places") ?? "{}").button?.y as number)).toBeGreaterThan(0);
