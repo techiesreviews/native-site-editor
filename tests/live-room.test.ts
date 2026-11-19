@@ -859,9 +859,9 @@ function cryptoPorts(race: AwaitRace) {
   return () => { for (const name of names) Reflect.deleteProperty(subtle, name); };
 }
 /** A joiner whose sends after `run.closed` are counted; `run.live` is closed at once if the disturbance came first. */
-function racingJoiner(h: ReturnType<typeof relayHarness>, run: { closed: boolean; sentAfter: number; own: ReturnType<typeof fakeClock>; live?: ReturnType<typeof openLiveRoom> }) {
+function racingJoiner(h: ReturnType<typeof relayHarness>, run: { closed: boolean; sentAfter: number; own: ReturnType<typeof fakeClock>; live?: ReturnType<typeof openLiveRoom>; peers?: ReadonlyMap<string, LivePeer> }) {
   run.live = openLiveRoom({
-    repo: repo.full_name, branch: "main", file: "index.html", clock: run.own.clock, onMessage: () => undefined,
+    repo: repo.full_name, branch: "main", file: "index.html", clock: run.own.clock, onMessage: () => undefined, onPeers: next => { run.peers = next; },
     connect: async url => {
       const { client } = h.pair("editor", room, new URL(url, origin).searchParams.get("rejoin") ?? undefined);
       return { ...client, send: data => { if (run.closed) run.sentAfter++; client.send(data); } } satisfies LiveRoomSocket;
@@ -890,7 +890,11 @@ test("closing at any crypto await of a join, handover, presence or send sends no
       await joiner.ready().catch(() => undefined);
       joiner.setPresence({ name: "Joiner" });
       await joiner.send(new TextEncoder().encode("edit")).catch(() => undefined);
-      await new Promise(resolve => setTimeout(resolve, 30));
+      // Every crypto step of the run has happened once Anna has read the edit and each has read the other's presence
+      // (a fixed wait could end before them on a loaded machine, and the replays would count other steps). A close
+      // stops the run: nothing more is sent or read.
+      const named = (peers: ReadonlyMap<string, LivePeer> | undefined, name: string) => [...peers?.values() ?? []].some(peer => (peer.state as { name?: string } | undefined)?.name === name);
+      await until(() => run.closed || (anna!.got.includes("edit") && named(anna!.peers, "Joiner") && named(run.peers, "Anna")), "the edit and both presences read");
     })().finally(() => { anna?.live.close(); restore(); });
     return run;
   }, run => { run.closed = true; run.live?.close(); }, noStaleWrite);
