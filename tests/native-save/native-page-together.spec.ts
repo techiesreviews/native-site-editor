@@ -198,12 +198,12 @@ test("Lex and Anna type in one paragraph on the page and end identical; each see
     const undo = annaAtLex.getByRole("button", { name: "Undo Anna's change" });
     await expect(undo).toBeVisible();
     // Her typing is one change, or more when a loaded machine held her keys apart for longer than Yjs groups typing
-    // (500 ms): each press takes back one, and shows before the next.
+    // (500 ms): each press takes back one, and shows before the next; never more presses than she typed letters.
     const leadText = async (page: Page) => (await lead(page).textContent())?.replace(/\s+/g, " ").trim();
     for (let presses = 0; ; presses++) {
       const was = await leadText(lex.page);
       if (was === `${before.trim()}${lexTyped}`) break;
-      expect(presses, "Anna's typing goes in a few presses").toBeLessThan(4);
+      expect(presses, "each press takes back at least one of Anna's letters").toBeLessThan(annaTyped.length);
       await undo.click();
       await expect.poll(() => leadText(lex.page), { timeout: 20_000 }).not.toBe(was);
     }
