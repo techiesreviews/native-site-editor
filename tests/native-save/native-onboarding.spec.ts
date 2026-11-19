@@ -68,21 +68,23 @@ async function publishNow(page: Page) {
 
 // The sign-in screen: one button for everyone. The worker decides where the
 // sign-in leads (see native-setup-wizard.spec.ts for each branch).
-const signedOutSession = (page: Page, delay = 0) =>
+// With `held`, the session answers only once `held` settles.
+const signedOutSession = (page: Page, held?: Promise<void>) =>
   page.route("**/api/session", async (route) => {
-    // fixed-wait: Injects session latency so the initial sign-in loading state can be observed.
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    await held;
     await route.fulfill({ json: { configured: true, user: null } });
   });
 
 test("the sign-in screen shows a loading state first, then one Continue with GitHub button and no choice", async ({ page, baseURL }) => {
-  await signedOutSession(page, 1200);
+  let answer!: () => void;
+  await signedOutSession(page, new Promise<void>(resolve => { answer = resolve; }));
   await page.goto(`${baseURL}/`);
   // Until the session answers: a spinner in the same card, and no button to flash.
   await expect(page.getByRole("status").filter({ hasText: "Checking your account…" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toHaveCount(0);
   const card = page.locator(".login-card");
   const before = await card.boundingBox();
+  answer();
   const button = page.getByRole("link", { name: "Continue with GitHub" });
   await expect(button).toBeVisible();
   await expect(button).toHaveAttribute("href", "/auth/login");
