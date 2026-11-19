@@ -8,12 +8,12 @@ export interface ClockPage {
   clock: { pauseAt(time: number): Promise<void> };
 }
 
-/** The latest time any of the page's frames reads (each frame keeps its own clock; a frame gone meanwhile is left out). */
+/** The latest time any of the page's frames reads (each frame keeps its own clock). A child frame gone meanwhile is
+ * left out; the main frame's own error stands. One page per browser context: `pauseAt` pauses every page's frames. */
 async function latest(page: ClockPage) {
-  const times = await Promise.all(page.frames().map(frame => frame.evaluate(() => Date.now()).catch(() => undefined)));
-  const read = times.filter((time): time is number => time !== undefined);
-  if (!read.length) throw new Error("pauseAhead could not read the clock of any frame.");
-  return Math.max(...read);
+  const [main, ...children] = page.frames();
+  const times = await Promise.all([main.evaluate(() => Date.now()), ...children.map(frame => frame.evaluate(() => Date.now()).catch(() => undefined))]);
+  return Math.max(...times.filter((time): time is number => time !== undefined));
 }
 
 /**
