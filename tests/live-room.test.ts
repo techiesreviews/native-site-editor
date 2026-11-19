@@ -879,7 +879,7 @@ const noStaleWrite = async (run: { sentAfter: number; own: ReturnType<typeof fak
 test("closing at any crypto await of a join, handover, presence or send sends nothing more and leaves no timers", async () => {
   const points = await forEachAwait(race => {
     const restore = cryptoPorts(race), shared = fakeClock(), h = relayHarness();
-    const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, done: Promise.resolve() as Promise<unknown> };
+    const run = { closed: false, sentAfter: 0, own: fakeClock(), live: undefined as ReturnType<typeof openLiveRoom> | undefined, peers: undefined as ReadonlyMap<string, LivePeer> | undefined, done: Promise.resolve() as Promise<unknown> };
     // The baseline run gets no assertion call: each run undoes its own crypto ports and closes its holder.
     let anna: ReturnType<typeof participant> | undefined;
     run.done = (async () => {
