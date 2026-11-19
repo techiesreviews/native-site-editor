@@ -374,8 +374,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // Where the open row menu was opened (its row, its button's name or the pointer's place), and each
   // row's way to open its menu: a redraw replaces the row, and the menu opens again on the new one.
   // `name`: the menu's name, which says whose actions it holds; it opens again only on a row of that name.
-  let menuOpening: { path: string; row: string; name: string; button?: string; at?: { x: number; y: number } } | undefined;
-  const menuOpeners = new WeakMap<HTMLElement, { name: string; open: (anchor: HTMLElement, at?: { x: number; y: number }) => boolean }>();
+  // `painted`: a template row's bytes (its ids are not followed through edits): changed, the menu stays closed.
+  let menuOpening: { path: string; row: string; name: string; painted?: string; button?: string; at?: { x: number; y: number } } | undefined;
+  const menuOpeners = new WeakMap<HTMLElement, { name: string; painted?: string; open: (anchor: HTMLElement, at?: { x: number; y: number }) => boolean }>();
   // A move that opened its file first and settled before the tree showed its bytes (`moved`): the
   // render that shows them focuses `to`'s row, while `from`'s row (the row moved) still has focus.
   let focusAfterMove: { from: string; to: string; path: string; page: boolean; moved: string | undefined } | undefined;
@@ -723,11 +724,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const items = entries({ anchor, ...at ? { at } : {} });
       if (!items.length) return false;
       menu.open(anchor, items, at, menuName);
-      menuOpening = { path: structure!.path, row: id, name: menuName, ...anchor === el ? {} : { button: anchor.getAttribute("aria-label") ?? "" }, ...at ? { at } : {} };
+      menuOpening = { path: structure!.path, row: id, name: menuName, ...own ? { painted: own.paintedSource } : {},
+        ...anchor === el ? {} : { button: anchor.getAttribute("aria-label") ?? "" }, ...at ? { at } : {} };
       return true;
     };
     const menuName = `Actions for ${kind}${text ? ` ${text}` : ""}`;
-    menuOpeners.set(el, { name: menuName, open: openMenu });
+    menuOpeners.set(el, { name: menuName, ...own ? { painted: own.paintedSource } : {}, open: openMenu });
     if (hasMenu) {
       const more = iconButton(menuName, null, { title: "More actions", className: "page-structure__action", action: () => {
         if (menu.isOpen() && menu.opener === more) { menu.close(true); return; }
@@ -1071,7 +1073,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (!open) return;
     // follow() moved `row` to the element's id in this paint (or forgot it, with its element gone); a row of another name is another element.
     const el = reopen ? rows.get(reopen.row) : undefined;
-    const opener = el && reopen && menuOpeners.get(el)?.name === reopen.name ? menuOpeners.get(el) : undefined;
+    const found = el && menuOpeners.get(el);
+    const opener = found && reopen && found.name === reopen.name && found.painted === reopen.painted ? found : undefined;
     const anchor = !el || !reopen || !opener ? undefined : reopen.button === undefined ? el
       : [...el.querySelectorAll<HTMLElement>("button")].find(control => control.getAttribute("aria-label") === reopen.button);
     if (!anchor || !opener?.open(anchor, reopen?.at)) {
@@ -1202,8 +1205,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // A row moved into a folded container (Alt+→) shows before it takes focus.
     if (focused && rows.has(focused)) { reveal(rows.get(focused)!); focusRowOnly(rows.get(focused)!); }
     // Drawn without the row that had focus, or a move's target row (a paint with no rows yet): the next redraw
-    // that shows it gives it focus. (A row given focus back by this redraw is not remembered again: tried once.)
-    else if (focused && (focused === rowFocused || focused === moveTarget) && (document.activeElement === null || document.activeElement === document.body)) focusLost = { id: focused, path: structure.path };
+    // that shows it gives it focus. A row given focus back is remembered again only while no rows are drawn,
+    // so a paint with rows tries it once.
+    else if (focused && (focused === rowFocused || focused === moveTarget || (focused === lost?.id && rows.size === 0)) && (document.activeElement === null || document.activeElement === document.body)) focusLost = { id: focused, path: structure.path };
     else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
   }
 
