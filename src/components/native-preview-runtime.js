@@ -3344,14 +3344,17 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
     }
   });
   // A right-click selects the element and asks the editor for its menu; the
-  // next press or scroll here closes that menu (the editor's own document
-  // never sees them). The browser's menu stays for text being typed in.
+  // person's next press or wheel here closes that menu (the editor's own document
+  // never sees them). Scrolls the page makes itself (what was chosen brought into
+  // view, Edit component mode showing its part) leave it open: a right-click can
+  // land before their scroll event does. The browser's menu stays for text being typed in.
   var contextMenuOpen = false;
   function dismissContextMenu() {
     if (!contextMenuOpen) return;
     contextMenuOpen = false;
     emit("dismiss-context-menu");
   }
+  window.addEventListener("wheel", dismissContextMenu, { capture: true, passive: true });
   document.addEventListener("contextmenu", function (e) {
     if (!state || state.viewing) return;
     var target = deepestElement(e);
@@ -4464,7 +4467,6 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   }
 
   function refreshScroll(event) {
-    dismissContextMenu();
     var root = event.target && event.target.getRootNode ? event.target.getRootNode() : null;
     if (event.currentTarget instanceof ShadowRoot) {
       // Slotted light-DOM scrolls belong to the window listener. Detached
