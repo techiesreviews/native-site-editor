@@ -9,6 +9,8 @@ declare global {
   var redrawFactory: typeof createPageStructure;
   var redrawSidebar: ReturnType<typeof createPageStructure>;
   var redrawPage: (painted: string, above?: number, box?: boolean) => NativeStructure;
+  // The same page after Alt+Down moved the section below the last paragraph.
+  var movedPage: (painted: string) => NativeStructure;
   var menuRuns: string[];
   // Edit component mode on the section: its template's bytes, each line a "Read more" paragraph (unset: no mode).
   var templateBytes: string | undefined;
@@ -32,12 +34,15 @@ async function inBrowser(run: (page: import("@playwright/test").Page) => Promise
       globalThis.redrawPage = (painted: string, above = 0, box = true): NativeStructure => ({ path: "index.html", paintedSource: painted, items: [
         ...Array.from({ length: above }, (_, at) => item("p", [at], `New ${at}`)), item("h1", [above], "Title"),
         ...box ? [item("section", [above + 1], "Box", [item("p", [above + 1, 0], "Inside")])] : [], item("p", [above + (box ? 2 : 1)], "Last")] });
+      globalThis.movedPage = (painted: string): NativeStructure => ({ path: "index.html", paintedSource: painted, items: [
+        item("h1", [0], "Title"), item("p", [1], "Last"), item("section", [2], "Box", [item("p", [2, 0], "Inside")])] });
       globalThis.menuRuns = [];
       globalThis.templateBytes = undefined;
       const host = document.createElement("div"); document.body.append(host);
       const outside = document.createElement("input"); outside.id = "outside"; document.body.append(outside);
       globalThis.redrawSidebar = redrawFactory(host, {
         pageSource: () => "", announce: () => {}, onSelect: () => {},
+        onMove: (_path: string, entry: NativeStructureItem, direction: string) => entry.tag === "section" && direction === "down" ? [entry.node[0] + 1] : undefined,
         label: (entry: NativeStructureItem) => ({ kind: entry.tag, text: entry.text }),
         menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" || entry.text === "Read more" ? ["Make component", "Remove"].map(label =>
           ({ label, run: () => { menuRuns.push(`${label} ${entry.text} at ${entry.node.join(".")}`); } })) : [],
@@ -155,6 +160,65 @@ test("a row's menu opened just before the tree is drawn again stays open on the 
   await page.evaluate(() => redrawSidebar.update(redrawPage("v5", 0, false)));
   assert.equal(await menu.isVisible(), false);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "treeitem");
+}));
+
+// R6-11: a paint that changes other rows closes a keyboard-opened menu (it never opens on a changed page);
+// the focus it held goes to its own element's row, not to the tree's first row.
+test("a keyboard-opened row menu closed by a change to other rows gives focus to its own row", () => inBrowser(async page => {
+  const row = (node: string) => page.locator(`[role=treeitem][data-node="${node}"]`);
+  const menu = page.getByRole("menu");
+  // A paragraph added above renumbers the section: focus goes to its row, now "2".
+  await row("1").focus();
+  await page.keyboard.press("Shift+F10");
+  await page.keyboard.press("ArrowDown");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Remove");
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v1", 1)));
+  assert.equal(await menu.isVisible(), false);
+  assert.equal(await focusedNode(page), "2");
+  // The last paragraph renamed below it: the section's row keeps its number and takes focus.
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => { const next = redrawPage("v2", 1); next.items[3] = { ...next.items[3], text: "Renamed" }; redrawSidebar.update(next); });
+  assert.equal(await menu.isVisible(), false);
+  assert.equal(await focusedNode(page), "2");
+}));
+
+// R6-12: a move's row takes focus at the next render; a paint with no rows (or no page) before the moved
+// page must not lose it.
+test("a moved row takes focus when the tree shows no rows for a moment before the moved page", () => inBrowser(async page => {
+  const row = (node: string) => page.locator(`[role=treeitem][data-node="${node}"]`);
+  // A paint of the page with no rows yet, then the moved page.
+  await row("1").focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.evaluate(() => { redrawSidebar.update({ path: "index.html", paintedSource: "v-none", items: [] }); redrawSidebar.update(movedPage("v1")); });
+  assert.equal(await focusedNode(page), "2");
+  // The preview showing no page for a moment, then the moved page.
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v2")));
+  await row("1").focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await page.evaluate(() => { redrawSidebar.update({ path: "", items: [] }); redrawSidebar.update(movedPage("v3")); });
+  assert.equal(await focusedNode(page), "2");
+}));
+
+// SL-1: the tree empties while a keyboard-opened row menu is open: the menu goes, and its row takes focus
+// once the page's rows come back.
+test("a keyboard-opened row menu interrupted by an empty tree gives focus to its row when the rows come back", () => inBrowser(async page => {
+  const row = (node: string) => page.locator(`[role=treeitem][data-node="${node}"]`);
+  const menu = page.getByRole("menu");
+  // The preview shows a component by itself, then the page again.
+  await row("1").focus();
+  await page.keyboard.press("Shift+F10");
+  await page.keyboard.press("ArrowDown");
+  await page.evaluate(() => redrawSidebar.update({ path: "", items: [] }));
+  assert.equal(await menu.isVisible(), false);
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v1")));
+  assert.equal(await focusedNode(page), "1");
+  // A paint of the page with no rows yet, then its rows with a paragraph added above: the section's row, now "2".
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => { redrawSidebar.update({ path: "index.html", paintedSource: "v-none", items: [] }); redrawSidebar.update(redrawPage("v2", 1)); });
+  assert.equal(await menu.isVisible(), false);
+  assert.equal(await focusedNode(page), "2");
 }));
 
 // Edit component mode: template rows keep their ids through edits, so a menu opens again on one only
