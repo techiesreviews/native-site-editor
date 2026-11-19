@@ -1,9 +1,1 @@
-[
-  {
-    "spec": "native-save/native-image-popup.spec.ts",
-    "title": "a phone's shape menu is whole on screen, uncovered, and Free can be pressed",
-    "status": "flaky",
-    "since": "2026-11-18",
-    "note": "Flaky under load: failed once in the full local run for TOOLS-330 (PR #395, toBeInViewport on the shape menu) and passed alone. Its failures still fail the suite; the label only marks them."
-  }
-]
+[]
