@@ -12,7 +12,7 @@ declare global {
   // The same page after Alt+Down moved the section below the last paragraph.
   var movedPage: (painted: string) => NativeStructure;
   var menuRuns: string[];
-  // Edit component mode on the section: its template's bytes, each line a "Read more" paragraph (unset: no mode).
+  // Edit component mode on the section: its template's bytes, each line a "Read more <line>" paragraph (unset: no mode).
   var templateBytes: string | undefined;
 }
 
@@ -44,12 +44,12 @@ async function inBrowser(run: (page: import("@playwright/test").Page) => Promise
         pageSource: () => "", announce: () => {}, onSelect: () => {},
         onMove: (_path: string, entry: NativeStructureItem, direction: string) => entry.tag === "section" && direction === "down" ? [entry.node[0] + 1] : undefined,
         label: (entry: NativeStructureItem) => ({ kind: entry.tag, text: entry.text }),
-        menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" || entry.text === "Read more" ? ["Make component", "Remove"].map(label =>
+        menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" || entry.text.startsWith("Read more") ? ["Make component", "Remove"].map(label =>
           ({ label, run: () => { menuRuns.push(`${label} ${entry.text} at ${entry.node.join(".")}`); } })) : [],
         templateRows: (_path: string, at: readonly number[]) => templateBytes === undefined || at.join(".") !== "1" ? undefined : {
           path: "card.html", root: [0], source: templateBytes, badge: () => undefined,
           items: [{ tag: "div", node: [0], text: "", heading: "", slot: "", chips: [], paintedSource: templateBytes,
-            children: templateBytes.split("\n").map((_, at) => ({ tag: "p", node: [0, at], text: "Read more", heading: "", slot: "", chips: [], paintedSource: templateBytes, children: [] })) }],
+            children: templateBytes.split("\n").map((line, at) => ({ tag: "p", node: [0, at], text: `Read more ${line}`, heading: "", slot: "", chips: [], paintedSource: templateBytes, children: [] })) }],
         },
       } satisfies PageStructureHandlers);
       redrawSidebar.update(redrawPage("v0"));
@@ -251,4 +251,14 @@ test("a template row's menu opens again on a redraw of the same bytes, and stays
   await page.evaluate(() => { const next = redrawPage("v-t1"); next.items[2] = { ...next.items[2], text: "Renamed" }; redrawSidebar.update(next); });
   assert.equal(await menu.isVisible(), false);
   assert.equal(await focusedRow(), own);
+  // A part added above it in the template: focus follows the part to its new number, not the part now at its old one.
+  const partB = page.locator("[role=treeitem][data-template-path]").filter({ hasText: "Read more b" });
+  await partB.focus();
+  const before = await focusedRow();
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => { templateBytes = "new\nnewer\na\nb"; redrawSidebar.refresh(); });
+  assert.equal(await menu.isVisible(), false);
+  assert.notEqual(await focusedRow(), before);
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.includes("Read more b")), true);
 }));
