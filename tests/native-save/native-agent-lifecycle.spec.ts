@@ -403,7 +403,8 @@ test("freeze/resume (document lifecycle events): a frozen owner keeps its socket
     await lifecycle(page, "freeze");
     await lifecycle(page, "resume");
     expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
-    expect(h.traffic.commands()).toHaveLength(count + 1);
+    // The command frame comes through the page's socket events, which can trail the call's own answer.
+    await expect.poll(() => h.traffic.commands().length).toBe(count + 1);
     expect(h.traffic.ready()).toHaveLength(1);
     expect(await durable(page)).toEqual(before);
   } finally { await h.client.close(); }
