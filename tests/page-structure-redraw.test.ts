@@ -10,6 +10,8 @@ declare global {
   var redrawSidebar: ReturnType<typeof createPageStructure>;
   var redrawPage: (painted: string, above?: number, box?: boolean) => NativeStructure;
   var menuRuns: string[];
+  // Edit component mode on the section: its template's bytes, each line a "Read more" paragraph (unset: no mode).
+  var templateBytes: string | undefined;
 }
 
 // Page Structure alone in a browser page: a heading, a section with a paragraph in it and a last
@@ -31,13 +33,19 @@ async function inBrowser(run: (page: import("@playwright/test").Page) => Promise
         ...Array.from({ length: above }, (_, at) => item("p", [at], `New ${at}`)), item("h1", [above], "Title"),
         ...box ? [item("section", [above + 1], "Box", [item("p", [above + 1, 0], "Inside")])] : [], item("p", [above + (box ? 2 : 1)], "Last")] });
       globalThis.menuRuns = [];
+      globalThis.templateBytes = undefined;
       const host = document.createElement("div"); document.body.append(host);
       const outside = document.createElement("input"); outside.id = "outside"; document.body.append(outside);
       globalThis.redrawSidebar = redrawFactory(host, {
         pageSource: () => "", announce: () => {}, onSelect: () => {},
         label: (entry: NativeStructureItem) => ({ kind: entry.tag, text: entry.text }),
-        menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" ? ["Make component", "Remove"].map(label =>
+        menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" || entry.text === "Read more" ? ["Make component", "Remove"].map(label =>
           ({ label, run: () => { menuRuns.push(`${label} ${entry.text} at ${entry.node.join(".")}`); } })) : [],
+        templateRows: (_path: string, at: readonly number[]) => templateBytes === undefined || at.join(".") !== "1" ? undefined : {
+          path: "card.html", root: [0], source: templateBytes, badge: () => undefined,
+          items: [{ tag: "div", node: [0], text: "", heading: "", slot: "", chips: [], paintedSource: templateBytes,
+            children: templateBytes.split("\n").map((_, at) => ({ tag: "p", node: [0, at], text: "Read more", heading: "", slot: "", chips: [], paintedSource: templateBytes, children: [] })) }],
+        },
       } satisfies PageStructureHandlers);
       redrawSidebar.update(redrawPage("v0"));
     });
@@ -63,6 +71,13 @@ test("a redraw that empties the tree gives focus back to the row that had it onc
   assert.equal(await focusedNode(page), "1");
   // A paint of the page with no rows yet, then its rows.
   await page.evaluate(() => { redrawSidebar.update({ path: "index.html", paintedSource: "v-none", items: [] }); redrawSidebar.update(redrawPage("v2b")); });
+  assert.equal(await focusedNode(page), "1");
+  // Two such paints in a row, then the rows.
+  await page.evaluate(() => {
+    redrawSidebar.update({ path: "index.html", paintedSource: "v-none-1", items: [] });
+    redrawSidebar.update({ path: "index.html", paintedSource: "v-none-2", items: [] });
+    redrawSidebar.update(redrawPage("v2c"));
+  });
   assert.equal(await focusedNode(page), "1");
   // Focus that went elsewhere meanwhile stays there.
   await page.evaluate(() => redrawSidebar.update({ path: "", items: [] }));
@@ -124,4 +139,19 @@ test("a row's menu opened just before the tree is drawn again stays open on the 
   await page.evaluate(() => redrawSidebar.update(redrawPage("v5", 0, false)));
   assert.equal(await menu.isVisible(), false);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "treeitem");
+}));
+
+// Edit component mode: template rows keep their ids through edits, so a menu opens again on one only
+// while the template's bytes are the ones it was opened on.
+test("a template row's menu opens again on a redraw of the same bytes, and stays closed once the template changed", () => inBrowser(async page => {
+  await page.evaluate(() => { templateBytes = "a\nb"; redrawSidebar.refresh(); });
+  const second = page.locator("[role=treeitem][data-template-path]").filter({ hasText: "Read more" }).nth(1);
+  const menu = page.getByRole("menu");
+  await second.click({ button: "right" });
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => redrawSidebar.refresh());
+  assert.equal(await menu.isVisible(), true);
+  // A paragraph added above: the second row now stands for what was the first.
+  await page.evaluate(() => { templateBytes = "new\na\nb"; redrawSidebar.refresh(); });
+  assert.equal(await menu.isVisible(), false);
 }));
