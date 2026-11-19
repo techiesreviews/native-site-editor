@@ -79,6 +79,11 @@ test("a redraw that empties the tree gives focus back to the row that had it onc
     redrawSidebar.update(redrawPage("v2c"));
   });
   assert.equal(await focusedNode(page), "1");
+  // The page comes back with a paragraph added above: focus goes to the section's row (now "2"), not to row "1".
+  await page.evaluate(() => { redrawSidebar.update({ path: "", items: [] }); redrawSidebar.update(redrawPage("v2d", 1)); });
+  assert.equal(await focusedNode(page), "2");
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v2e")));
+  await row("1").focus();
   // Focus that went elsewhere meanwhile stays there.
   await page.evaluate(() => redrawSidebar.update({ path: "", items: [] }));
   await page.locator("#outside").focus();
@@ -121,13 +126,24 @@ test("a row's menu opened just before the tree is drawn again stays open on the 
   assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Remove");
   await page.keyboard.press("Escape");
 
-  // A paint that adds a row above renumbers the section ("1" becomes "2"): the menu follows it, and its action is the section's.
+  // A paint that changes the rows (one added above renumbers the section): the menu closes rather than guess.
   await row().click({ button: "right" });
   await page.evaluate(() => redrawSidebar.update(redrawPage("v2", 1)));
+  assert.equal(await menu.isVisible(), false);
+  assert.deepEqual(await page.evaluate(() => menuRuns), []);
+  // Two sections alike, the first one's menu open, the first removed: no menu opens on the one left.
+  await page.evaluate(() => {
+    const twins = redrawPage("v-twins");
+    twins.items.splice(2, 0, { ...twins.items[1], node: [2], children: [] });
+    twins.items[3] = { ...twins.items[3], node: [3] };
+    redrawSidebar.update(twins);
+  });
+  await row().click({ button: "right" });
   assert.equal(await menu.isVisible(), true);
-  await menu.getByRole("menuitem", { name: "Make component" }).click();
-  assert.deepEqual(await page.evaluate(() => menuRuns), ["Make component Box at 2"]);
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v-one")));
+  assert.equal(await menu.isVisible(), false);
   // A paint without the section: its menu goes with it, and no other row's opens in its place.
+  await page.evaluate(() => redrawSidebar.update(redrawPage("v2b", 1)));
   await page.locator(`[role=treeitem][data-node="2"]`).click({ button: "right" });
   await page.evaluate(() => redrawSidebar.update(redrawPage("v3", 2, false)));
   assert.equal(await menu.isVisible(), false);
