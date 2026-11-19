@@ -69,8 +69,9 @@ test("a row selects its element in the preview, brings it into view and opens it
   const frame = page.frameLocator(".native-preview-frame");
   const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
   const filler = frame.locator("section.filler");
-  // The filler section starts below the first screen of the frame.
-  expect((await filler.boundingBox())!.y).toBeGreaterThan(frameBox.y + frameBox.height);
+  // The filler section starts below the first screen of the frame, once the preview has rendered the components
+  // above it (the cards).
+  await expect.poll(async () => (await filler.boundingBox())?.y ?? 0).toBeGreaterThan(frameBox.y + frameBox.height);
 
   await row(page, "Section Scroll to verify").click();
   await expect(row(page, "Section Scroll to verify")).toHaveAttribute("aria-selected", "true");
