@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { editorMounted } from "./drafts";
+import { pauseAhead } from "../support/clock";
 
 // Editing a Structure row's text in place: a first click selects; a second
 // click, a double-click, Enter or F2 turns the row's text into its field
@@ -252,7 +253,7 @@ test("another file's paint keeps the typing field connected, with its text and c
     await expect(field).toBeFocused();
     // Keep the typing pause pending while the other file's paint arrives.
     await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await pauseAhead(page, 0);
     await field.evaluate((field: HTMLTextAreaElement) => {
       field.value = "Typing stays";
       field.dispatchEvent(new Event("input", { bubbles: true }));
