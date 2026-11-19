@@ -1074,7 +1074,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     // The item a keyboard user had moved to keeps focus.
     const active = document.activeElement;
     const item = active instanceof HTMLElement && menu.element.contains(active) ? active.textContent : undefined;
-    const menuTree = drawnTree, menuTemplates = new Map(drawnTemplates);
+    const menuTree = drawnTree, menuTemplates = open ? new Map(drawnTemplates) : undefined;
     redraw();
     if (!open) return;
     // The same rows as when it opened: the same id names the same element (a row of another name is another element).
@@ -1087,7 +1087,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       // The menu cannot come back: focus it held goes to its element's row (the same row while its opener still
       // matches, else followed from the rows drawn with the menu), else the tree's own; with no rows drawn, the
       // next redraw that shows its element gives it focus.
-      const followed = opener ? reopen?.row : menuOpening && menuTree ? followDrawn(menuOpening.row, menuTree, menuTemplates) : undefined;
+      const followed = opener ? reopen?.row : menuOpening && menuTree && menuTemplates ? followDrawn(menuOpening.row, menuTree, menuTemplates) : undefined;
       const row = (followed === undefined ? undefined : rows.get(followed)) ?? [...rows.values()].find(other => other.tabIndex === 0) ?? visibleRows()[0];
       if (item !== undefined && (document.activeElement === null || document.activeElement === document.body)) {
         if (row) { reveal(row); focusRowOnly(row); }
@@ -1348,11 +1348,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   }
   // Where row `id`, drawn with the page's `tree` and Edit component mode's `templates`, is in the rows drawn now:
   // a page row followed through the page, a template's part through that template's parts (undefined: gone).
+  // A part of a template not kept (a nested mode's) keeps its id.
   function followDrawn(id: string, tree: NativeStructure, templates: ReadonlyMap<string, readonly NativeStructureItem[]>) {
     if (!id.startsWith("@")) return structure?.path === tree.path ? mover(tree, structure)(id) : undefined;
     const at = id.lastIndexOf(":"), path = id.slice(1, at);
     const before = templates.get(path), after = drawnTemplates.get(path);
-    const part = before && after ? followRows(before, after)(id.slice(at + 1)) : undefined;
+    if (!before || !after) return id;
+    const part = followRows(before, after)(id.slice(at + 1));
     return part === undefined ? undefined : `@${path}:${part}`;
   }
   // The same page drawn again with rows added, removed or moved above others (Undo, Redo, an edit in

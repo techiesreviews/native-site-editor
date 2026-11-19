@@ -261,4 +261,10 @@ test("a template row's menu opens again on a redraw of the same bytes, and stays
   assert.equal(await menu.isVisible(), false);
   assert.notEqual(await focusedRow(), before);
   assert.equal(await page.evaluate(() => document.activeElement?.textContent?.includes("Read more b")), true);
+  // The part removed while its menu is open: focus stays in the tree.
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => { templateBytes = "new\nnewer\na"; redrawSidebar.refresh(); });
+  assert.equal(await menu.isVisible(), false);
+  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "treeitem");
 }));
