@@ -136,11 +136,15 @@ test("Media details, ⋯, Copy path: the check shows on the ⋯ button, and the 
   await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   const more = panel.getByRole("button", { name: "More for this file", exact: true });
   await more.click();
+  // The check's moment is looked at with the page's clock standing still, as in the Files test above.
+  await page.clock.install();
+  await pauseAhead(page, 1);
   await page.getByRole("menu", { name: "More for this file", exact: true }).getByRole("menuitem", { name: "Copy path", exact: true }).click();
   await expect(more).toHaveAttribute("data-done", "");
   await expect(page.locator("#status")).toHaveText("Path copied.");
   expect(await page.evaluate(() => (window as Window & { copied?: string }).copied)).toBe("/images/a.svg");
   await expect(toast(page)).toHaveCount(0);
+  await page.clock.resume();
   await expect(more).not.toHaveAttribute("data-done", "");
   await page.evaluate(() => (window as any).copyHarness.dispose());
 });
