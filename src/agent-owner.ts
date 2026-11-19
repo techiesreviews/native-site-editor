@@ -13,12 +13,13 @@ export function createAgentOwner(options: {
   fence: number;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
+  /** The clock of the reload time limit (ms, never stepping back); tests pass their own. */
   now?: () => number;
 }) {
   const workspace = structuredClone(options.workspace);
   // A command for this owner's workspace, under the workspace session's one rule (src/workspace-session.ts).
   const ours = (command: AgentCommit) => same(githubScope(command.workspace), githubScope(workspace));
-  const { records, reload, now = Date.now } = options;
+  const { records, reload, now = () => performance.now() } = options;
   let fence = options.fence, paused = false, takingOver = false;
   const inFlight = new Set<AgentCommit>();
   const conflict = () => new AgentRecordsError("conflict", "Agent ownership changed or admission is paused.");
@@ -46,8 +47,9 @@ export function createAgentOwner(options: {
         await records.reconcile(workspace, pending);
         let snapshot: Snapshot, next: number;
         // This workspace's drafts may still be written while the tab reloads (live sharing keeps the
-        // room's copy as one, saved at most every 200 ms while someone types): then the CAS refuses, and
-        // the drafts are read and reloaded again until one try fits between saves, for a while.
+        // room's copy as one, saved at most every FLUSH_DELAY of src/drafts.ts while someone types):
+        // then the CAS refuses, and the drafts are read and reloaded again until one try fits between
+        // saves, for a while.
         const until = now() + TAKEOVER_RELOAD_MS;
         for (;;) {
           snapshot = await records.snapshot(workspace);
