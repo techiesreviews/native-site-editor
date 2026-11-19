@@ -1,4 +1,8 @@
-import type { Page } from "@playwright/test";
+/** What pauseAhead uses of a Playwright page. */
+export interface ClockPage {
+  evaluate(read: () => number): Promise<number>;
+  clock: { pauseAt(time: number): Promise<void> };
+}
 
 /**
  * Stops the page's installed clock `ahead` ms from where it stands. `pauseAt` needs a time still ahead of the
@@ -6,7 +10,7 @@ import type { Page } from "@playwright/test";
  * runner ("Cannot fast-forward to the past"). The clock stops before that check, so after such a refusal it
  * stands still, and a time read from it again is ahead for sure.
  */
-export async function pauseAhead(page: Page, ahead: number) {
+export async function pauseAhead(page: ClockPage, ahead: number) {
   for (let tries = 1; ; tries++) {
     try {
       await page.clock.pauseAt(await page.evaluate(() => Date.now()) + ahead);
