@@ -731,7 +731,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const menuName = `Actions for ${kind}${text ? ` ${text}` : ""}`;
     menuOpeners.set(el, { name: menuName, ...own ? { painted: own.paintedSource } : {}, open: openMenu });
     if (hasMenu) {
-      const more = iconButton(menuName, null, { title: "More actions", className: "page-structure__action", action: () => {
+      const more = iconButton(`Actions for ${kind}${text ? ` ${text}` : ""}`, null, { title: "More actions", className: "page-structure__action", action: () => {
         if (menu.isOpen() && menu.opener === more) { menu.close(true); return; }
         openMenu(more);
       } });
