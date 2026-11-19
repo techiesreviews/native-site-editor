@@ -1202,13 +1202,13 @@ test("an edit that keeps losing the race to the user's typing elsewhere in its f
   // The user types in the next sentence while the agent's edit is prepared: on a slow machine each preparation
   // can outlast several keys, so several runs in a row find the file changed under them.
   const f = await fixture(), home = files["index.html"], hash = f.context.site!.outlines[0].hash;
-  let clock = 0, lose = 0, typed = home;
+  let clock = 0, step = 0, lose = 0, typed = home;
   const ran: AgentCommand[] = [];
   const tools = createAgentEditTools({ workspace, records: f.records, ports: f.ports, now: () => clock, run: async command => {
     ran.push({ ...command });
     if (lose > 0) {
       lose--;
-      clock += 1000;
+      clock += step;
       typed = typed.replace("<h1>Welcome", "<h1>Welcome!");
       f.context.drafts.length = 0;
       f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(typed), content: typed });
@@ -1216,16 +1216,73 @@ test("an edit that keeps losing the race to the user's typing elsewhere in its f
     }
     return f.run(request("write_file", { path: command.path, content: command.content, expectedHash: null }, `${command.id}-landed`)).then(() => ({ message: "Applied.", result: { path: command.path } }));
   } });
-  lose = 4;
-  const landed = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "typing-1"), 0, () => true));
+  /** Runs one edit that loses `losses` races in a row, each run taking `ms` of the clock. */
+  const race = async (id: string, ms: number, losses: number) => {
+    clock = 0; step = ms; lose = losses; typed = home; ran.length = 0; f.context.drafts.length = 0;
+    return body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, id), 0, () => true));
+  };
+  // Twenty quick lost races, well within the time: a count would have refused it long before.
+  const landed = await race("typing-quick", AGENT_RACE_RETRY_MS / 100, 20);
   assert.equal(landed.state, "applied", JSON.stringify(landed));
+  assert.equal(ran.length, 21);
+  assert.equal(ran[20].content, typed.replace(">Fast<", ">Quick<"));
+  // Four slow ones still land.
+  assert.equal((await race("typing-slow", AGENT_RACE_RETRY_MS / 5, 4)).state, "applied");
   assert.equal(ran.length, 5);
-  assert.equal(ran[4].content, typed.replace(">Fast<", ">Quick<"));
-  // Still losing once the while is over (AGENT_RACE_RETRY_MS): refused, with nothing more run.
-  clock = 0; ran.length = 0; lose = 99; typed = home; f.context.drafts.length = 0;
-  const refused = body(await tools.run(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "typing-2"), 0, () => true));
+  // Still losing once the time is over, counted from the first race lost: refused, with nothing more run.
+  const refused = await race("typing-on", AGENT_RACE_RETRY_MS / 5, 99);
   assert.equal(refused.state, "conflict");
-  assert.equal(ran.length, AGENT_RACE_RETRY_MS / 1000);
+  assert.equal(ran.length, 6);
+  // Three runs at least, however long each takes.
+  assert.equal((await race("typing-stalled", AGENT_RACE_RETRY_MS, 99)).state, "conflict");
+  assert.equal(ran.length, 3);
+});
+
+test("an edit that waited for the user to leave its part has the whole race retry time after the wait", async t => {
+  t.after(() => workingPart.left());
+  const live: Record<string, string> = { ...files };
+  const f = await fixture({ source: path => live[path] }), hash = f.context.site!.outlines[0].hash;
+  const ports = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => false, context: f.ports.context }) } satisfies AgentReadPorts;
+  let clock = 0, lose = 0;
+  const ran: AgentCommand[] = [];
+  const type = async (text: string) => {
+    live["index.html"] = text;
+    f.context.drafts.length = 0;
+    f.context.drafts.push({ path: "index.html", baseSha: null, updatedAt: Date.now(), hash: await textHash(text), content: text });
+  };
+  const tools = createAgentEditTools({ workspace, records: f.records, ports, now: () => clock, run: async command => {
+    ran.push({ ...command });
+    if (ran.length === 1) {
+      // The user started typing in the heading meanwhile, and stays in it for longer than the race retry time.
+      await type(live["index.html"].replace("<h1>Welcome</h1>", "<h1>Welcome to</h1>"));
+      workingPart.typed(heading);
+      clock += 1000;
+      throw raceLost();
+    }
+    if (lose > 0) {
+      // Then they type on in the next sentence while the edit is prepared again.
+      lose--;
+      clock += AGENT_RACE_RETRY_MS / 5;
+      await type(live["index.html"].replace(">Fast", ">Fast!"));
+      throw raceLost();
+    }
+    const state = await f.records.workspace(workspace);
+    await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+      receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome: { message: "Applied." }, createdAt: Date.now(), issuedAt: command.createdAt } });
+    live[command.path] = command.content;
+    return { message: "Applied." };
+  } });
+  const edit = request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "Welcome", newText: "Hello" }] }, "wait-then-race");
+  assert.equal(body(await tools.run(edit, 0, () => true)).state, "waiting");
+  clock += 2 * AGENT_RACE_RETRY_MS;
+  lose = 4;
+  workingPart.left(heading);
+  // Bounded by time, not turns: the retry hashes off the main thread, which can outlast many turns under load.
+  for (const until = Date.now() + 2000; ran.length < 6 && Date.now() < until;) await settle();
+  assert.equal(ran.length, 6);
+  assert.equal(body(await tools.run({ operation: "status", id: edit.id, grantId: edit.grantId }, 0, () => true)).state, "applied");
+  assert.match(live["index.html"], /<h1>Hello to<\/h1>/);
+  assert.match(live["index.html"], />Fast!!!!</);
 });
 
 test("an edit prepared again after a race waits when it now changes the part the user types in (ticket 52 holds on retry)", async t => {
