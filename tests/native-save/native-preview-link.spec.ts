@@ -37,9 +37,12 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   // preview's service worker sends itself is left out: Chromium does not report the headers of some (its script's update
   // check), so reading them waits until the worker closes. The empty cookie jar for the address, checked below, is what
   // shows none of them carries a cookie.
-  const previewRequests: Promise<{ url: string; cookie?: string }>[] = [];
+  // A request made after the read below, whose page closes before its headers come, is left unread (the cookie jar
+  // check covers it too).
+  const previewRequests: Promise<{ url: string; cookie?: string } | undefined>[] = [];
   const watch = (request: Request) => {
-    if (new URL(request.url()).hostname === "localhost" && !request.serviceWorker()) previewRequests.push(request.allHeaders().then((headers) => ({ url: request.url(), cookie: headers.cookie })));
+    if (new URL(request.url()).hostname === "localhost" && !request.serviceWorker())
+      previewRequests.push(request.allHeaders().then((headers) => ({ url: request.url(), cookie: headers.cookie }), () => undefined));
   };
   context.on("request", watch);
   await openEditor(lex, baseURL);
@@ -100,8 +103,9 @@ test("a visitor sees Lex's edits live; closing his editor shows not running; tur
   const own = await context.newPage();
   await own.goto(link);
   await expect(previewHeading(own)).toHaveText(`${heading} live`, { timeout: 20_000 });
+  // Read while the page is open: closing it first can leave a request's headers unread (a loaded machine).
+  const sent = (await Promise.all(previewRequests)).filter((request) => request !== undefined);
   await own.close();
-  const sent = await Promise.all(previewRequests);
   expect(sent.length).toBeGreaterThan(2);
   expect(sent.filter((request) => request.cookie)).toEqual([]);
   expect((await context.cookies("http://localhost")).length).toBe(0);
