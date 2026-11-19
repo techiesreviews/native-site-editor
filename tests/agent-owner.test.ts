@@ -306,6 +306,50 @@ test("reload failure leaves admission paused and generation unchanged", async ()
   await assert.rejects(records.commit(command()), code("conflict"));
 });
 
+// TOOLS-353: live sharing keeps the room's copy as this tab's own draft, and can write it while
+// Connect to MCP takes the site over. The press still succeeds: the takeover reads the drafts again
+// and reloads them, so the fence moves only over the drafts this tab has now seen.
+test("a draft written during takeover is reloaded, and the takeover still moves the fence", async () => {
+  const { fake, records } = setup();
+  const manual = indexedDbDrafts(draftDatabaseName, fake.factory);
+  const room = { ...draft, content: "the room's copy" };
+  const seen: (string | undefined)[] = [];
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async (snapshot) => {
+    seen.push(snapshot.drafts[0]?.[1].content);
+    if (seen.length === 1) await manual.write([[key, room]]);
+  } });
+  const transfer = await owner.takeover();
+  assert.deepEqual(seen, [undefined, "the room's copy"], "the second reload holds the draft written during the first");
+  assert.equal(transfer.fence, 1);
+  assert.equal(owner.fence, 1); assert.equal(owner.paused, false);
+  assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 1 });
+  assert.equal((fake.stores.get("drafts")!.get(key) as SavedDraft).content, "the room's copy");
+});
+
+test("drafts that keep changing during takeover leave it failed and paused after three reloads", async () => {
+  const { fake, records } = setup();
+  const manual = indexedDbDrafts(draftDatabaseName, fake.factory);
+  let reloads = 0;
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {
+    await manual.write([[key, { ...draft, content: `typed ${++reloads}` }]]);
+  } });
+  await assert.rejects(owner.takeover(), code("conflict"));
+  assert.equal(reloads, 3);
+  assert.equal(owner.paused, true);
+  assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 0, paused: true });
+});
+
+test("a takeover that lost the fence to another tab while reloading does not try again", async () => {
+  const { fake, records } = setup();
+  let reloads = 0;
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {
+    if (++reloads === 1) await createAgentOwner({ workspace: draft, fence: 0, records: indexedDbAgentRecords(draftDatabaseName, fake.factory), reload: async () => {} }).takeover();
+  } });
+  await assert.rejects(owner.takeover(), code("conflict"));
+  assert.equal(reloads, 1);
+  assert.equal((await records.workspace(draft)).generation, 1);
+});
+
 test("manual writes disturb every commit await; stale plans never overwrite them", async () => {
   const count = await forEachAwait((race) => {
     let first = true;
