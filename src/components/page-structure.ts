@@ -373,8 +373,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let drawnPath = "";
   // Where the open row menu was opened (its row, its button's name or the pointer's place), and each
   // row's way to open its menu: a redraw replaces the row, and the menu opens again on the new one.
-  let menuOpening: { path: string; row: string; button?: string; at?: { x: number; y: number } } | undefined;
-  const menuOpeners = new WeakMap<HTMLElement, (anchor: HTMLElement, at?: { x: number; y: number }) => boolean>();
+  // `name`: the menu's name, which says whose actions it holds; it opens again only on a row of that name.
+  let menuOpening: { path: string; row: string; name: string; button?: string; at?: { x: number; y: number } } | undefined;
+  const menuOpeners = new WeakMap<HTMLElement, { name: string; open: (anchor: HTMLElement, at?: { x: number; y: number }) => boolean }>();
   // A move that opened its file first and settled before the tree showed its bytes (`moved`): the
   // render that shows them focuses `to`'s row, while `from`'s row (the row moved) still has focus.
   let focusAfterMove: { from: string; to: string; path: string; page: boolean; moved: string | undefined } | undefined;
@@ -721,11 +722,12 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const openMenu = (anchor: HTMLElement, at?: { x: number; y: number }) => {
       const items = entries({ anchor, ...at ? { at } : {} });
       if (!items.length) return false;
-      menu.open(anchor, items, at, `Actions for ${kind}${text ? ` ${text}` : ""}`);
-      menuOpening = { path: structure!.path, row: id, ...anchor === el ? {} : { button: anchor.getAttribute("aria-label") ?? "" }, ...at ? { at } : {} };
+      menu.open(anchor, items, at, menuName);
+      menuOpening = { path: structure!.path, row: id, name: menuName, ...anchor === el ? {} : { button: anchor.getAttribute("aria-label") ?? "" }, ...at ? { at } : {} };
       return true;
     };
-    menuOpeners.set(el, openMenu);
+    const menuName = `Actions for ${kind}${text ? ` ${text}` : ""}`;
+    menuOpeners.set(el, { name: menuName, open: openMenu });
     if (hasMenu) {
       const more = iconButton(`Actions for ${kind}${text ? ` ${text}` : ""}`, null, { title: "More actions", className: "page-structure__action", action: () => {
         if (menu.isOpen() && menu.opener === more) { menu.close(true); return; }
@@ -1059,13 +1061,19 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   // page) opens again on the redrawn row, from the same button or pointer place.
   function render() {
     const reopen = menu.isOpen() && menu.opener && tree.contains(menu.opener) ? menuOpening : undefined;
+    // The item a keyboard user had moved to keeps focus.
+    const active = document.activeElement;
+    const item = active instanceof HTMLElement && menu.element.contains(active) ? active.textContent : undefined;
     redraw();
+    // follow() moved `row` to the element's id in this paint; a row of another name is another element.
     if (!reopen || reopen.path !== structure?.path) return;
-    const el = rows.get(reopen.row);
-    const anchor = el && reopen.button !== undefined
+    const el = rows.get(reopen.row), opener = el && menuOpeners.get(el);
+    if (!el || opener?.name !== reopen.name) return;
+    const anchor = reopen.button !== undefined
       ? [...el.querySelectorAll<HTMLElement>("button")].find(control => control.getAttribute("aria-label") === reopen.button)
       : el;
-    if (el && anchor) menuOpeners.get(el)?.(anchor, reopen.at);
+    if (!anchor || !opener.open(anchor, reopen.at) || item === undefined) return;
+    [...menu.element.querySelectorAll<HTMLElement>("[role^='menuitem']")].find(entry => entry.textContent === item)?.focus();
   }
 
   function redraw() {
@@ -1093,6 +1101,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     })() : undefined;
     focusAfterRender = undefined;
     const focusNowhere = document.activeElement === null || document.activeElement === document.body;
+    const rowFocused = focusedRow();
     if (!structure || !structure.path) {
       // The focused row goes with the rows: the next redraw of its page gives it focus again.
       if (focused !== undefined && drawnPath) focusLost = { id: focused, path: drawnPath };
@@ -1184,8 +1193,9 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     if (activeField) editingModule?.closeField(activeField);
     // A row moved into a folded container (Alt+→) shows before it takes focus.
     if (focused && rows.has(focused)) { reveal(rows.get(focused)!); focusRowOnly(rows.get(focused)!); }
-    // Drawn without the focused row (a paint with no rows yet): the next redraw that shows it gives it focus.
-    else if (focused && (document.activeElement === null || document.activeElement === document.body)) focusLost = { id: focused, path: structure.path };
+    // Drawn without the row that had focus (a paint with no rows yet): the next redraw that shows it gives it focus.
+    // (A row given focus back by this redraw is not remembered again, so it is tried once.)
+    else if (focused && focused === rowFocused && (document.activeElement === null || document.activeElement === document.body)) focusLost = { id: focused, path: structure.path };
     else if (!focused && document.activeElement === document.body && previousFocus && slotRows.has(previousFocus)) slotRows.get(previousFocus)!.focus();
   }
 
@@ -1317,6 +1327,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       for (const [id, closed] of folds) { const to = moved(id); if (to !== undefined) foldState.set(to, closed); }
       if (selected !== undefined) selected = moved(selected);
       if (editingInstance !== undefined) editingInstance = moved(editingInstance);
+      // The open menu's row too: rows added above renumber it, and a row gone takes its menu with it.
+      if (menuOpening) { const row = moved(menuOpening.row); menuOpening = row === undefined ? undefined : { ...menuOpening, row }; }
     }
     if (ahead) selected = mover(ahead.at, next)(ahead.id);
   }

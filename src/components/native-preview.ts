@@ -218,7 +218,7 @@ export interface NativePreviewHandlers {
   onMediaEnded?: (id: number) => void;
   /** A right-click in the frame selected `selection`: open its element menu at `point` (host viewport). */
   onContextMenu?: (point: { x: number; y: number }, anchor: HTMLIFrameElement, selection: NativePreviewSelection) => void;
-  /** A press, scroll, re-render with other bytes or History view: close that menu. */
+  /** A press, the person's wheel (not the page's own scrolls), re-render with other bytes or History view: close that menu. */
   onDismissContextMenu?: () => void;
   /** The frame drew another page (the first, a followed link, a file opened): the host reads its images. */
   onRouteShown?: (route: string) => void;
