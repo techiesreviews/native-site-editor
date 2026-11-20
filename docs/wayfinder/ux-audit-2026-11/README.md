@@ -1,6 +1,6 @@
 # November editor UX prototypes
 
-Open [the index](prototypes/index.html) directly. Every page contains its own CSS and JavaScript, starts on Today, and has After and Restart controls. No server, build, login, network request or application change is required. Data is simulated and resets on reload. These are proposals for Lex to try, not approved editor changes.
+Open [the index](prototypes/index.html) directly. Every page contains its own CSS and JavaScript, starts on Today, and has After, System / Light / Dark, and Play a step controls. Comparison and guidance controls are explicitly marked as mock-up controls outside the editor. All eleven reuse catalogue prototype 51’s real tree row markup, tree CSS, icons, component and slot badges, selection styling and workspace layout. The full bakery page has a header, hero, inline bread illustration, product list, contact section and footer. No server, build, login, network request or application change is required. Data is simulated and resets on reload. These are proposals for Lex to try, not approved editor changes.
 
 The baseline is the local audit at `f2dfe9d27`, captured on 19–20 November 2026. The audit's working selection colours, component boundaries, slots, canvas presets and independent source navigation are retained rather than presented as missing capabilities. Today is a focused reproduction, not a full editor emulator. Research-only proposals show the existing route or missing capability without inventing an audit defect.
 
@@ -23,7 +23,7 @@ The baseline is the local audit at `f2dfe9d27`, captured on 19–20 November 202
 - No proposals dropped. Persisting Undo across reload (NSE-09) was not in the eleven requested prototypes; existing prototype Undo demonstrates one action per step, not persistent history.
 - File details keeps its explicit Save details transaction. Other edits apply immediately to the simulated draft. Shared preview gates saving, not typing. No toasts, banners or explanatory strips were added to editor controls.
 - The styling v3 comparison was read before prototype 11. It already offers component/site scopes, width chips, property Clear, group Clear, token suggestions and an inherited effective value. Only the missing per-value provenance chain is new. Today shows the shipped CSS/source route; v3 is planned, not shipped.
-- Selection is limited to siblings with compatible ownership; no claim is made about cross-component selection, slots, invalid nesting, a real system clipboard or permission enforcement. Client mode is a UI sketch, not an access-control implementation.
+- Selection can span different depths and parents; Wrap is limited to adjacent siblings with compatible ownership; no claim is made about cross-component selection, slots, invalid nesting, a real system clipboard or permission enforcement. Client mode is a UI sketch, not an access-control implementation.
 - Unfinished media descriptions survive Back and reopening within this page, not browser reload. Anchor suffixing checks all simulated section names; only copied subtree links are rewritten. Production implementation must handle every descendant ID and reference type.
 - Real fonts cannot be fetched offline. Inter and Roboto Mono are named with system fallbacks. The editor's blue/component violet and light/dark tokens come from the existing catalogue, with component markup adapted into inline HTML because importing application modules would require a build.
 - Feature list: no change (standalone planning pages do not alter a shipped editor feature; task forbids changes outside this folder). `kit ux` has no matching feature to try. `kit shots --spec` requires a scenario under `.scratch/`, outside the permitted authored-file scope; its rejection is recorded, not bypassed.
@@ -37,10 +37,12 @@ The baseline is the local audit at `f2dfe9d27`, captured on 19–20 November 202
 
 ## Validation
 
-These are manual-only focused checks, intentionally outside the application test and type-check configuration because this task may change only this folder. Run them through Agent Kit from the repository root:
+The generated HTML opens directly. `build-prototypes.py` maintains the inline copies from the repository’s existing catalogue 51; regenerating is optional and does not alter that reference.
 
 ```sh
-ASE_OWNER=gpt-nse-ux-protos scripts/agents/port.sh scripts/agents/kit unit docs/wayfinder/ux-audit-2026-11/prototypes.test.ts
+python3 docs/wayfinder/ux-audit-2026-11/build-prototypes.py
+ASE_OWNER=gpt-nse-ux-protos scripts/agents/kit unit docs/wayfinder/ux-audit-2026-11/round-two.test.ts
+nice -n 15 node docs/wayfinder/ux-audit-2026-11/browser-check.mjs
 ```
 
-The twelve checks first failed with the pages and index absent. Browser checks are serial, use local file URLs, block remote HTTP requests and close their browser. Each task exercises its actual controls, then checks horizontal overflow in both colour schemes at 1440 and 390 CSS pixels. These are prototype checks, not proof of real editor fixes or a physical touch/screen-reader test. Final command results and task proof are recorded in [validation.md](validation.md).
+The shell checks failed 0/11 before round two, then passed 11/11. The browser script launches and closes one owned Chromium instance, serially checks 88 combinations (eleven pages × two widths × Today/After × light/dark), plays every guided step, exercises 44 additional keyboard flows, checks visible state and horizontal overflow, and saves screenshots only under the ignored runtime folder `.scratch/ux-round2/`. It makes no server or outside requests. This is manual prototype validation, separate from production application tests. Final results are recorded in validation.md and the PR.

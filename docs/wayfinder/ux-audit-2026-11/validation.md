@@ -1,66 +1,33 @@
-# Validation evidence
+# Round-two validation
 
-## Red checks
+The lead’s browser review accepted the original pages’ basic opening/switching but rejected their fidelity. Round two replaces the thin frames with catalogue 51’s actual tree renderer, row anatomy, styles, icon paths, component and slot badges, and workspace layout. Each page has a complete bakery site, System / Light / Dark controls and 4–5 guided steps plus Start again. The guidance is explicitly marked as mock-up controls outside the editor. Media also repeats those labelled mock-up controls above its modal editor surface, so the modal does not block the walkthrough.
 
-`kit unit docs/wayfinder/ux-audit-2026-11/prototypes.test.ts` first returned `pass 0, fail 12`: each standalone page and the index were absent. All twelve assertions existed before the HTML was generated.
+## Browser evidence
 
-## Scope
+One owned Playwright Chromium instance runs at a time, launched directly with `nice -n 15` under the lead’s explicit fallback authorization. It navigates local HTML files; no preview server or external request is needed. It closes in `finally`. Screenshots and contact sheets are in the ignored runtime folder `.scratch/ux-round2/`, not in git.
 
-Eleven self-contained HTML pages and an index. Each task has one commit. No editor source, dependencies, configuration, old checkout or chat workspace files were changed. Tests and reports live under this task folder. The temporary page-generation helper is removed before handover; opening the HTML needs no generator.
+`browser-check.mjs` checks all 88 combinations: eleven pages × Today/After × 1440/390 CSS pixels × light/dark. It plays each walkthrough in order without forcibly closing popups between steps. It also runs 44 independent keyboard flows with real Tab navigation, Enter, Shift+F10, arrows and Ctrl shortcuts. It checks actual DOM state, popup/text geometry, target size and horizontal overflow. The image sheets were visually inspected for all eight comparison/width/theme groups; individual popup and modal images were inspected for layout details.
 
-## Kit commands
+- Row menu: met — selected a nested section with real siblings and children; opened the row menu, duplicated, moved and removed it; verified 24+ px desktop and 44 px phone targets and synchronized canvas/tree state.
+- Link popup: met — Today overlaps the real paragraph; After clears its rectangle. Keyboard Ctrl+K, address entry and Enter create the actual link.
+- Canvas identity: met — following About leaves Today’s top control at Home; After shows About immediately while source remains index.html until the heading is selected.
+- Media: met — desktop After places Description beside the image near its top. Unfinished text disappears through Back in Today, survives in After, and explicit Discard restores saved text. Keyboard save/reopen retains description and collection.
+- Paste: met — Today flattens the prepared list; After retains two list items, emphasis and a link with no foreign style attributes. A ClipboardEvent at the caret retains existing copy; keyboard Undo removes the paste in one step.
+- Anchors: met — repeated Today duplicates keep work; After produces work, work-2 and work-2-2, each with matching internal href. New anchor names appear on the control immediately.
+- Multi-select: met — After selects heading/paragraph in tree and canvas, wraps a real Div, unwraps it, copies/pastes both, and selects a paragraph and deeper list item. Wrap is disabled across different parents.
+- Command search: met — primitive insertion remains in Today. After finds the existing paragraph in context and duplicates that selection. Ctrl+K, typing and Enter work without a pointer.
+- Shared preview: met — After opens both affected pages before saving, keeps the draft brand visible on About, and shows Saved on both pages on the control. Undo returns it to a pending shared save.
+- Client bar: met — designer permissions and client preview sit over the complete page. Keyboard changes the approved heading and image; client mode hides structure controls and keeps the designer return control.
+- Style source: met — source chain includes token, component, element and phone override; removing width override reveals 32 px, removing element override reveals 24 px, and Undo restores the override.
+
+The illustration, text and page data are simulated; this is prototype validation, not proof of production permissions, clipboard interoperability, source persistence or physical-device behaviour. No application code changed.
+
+## Checks and review
 
 - `RESULT: ok doctor 11/11 checks passed`
-- `RESULT: ok rulebook shared and docs/agents/kitchen-extras.md`
-- `RESULT: fail unit 0/12 (1 files)` — expected red run before implementation.
-- `RESULT: ok ux nothing visible touched` — prototype docs have no editor feature mapping; no UX verdict is claimed.
-- `RESULT: fail shots 0 files, 1 failed, 0 layout findings, contact none` — `Scenario file must live under .scratch/`; the task restricts authored files to this folder. No scenario was placed outside it.
-- `RESULT: ok unit none affected` — no application unit file is affected by prototype docs.
+- `RESULT: fail unit 0/11 (1 files) log .scratch/unit/20261120T002459-3923839.log` — expected red checks before the real shell and guidance existed.
+- `RESULT: ok unit 11/11 (1 files) log .scratch/unit/20261120T003344-219238.log`
+- `RESULT: ok skill-guard`
+- `RESULT: ok prototype-browser 88 comparison states; 44 keyboard flows` — repeated after fixing issues found by browser and screenshot review; final runtime path is in the PR.
 
-See Current evidence and limits for the actual browser-check status, lint results and review evidence. PR results are recorded in the handover. Resource-gated browser checks use the normal port launcher without changing its thresholds.
-
-## Current evidence and limits
-
-`npm run lint` passed twice (837 tickets checked, six feedback lines, zero export failures). All eleven inline scripts pass JavaScript parsing. A local HTML parser confirms that the index links all eleven comparisons, every comparison has Today and After, and no page declares an external script, stylesheet, image or frame resource. These are static checks, not a claim that the browser interactions passed.
-
-The focused interaction suite has **not run past the normal resource gate**. The machine's load remained above its limit (16), reaching more than 40. Three waiting runs were stopped while fixing independent review findings; none launched a browser. No load or memory threshold was changed. The final bounded attempt is reported separately below. No screenshot contact sheet or browser UX verdict is claimed.
-
-Proof lines for the handover and PR:
-
-- Element row actions: not met — built; live click, focus and touch-target checks remain blocked by the resource gate.
-- Link popup placement: not met — built; geometry and keyboard checks remain blocked by the resource gate.
-- Canvas page identity: not met — built; route/source comparison remains blocked by the resource gate.
-- Media details: not met — built; Back, Discard and save/reopen checks remain blocked by the resource gate.
-- Paste with structure: not met — built; sample and real ClipboardEvent checks remain blocked by the resource gate.
-- Unique anchors: not met — built; repeat-duplicate and rewritten-link checks remain blocked by the resource gate.
-- Multi-selection: not met — built; linked selection, valid wrap, unwrap and clipboard checks remain blocked by the resource gate.
-- Command search: not met — built; insertion, finding and selection-action checks remain blocked by the resource gate.
-- Shared-change preview: not met — built; affected-page opening and shared-save Undo checks remain blocked by the resource gate.
-- Client edit bar: not met — built; approved-field and designer-preview checks remain blocked by the resource gate.
-- Style source: not met — built; override removal, inheritance and Undo checks remain blocked by the resource gate.
-- Standalone index and scope: met — HTML parsing found eleven local links and both comparison controls; all tracked changes remain inside this folder.
-- README proposal table: met — eleven rows identify evidence, size and safe assumptions; existing v3 behaviour is distinguished from the new value-source chain.
-
-## Independent review
-
-Two completed Claude Opus 5.5 high reviews found real prototype issues. Fixes preserve collection state, synchronize selection, restore focus, paste at the caret, reject non-adjacent wrapping, restore shared-save state, and keep keyboard actions in their control context. The final review checks those fixes. The initial interrupted review is not counted as a completed round.
-
-The optional suggestion to split the shared inline shell is declined: each requested standalone page remains independently portable without sibling resources. This follows the brief's standalone/no-outside-requests constraint. No skill text was copied into the repository.
-
-Additional RESULT lines so far:
-
-```text
-RESULT: ok bg stop ux-prototypes-review pgid 2315838
-RESULT: fail review interrupted
-RESULT: ok bg stop ux-prototypes-focused pgid 2302615
-RESULT: fail go ux-prototypes-focused exit 143 without a RESULT line
-RESULT: skip second look (gpt-6.1-sol not used: docs-only change)
-RESULT: ok review git diff f2dfe9d27bce876a04a91fe647fdc592c0f720e6...HEAD evidence ../../../../native-site-editor/.scratch/reviews/gpt-nse-ux-protos/20261119T235627Z
-RESULT: ok bg stop ux-prototypes-browser pgid 2356566
-RESULT: fail go ux-prototypes-browser exit 143 without a RESULT line
-RESULT: ok review git diff f2dfe9d27bce876a04a91fe647fdc592c0f720e6...HEAD evidence ../../../../native-site-editor/.scratch/reviews/gpt-nse-ux-protos/20261120T000224Z
-RESULT: ok bg stop ux-prototypes-checked pgid 2669953
-RESULT: fail go ux-prototypes-checked exit 143 without a RESULT line
-```
-
-The final Claude review (20261120T000753Z) found only P3 focus notes and validation gaps. The small focus notes were fixed: Remove preserves its originating control area, empty trees return focus to Undo, and wrap/copy/paste preserve a reachable selection. The focused test file also passed a standalone TypeScript check with `tsc --ignoreConfig --types node --noEmit --module nodenext --moduleResolution nodenext --target es2022 --skipLibCheck`.
+The initial browser runs caught a malformed style-source step and keyboard navigation being intercepted on native page-link buttons. Both were fixed before the completed matrix. The original round-one blocked-browser record is superseded by this real-browser evidence. Final Agent Kit review, PR and CI results are recorded in the PR handover.
