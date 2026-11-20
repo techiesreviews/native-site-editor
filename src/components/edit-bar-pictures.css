@@ -1,0 +1,88 @@
+/* Replace's picture panel (edit-bar-pictures.ts): the site's pictures as
+   tiles, the current one ringed and ticked, Upload… under them. It opens in
+   the edit bar's popover (edit-bar.css), which `:has()` finds holding it; that
+   outranks `.edit-bar__popover` whichever file loads first. */
+.edit-bar__popover:has(> .edit-bar__pictures) {
+  inline-size: min(304px, 100vw - 16px);
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  padding: var(--panel-padding-roomy);
+}
+/* Replace, while its panel is open: pressed, as Media and an open address are (edit-bar.css). */
+.edit-bar__replace[aria-expanded="true"] {
+  background: var(--pressed);
+  color: var(--on-pressed);
+}
+.edit-bar__title {
+  margin: 0 0 var(--space-xs);
+  font-weight: 600;
+}
+/* Only the tiles scroll: the title and Upload… stay in view with every site picture listed.
+   The padding keeps each tile's ring (2px outline, 2px offset) inside the scroll box. */
+.edit-bar__tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xs);
+  padding: var(--space-3xs);
+  margin-inline: calc(-1 * var(--space-3xs));
+  max-block-size: min(240px, 40dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.edit-bar__tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.edit-bar__tile img {
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.edit-bar__tile[aria-pressed="true"] {
+  outline: 2px solid var(--pressed);
+  outline-offset: 2px;
+}
+.edit-bar__tile:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.edit-bar__tile-check {
+  position: absolute;
+  inset-block-start: var(--panel-padding);
+  inset-inline-end: var(--panel-padding);
+  display: grid;
+  place-items: center;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: var(--radius-full);
+  background: var(--pressed);
+  color: var(--on-pressed);
+}
+.edit-bar__pictures .edit-bar__upload {
+  margin-top: var(--space-s);
+}
+.edit-bar__pictures .edit-bar__upload-button:disabled {
+  color: var(--muted);
+  cursor: progress;
+}
+.edit-bar__upload-problem {
+  color: var(--danger-fg);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+@media (hover: hover) and (pointer: fine) {
+  .edit-bar__tile:not([aria-pressed="true"]):hover {
+    outline: 2px solid var(--control-line);
+    outline-offset: 2px;
+  }
+}

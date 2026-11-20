@@ -44,6 +44,9 @@ export function mimeMap(extensions: string): Record<string, string> {
 }
 
 export const pictureExtensions = "jpg jpeg png webp avif";
+/** The photos a session guest may upload, by name ending, with the one type each ending means (TOOLS-185):
+ *  never a drawing (SVG) or a page, which could carry a script that would run from the site once saved. */
+export const guestPhotoTypes = /* @__PURE__ */ mimeMap(pictureExtensions + " gif");
 /** Types a tab's page picture may come back as (src/agent-picture.ts encodes WebP, else JPEG). */
 export const pictureReplyTypes: readonly string[] = /* @__PURE__ */ Object.values(mimeMap("webp jpeg png"));
 const agentVideoExtensions = videoExtensions + " avi mkv mpeg mpg";

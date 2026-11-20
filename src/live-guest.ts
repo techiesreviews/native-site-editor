@@ -1,7 +1,8 @@
 // A synced session's guest page (slice 30; CONTEXT.md "Synced session"): someone
 // with Lex's edit link, and no account, types a name and edits the text of the
-// page he shows. It loads the preview frame and the live room only: no sign-in,
-// GitHub, Save, files, settings or agents exist here.
+// page he shows, and from the edit bar its pictures and links (TOOLS-185). It loads
+// the preview frame, the edit bar and the live room only: no sign-in, GitHub, Save,
+// files, settings or agents exist here.
 //
 // Lex's tab sends each render of its page (src/live-session.ts); this page draws
 // it in the same sandboxed frame the editor uses and sends back the text typed
@@ -14,6 +15,7 @@ import "./live-guest.css";
 import { runtimeDoc } from "./components/preview-frame-doc";
 import { createPreviewLink, iframeFramePort } from "./components/preview-link";
 import { createGuestCarets, sessionCaretList } from "./components/guest-carets";
+import { createGuestEditBar } from "./guest-edit-bar";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
@@ -210,6 +212,8 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
   // type, at most every CARET_MS (typing moves it with every key), and once more when it goes. The latest is told again
   // whenever who is here changes: back after a dropped connection, Lex's tab has forgotten it.
   const carets = createGuestCarets(canvas, frame, frameLink, me);
+  // The edit bar (TOOLS-185): Replace and Focus and crop on a picture, the address on a link; Lex's tab writes them.
+  const editBar = createGuestEditBar({ canvas, frame, frameLink, send, me, picture: (path) => held.get(path) });
   let caretTimer: ReturnType<typeof setTimeout> | undefined, caretNext: PageTextCaret | null | undefined, caretTold: PageTextCaret | null = null;
   const sendCaret = () => {
     caretTimer = undefined;
@@ -263,6 +267,7 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
 
   return {
     receive(message: HostMessage) {
+      if (editBar.receive(message)) return;
       if (message.t === "render" && message.payload && typeof message.payload === "object") {
         take(message.payload.assetChanges);
         const typed = message.typed && typeof message.typed[me] === "number" ? message.typed[me] : 0;
@@ -305,6 +310,7 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
     close() {
       stopTheme();
       clearTimeout(caretTimer);
+      editBar.close();
       carets.close();
       frameLink.close();
     },

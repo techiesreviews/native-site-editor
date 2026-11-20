@@ -169,6 +169,170 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   expect(pageErrors).toEqual([]);
 });
 
+// The guest's edit bar (TOOLS-185): on a picture, Replace (the site's pictures, or an upload) and Focus and crop (the
+// editor's own image popup); on a link, its Address. Each change is Lex's own unsaved change, which his Undo takes back.
+// On a computer the bar floats by the selection; on a phone it sits docked under the page, and its panels open there too.
+const guestBar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
+const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*class="hero-image"[^>]*>/)?.[0] ?? "";
+// A guest's upload: a photo of four coloured quarters (a photo can be trimmed; the fixture's SVGs cannot).
+const quarters = (page: Page) => page.evaluate(() => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 800; canvas.height = 400;
+  const context = canvas.getContext("2d")!;
+  [["#d22", 0, 0], ["#2a2", 400, 0], ["#22d", 0, 200], ["#dd2", 400, 200]].forEach(([colour, x, y]) => { context.fillStyle = colour as string; context.fillRect(x as number, y as number, 400, 200); });
+  return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+});
+
+test("guests swap, upload and crop a picture and change a link from the edit bar; Lex's Undo takes it all back", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(180_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  // A button-style link on the page itself (the starter's links are all in its shared header, which guests leave alone).
+  await lex.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    const at = before.indexOf('<img class="hero-image"');
+    if (at < 0) throw new Error("The fixture's hero picture was not found");
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<a class="hero-link" href="/about/" data-key="hero-link">Read more</a>\n    ' });
+  });
+  await expect(lex.frameLocator(".native-preview-frame").locator(".hero-link")).toHaveText("Read more");
+  const start = await source(lex);
+  const link = await share(lex);
+
+  // Anna, on a computer: the bar floats by the picture she picks.
+  const anna = await guest(browser);
+  const annaFrame = await joins(anna, link, "Anna");
+  // A guest's page shows the site's pictures as Lex's tab sends them (data addresses), not their paths.
+  const shown = (await annaFrame.locator(".hero-image").getAttribute("src"))!;
+  await annaFrame.locator(".hero-image").click();
+  const bar = guestBar(anna.page);
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Image");
+  await expect(bar).not.toHaveAttribute("data-side", "docked");
+
+  // Replace lists the site's pictures, the one shown ticked; a pick is his change at once.
+  await bar.getByRole("button", { name: "Replace the picture" }).click();
+  const panel = anna.page.getByRole("dialog", { name: "Replace the picture" });
+  await expect(panel.getByRole("button", { name: "placeholder.svg" })).toHaveAttribute("aria-pressed", "true");
+  await panel.getByRole("button", { name: "studio-desk.svg" }).click();
+  await expect(panel).toBeHidden();
+  await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
+  await expect(annaFrame.locator(".hero-image")).not.toHaveAttribute("src", shown, { timeout: 20_000 });
+
+  // Or a picture from her computer: it lands in the site's pictures folder and on the page.
+  await bar.getByRole("button", { name: "Replace the picture" }).click();
+  await expect(panel.getByRole("button", { name: "studio-desk.svg" })).toHaveAttribute("aria-pressed", "true");
+  // A file that is not a picture is refused, with the reason beside Upload…, and the panel stays.
+  await expect(panel.getByRole("status")).toHaveText("");
+  await panel.locator('input[type="file"]').setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
+  await expect(panel.getByRole("status")).toHaveText("That file is not a picture");
+  await panel.locator('input[type="file"]').setInputFiles({ name: "guest-quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(anna.page), "base64") });
+  await expect(panel).toBeHidden({ timeout: 20_000 });
+  await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toMatch(/src="\/images\/guest-quarters[^"]*\.(?:jpe?g|webp)"/);
+  const uploaded = /src="([^"]+)"/.exec(await heroTag(lex))![1];
+
+  // Focus and crop opens the editor's own image popup; a shape and a zoom, then Close, is his change: a trimmed copy.
+  await annaFrame.locator(".hero-image").click();
+  await bar.getByRole("button", { name: "Focus and crop" }).click();
+  const popup = anna.page.getByRole("dialog", { name: "Image", exact: true });
+  await expect(popup).toBeVisible({ timeout: 20_000 });
+  await expect(bar.getByRole("button", { name: "Focus and crop" })).toHaveAttribute("aria-expanded", "true");
+  await popup.getByRole("button", { name: /^Shape:/ }).click();
+  await popup.getByRole("menuitemradio", { name: "Square", exact: true }).click();
+  await popup.getByRole("slider", { name: "Zoom" }).fill("200");
+  await anna.page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect.poll(() => heroTag(lex), { timeout: 30_000 }).toMatch(/aspect-ratio: 1 \/ 1/);
+  await expect.poll(async () => /src="([^"]+)"/.exec(await heroTag(lex))?.[1], { timeout: 30_000 }).toMatch(/^\/[\w/]+\/guest-quarters[^"/]*-crop\.\w+$/);
+  const cropped = /src="([^"]+)"/.exec(await heroTag(lex))![1];
+  expect(cropped).not.toBe(uploaded);
+  // A second crop is made on the picture her popup showed, the cropped copy (her page was never sent the original):
+  // a new shape keeps that copy, never the original swapped back in under it.
+  await annaFrame.locator(".hero-image").click();
+  await bar.getByRole("button", { name: "Focus and crop" }).click();
+  await expect(popup).toBeVisible({ timeout: 20_000 });
+  await popup.getByRole("button", { name: /^Shape:/ }).click();
+  await popup.getByRole("menuitemradio", { name: "16:9", exact: true }).click();
+  await anna.page.keyboard.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect.poll(() => heroTag(lex), { timeout: 30_000 }).toMatch(/aspect-ratio: 16 \/ 9/);
+  expect(/src="([^"]+)"/.exec(await heroTag(lex))![1]).toBe(cropped);
+
+  // Ben, on a phone: one bar docked under the page; its picture panel and the popup open there too.
+  const ben = await guest(browser, true);
+  const benFrame = await joins(ben, link, "Ben");
+  const benBar = guestBar(ben.page);
+  await benFrame.locator(".hero-image").click();
+  await expect(benBar).toHaveAttribute("data-side", "docked");
+  await benBar.getByRole("button", { name: "Replace the picture" }).click();
+  const benPanel = ben.page.getByRole("dialog", { name: "Replace the picture" });
+  await expect(benPanel.getByRole("button", { name: "studio-desk.svg" })).toBeVisible();
+  await expect(benPanel.getByRole("button", { name: "Upload…" })).toBeVisible();
+  await ben.page.keyboard.press("Escape");
+  await expect(benPanel).toBeHidden();
+  await benBar.getByRole("button", { name: "Focus and crop" }).click();
+  const benPopup = ben.page.getByRole("dialog", { name: "Image", exact: true });
+  await expect(benPopup).toBeVisible({ timeout: 20_000 });
+  // While his crop is open, Anna picks another picture there: his crop, made on the old one, is not put on hers.
+  await bar.getByRole("button", { name: "Replace the picture" }).click();
+  await panel.getByRole("button", { name: "studio-desk.svg" }).click();
+  await expect(panel).toBeHidden();
+  await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
+  const picked = await heroTag(lex);
+  await benPopup.getByRole("button", { name: /^Shape:/ }).click();
+  await benPopup.getByRole("menuitemradio", { name: "16:9", exact: true }).click();
+  await ben.page.keyboard.press("Escape");
+  await expect(benPopup).toBeHidden();
+  // Refused, and his picture panel opens saying so.
+  await expect(benPanel).toContainText("The page changed meanwhile", { timeout: 20_000 });
+  await ben.page.keyboard.press("Escape");
+  await expect(benPanel).toBeHidden();
+
+  // He changes the button's address there: Enter takes it, and it is Lex's change.
+  await benFrame.locator(".hero-link").click();
+  await expect(benBar.locator(".edit-bar__kind")).toHaveText("Link");
+  await expect(benBar).toHaveAttribute("data-side", "docked");
+  await benBar.getByRole("button", { name: "Address" }).click();
+  const address = ben.page.locator(".edit-bar__popover").getByRole("combobox", { name: "Address" });
+  await expect(address).toHaveValue("/about/");
+  await address.fill("https://example.test/");
+  await address.press("Enter");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('<a class="hero-link" href="https://example.test/" data-key="hero-link">');
+  // Ben's crop was refused: Anna's picked picture is as she left it (the Undo count below would catch a late one).
+  expect(await heroTag(lex)).toBe(picked);
+  // A pick from his docked panel is Lex's change too.
+  await benFrame.locator(".hero-image").click();
+  await benBar.getByRole("button", { name: "Replace the picture" }).click();
+  await expect(benPanel.getByRole("button", { name: "placeholder.svg" })).toHaveAttribute("aria-pressed", "false");
+  await benPanel.getByRole("button", { name: "placeholder.svg" }).click();
+  await expect(benPanel).toBeHidden();
+  await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain("placeholder.svg");
+
+  // Still nothing of the editor on a guest's page, and no editor API reached.
+  for (const visitor of [anna, ben]) {
+    for (const name of [/save/i, /publish/i, /settings/i, /files/i, /agent/i, /connect/i])
+      await expect(visitor.page.getByRole("button", { name })).toHaveCount(0);
+    expect([...new Set(visitor.calls)]).toEqual(["/api/live/guest"]);
+  }
+
+  // Lex's Undo takes the seven guest changes back, one step each, to the page he shared (and no further: his own link
+  // stays): Ben's pick and address, then Anna's second pick, two crops, upload (its file and its place in one step) and first pick.
+  const undo = lex.getByRole("banner").getByRole("button", { name: "Undo", exact: true });
+  const steps: string[] = [];
+  for (let step = 0; step < 7; step++) {
+    const before = await source(lex);
+    await undo.click();
+    await expect.poll(() => source(lex), { timeout: 10_000, message: `Undo ${step + 1} changed the page\n${steps.join("\n")}` }).not.toBe(before);
+    steps.push(await heroTag(lex));
+  }
+  expect(await source(lex), steps.join("\n")).toBe(start);
+  for (const frame of [annaFrame, benFrame]) await expect(frame.locator(".hero-image")).toHaveAttribute("src", shown, { timeout: 20_000 });
+
+  for (const visitor of [anna, ben]) await visitor.context.close();
+  expect(pageErrors).toEqual([]);
+});
+
 test("closing Lex's tab ends the session: the guest's page says so and the link refuses", async ({ browser, baseURL }) => {
   test.setTimeout(120_000);
   const lexContext = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });

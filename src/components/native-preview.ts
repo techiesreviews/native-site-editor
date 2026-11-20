@@ -3,6 +3,7 @@ import { validImageSize, validImageStyle } from "./preview-protocol";
 import { imageResult } from "../page-builder/image-sizes";
 import { samePreviewFiles } from "./preview-files";
 import type { DropReport } from "../page-builder/drop-report";
+import type { GuestPageChange } from "../guest-changes";
 import type { FrameHost } from "./preview-protocol";
 import { createPreviewLink, iframeFramePort } from "./preview-link";
 import { handleChunkLoadFailure } from "../chunk-recovery";
@@ -269,6 +270,21 @@ export interface NativePreviewHandlers {
   // and the grids under the pointer and around the selection whenever they change.
   cards?: CardGridHandlers;
   onItemGrids?: (report: ItemGridsReport) => void;
+  // What a synced session's guests change beyond text (TOOLS-185, src/guest-edits.ts), on the page on show only.
+  // Loaded when a session starts (src/live-session.ts), so the editor's first paint does not carry it.
+  guestEdits?: () => Promise<GuestEditHandlers>;
+}
+/** The page's pictures and links a guest's edit bar offers (TOOLS-185): the site's pictures, the site's pages. */
+export interface GuestContext { path: string; links: { label: string; value: string }[]; pictures: string[] }
+export interface GuestEditHandlers {
+  context(path: string): Omit<GuestContext, "path">;
+  /** The files the image popup reads for a picture of this page: the page, its components, media records, the site's settings. */
+  sources(path: string): Record<string, string>;
+  /** Small copies of these site pictures, as addresses a guest's page can show. */
+  pictures(paths: string[]): Promise<Record<string, string>>;
+  /** Writes a guest's change as this tab's own (an unsaved change here, its Undo here); false when it was not.
+   * `seen`: the page's source as the guest's copy showed it, so a change to an element that moved is refused. */
+  change(change: GuestPageChange, seen: string): Promise<boolean>;
 }
 
 // The part of a page document the preview renders: its <body> content.
@@ -1459,6 +1475,15 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
         await handlers.onTextEdit({ path: edit.path, node: [...edit.node], before: edit.before, after: edit.after, ...edit.live ? { live: true } : {}, group: `guest:${typing}` });
         return true;
       } catch { return false; }
+    },
+    /** Loads what guests' edit bars change beyond text (TOOLS-185), for the page `guestShown` names. */
+    guestEdits() {
+      return handlers.guestEdits?.();
+    },
+    /** The page on show as a render sent now shows it to guests: its path and source; never a component shown by itself. */
+    guestShown() {
+      const path = site && mirrorable() && !alone ? site.routes[route] : undefined, source = path && sources[path];
+      return path && source !== undefined ? { path, source } : undefined;
     },
     /** The page the preview shows (a component shown alone has its own pseudo-route). */
     route() {

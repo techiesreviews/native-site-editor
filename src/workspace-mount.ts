@@ -31,7 +31,7 @@ import type { createBootController } from "./controllers/boot-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import type { createCommandPaletteController } from "./controllers/command-palette-controller";
 import type { createLinkedStylesController } from "./controllers/linked-styles-controller";
-import type { createMediaController } from "./controllers/media-controller";
+import type { createMediaController, MediaControllerPorts } from "./controllers/media-controller";
 import type { createPageStructureController } from "./controllers/page-structure-controller";
 import type { PreviewSelectionController } from "./controllers/preview-selection-controller";
 import { draftKey, type DraftScope } from "./drafts";
@@ -133,21 +133,22 @@ export interface WorkspaceMountPorts {
   notices: Pick<Notices, "errorMessage" | "announce">;
   session: Pick<Session, "begin" | "nextLoad" | "draftScope" | "shownScope">;
   view: Pick<View, "fileGeneration" | "setCurrentPage">;
-  preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind">;
+  preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind" | "nativeRouteInfo">;
   textIndex: Pick<TextIndex, "noteNativePainted">;
-  /** Media's host (src/controllers/media-host.ts). */
-  media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage"> };
+  /** Media's host (src/controllers/media-host.ts); its pictures and image popup also serve session guests' edit bars (TOOLS-185). */
+  media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage" | "guestImage">;
+    mediaPorts: Pick<MediaControllerPorts, "imagePopup">; nativeImagePaths(): string[] };
   pageBuilder: WorkspaceBuilderPorts;
   app: HTMLElement;
   element: <T extends HTMLElement>(id: string) => T;
   appStore: Pick<AppStore, "openFile" | "branch" | "repository" | "snapshot" | "reset" | "selection">;
   editorModule: Pick<typeof SourceEditor, "onUnmountedText" | "setViewLoader" | "mountSourceEditor" | "captureHistoryHost" | "recordHistoryAction"
     | "isMounted" | "captureFileModelState" | "closeActiveEditGroup" | "clearDrafts">;
-  runtime: Pick<ReturnType<typeof createNativeSiteRuntime>, "site" | "engaged" | "source">;
+  runtime: Pick<ReturnType<typeof createNativeSiteRuntime>, "site" | "engaged" | "source" | "sources">;
   finishedWork: Pick<ReturnType<typeof createFinishedElsewhere>, "open" | "shown">;
   mediaHistoryHome: Pick<ReturnType<typeof createMediaHistoryHome>, "adopt" | "clear">;
   parkedSteps: Pick<ReturnType<typeof createParkedSteps>, "adopt" | "clear">;
-  guardedEdits: Pick<GuardedEdits, "stamp" | "peek">;
+  guardedEdits: Pick<GuardedEdits, "stamp" | "peek" | "run">;
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
   versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
   pagesAndFiles: Pick<PagesAndFiles, "pageActions" | "mountExplorer"> & { loadPagesActions(): Promise<unknown>; filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh"> };
@@ -480,6 +481,8 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       onFormat: (format) => pageBuilder.pageStructureController.nativeFormatActions[format]?.(),
       onImageDrop: (target, files) => void media.mediaController.chooseImage(target, files),
       onImageEdit: (target) => void media.mediaController.chooseImage(target),
+      // A synced session guest's pictures, crops and links, written as Lex's own changes (TOOLS-185).
+      guestEdits: async () => (await import("./guest-edits")).workspaceGuestEdits(ports),
       // The write's promise goes back: the page lets renders redraw the text typed in only once it has landed (am-23).
       onTextEdit: (edit) => pageBuilder.pageStructureController.applyNativeTextEdit(edit),
       onTyping: (at, left) => left ? workingPart.left(at, pageBuilder.pageStructureController.textEdits()) : workingPart.typed(at),

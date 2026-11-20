@@ -3,14 +3,19 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import { forEachAwait } from "./support/await-race";
-import { readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
+import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
-import type { GuestTextEdit, NativePreview } from "../src/components/native-preview";
+import type { GuestEditHandlers, GuestTextEdit, NativePreview } from "../src/components/native-preview";
 
 const settle = async () => { for (let index = 0; index < 20; index++) await new Promise(resolve => setImmediate(resolve)); };
+/** What a guest's change asks of the preview beyond text (TOOLS-185). */
+type GuestPorts = "guestEdits" | "guestShown";
+/** The preview's guest edits, loaded as a session starts: the parts a test names, the rest offering and writing nothing. */
+const guestEdits = (edits: Partial<GuestEditHandlers>) => ({ guestEdits: async (): Promise<GuestEditHandlers> =>
+  ({ context: () => ({ links: [], pictures: [] }), sources: () => ({}), pictures: async () => ({}), change: async () => false, ...edits }) });
 
 test("an edit link carries a token, and after # the key, the site and who shares it", () => {
   const key = "A".repeat(43);
@@ -128,7 +133,7 @@ test("an open session says while its room reconnects, and not once it has ended"
 });
 
 /** A session over a fake room and preview: `guest(peer, message)` delivers what a participant sent, as the relay names it. */
-async function fakeSession(preview: Pick<NativePreview, "mirror" | "guestTextEdit" | "refresh">, holds = () => true, room: Partial<LiveRoom> = {}) {
+async function fakeSession(preview: Pick<NativePreview, "mirror" | "guestTextEdit" | "refresh"> & Partial<Pick<NativePreview, GuestPorts>>, holds = () => true, room: Partial<LiveRoom> = {}) {
   Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: "https://editor.test" } });
   let options: LiveRoomOptions | undefined;
   const changes: Parameters<SharePorts["changed"]>[0][] = [];
@@ -238,6 +243,151 @@ test("a session stopped at any await of writing a guest's change writes nothing 
   }, run => run.session?.stop(), run => {
     assert.equal(run.refreshed, 0, "no refresh for a change whose write ended after the session stopped");
   });
+});
+
+/** The room's frames as messages, the way a guest's page reads them. */
+function heard() {
+  const messages: Record<string, unknown>[] = [];
+  const reader = sessionWire<Record<string, unknown>>(() => undefined, message => messages.push(message), () => undefined);
+  return { messages, send: async (bytes: Uint8Array) => { reader.receive(Uint8Array.from(bytes), { peer: "lex", access: "editor" }); return true; } };
+}
+const anna = (session: Awaited<ReturnType<typeof fakeSession>>) =>
+  session.options.onPeers!(new Map([["p1", { access: "guest", state: { name: "Anna", guest: "a".repeat(32) } }], ["p2", { access: "editor", state: { name: "Sam", guest: "d".repeat(32) } }]]));
+
+/** A preview whose mirror sends a render each time `render()` is called (one as it starts), showing `index.html` as `page()`. */
+function rendering(page = () => "<img src=\"images/a.jpg\">") {
+  let render = () => undefined as void;
+  return {
+    render: () => render(),
+    mirror: (send: Parameters<NativePreview["mirror"]>[0]) => { render = () => send({ kind: "render", payload: {} as never }); render(); return { render, stop() {} }; },
+    guestShown: () => ({ path: "index.html", source: page() }),
+  };
+}
+
+test("a listed guest's picture, link and crop changes reach the page, checked against the page they saw, and only they hear whether each was written", async () => {
+  const room = heard(), changed: [unknown, string][] = [];
+  const shown = rendering();
+  const session = await fakeSession({ ...shown, guestTextEdit: async () => true, refresh() {},
+    ...guestEdits({ change: async (change, seen) => { changed.push([change, seen]); return change.kind !== "link"; } }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  const picture = { kind: "picture", path: "index.html", node: [0, 1], file: "images/cake.jpg" };
+  await session.deliver("p9", "guest", { t: "change", change: picture, ask: 1, seen: 1 }); // someone not listed
+  await session.deliver("p2", "editor", { t: "change", change: picture, ask: 1, seen: 1 }); // not a guest
+  await session.deliver("p1", "guest", { t: "change", change: { ...picture, file: "../x.png" }, ask: 1, seen: 1 }); // refused by the rules
+  await session.deliver("p1", "guest", { t: "change", change: picture, ask: "1", seen: 1 });
+  await session.deliver("p1", "guest", { t: "change", change: picture, ask: 1 }); // no render named
+  await session.deliver("p1", "guest", { t: "change", change: picture, ask: 2, seen: 1 });
+  await session.deliver("p1", "guest", { t: "change", change: { kind: "link", path: "index.html", node: [0, 3], href: "/menu.html" }, ask: 3, seen: 1 });
+  await settle();
+  const page = "<img src=\"images/a.jpg\">";
+  assert.deepEqual(changed, [[picture, page], [{ kind: "link", path: "index.html", node: [0, 3], href: "/menu.html" }, page]]);
+  assert.deepEqual(room.messages.filter(message => message.t === "answer"), [
+    { t: "answer", to: "a".repeat(32), ask: 2, done: true }, { t: "answer", to: "a".repeat(32), ask: 3, done: false }]);
+  (await session.started).stop();
+});
+
+test("a guest's change made on a render this tab no longer keeps, or on another page, is answered not written", async () => {
+  const room = heard(), changed: unknown[] = [];
+  let source = "<p>first</p>";
+  const shown = rendering(() => source);
+  const session = await fakeSession({ ...shown, guestTextEdit: async () => true, refresh() {},
+    ...guestEdits({ change: async (_change, seen) => { changed.push(seen); return true; } }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  const renders = () => room.messages.filter(message => message.t === "render").map(message => message.n);
+  assert.deepEqual(renders(), [1], "each render carries its number");
+  for (let i = 0; i < GUEST_RENDERS_KEPT; i++) { source = `<p>${i}</p>`; shown.render(); }
+  await settle();
+  assert.equal(renders().at(-1), GUEST_RENDERS_KEPT + 1);
+  const picture = { kind: "picture", path: "index.html", node: [0], file: "images/a.jpg" };
+  await session.deliver("p1", "guest", { t: "change", change: picture, ask: 1, seen: 1 }); // no longer kept
+  await session.deliver("p1", "guest", { t: "change", change: picture, ask: 2, seen: 999 }); // never sent
+  await session.deliver("p1", "guest", { t: "change", change: { ...picture, path: "about.html" }, ask: 3, seen: 2 }); // another page
+  await session.deliver("p1", "guest", { t: "change", change: picture, ask: 4, seen: 2 });
+  await settle();
+  assert.deepEqual(changed, ["<p>0</p>"], "written against the page of the render the guest named");
+  assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done]), [[1, false], [2, false], [3, false], [4, true]]);
+  (await session.started).stop();
+});
+
+test("a guest's upload keeps the render it names while its bytes travel, however many renders come meanwhile", async () => {
+  const room = heard(), changed: unknown[] = [];
+  let source = "<p>first</p>";
+  const shown = rendering(() => source);
+  const session = await fakeSession({ ...shown, guestTextEdit: async () => true, refresh() {},
+    ...guestEdits({ change: async (_change, seen) => { changed.push(seen); return true; } }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  await session.deliver("p2", "editor", { t: "hold", seen: 1 }); // not a guest: nothing kept
+  await session.deliver("p1", "guest", { t: "hold", seen: 1 });
+  for (let i = 0; i < GUEST_RENDERS_KEPT + 5; i++) { source = `<p>${i}</p>`; shown.render(); }
+  await settle();
+  const upload = { kind: "upload", path: "index.html", node: [0], name: "cake.png", type: "image/png", data: btoa("PNGDATA") };
+  // A link change naming the held render is not an upload: refused, and the hold stays for the upload.
+  await session.deliver("p1", "guest", { t: "change", change: { kind: "link", path: "index.html", node: [0, 3], href: "/menu.html" }, ask: 4, seen: 1 });
+  await session.deliver("p1", "guest", { t: "change", change: upload, ask: 1, seen: 1 });
+  await session.deliver("p1", "guest", { t: "change", change: upload, ask: 2, seen: 1 }); // kept for one upload only
+  await session.deliver("p1", "guest", { t: "change", change: { ...upload, data: "AAAAA" }, ask: 3, seen: GUEST_RENDERS_KEPT }); // bytes that do not decode
+  await settle();
+  assert.deepEqual(changed, ["<p>first</p>"]);
+  assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done]), [[4, false], [1, true], [2, false], [3, false]]);
+  (await session.started).stop();
+});
+
+test("a guest's upload reaches the page as a file with its name, type and bytes", async () => {
+  const files: File[] = [];
+  const session = await fakeSession({ ...rendering(), guestTextEdit: async () => true, refresh() {},
+    ...guestEdits({ change: async (change) => { if (change.kind === "upload") files.push(change.file); return true; } }) });
+  await session.started;
+  anna(session);
+  await settle();
+  await session.deliver("p1", "guest", { t: "change", change: { kind: "upload", path: "index.html", node: [0, 1], name: "cake.png", type: "image/png", data: btoa("PNGDATA") }, ask: 1, seen: 1 });
+  await settle();
+  assert.equal(files.length, 1);
+  assert.equal(files[0].name, "cake.png");
+  assert.equal(files[0].type, "image/png");
+  assert.equal(await files[0].text(), "PNGDATA");
+  (await session.started).stop();
+});
+
+test("guests get the page's pictures and links before a render only when they changed, and its sources and thumbnails when they ask", async () => {
+  const room = heard();
+  let context = { path: "index.html", links: [{ label: "Home", value: "/" }], pictures: ["images/a.jpg"] };
+  let render = () => undefined as void;
+  const session = await fakeSession({
+    mirror: (send) => { render = () => send({ kind: "render", payload: {} as never }); render(); return { render, stop() {} }; },
+    guestTextEdit: async () => true, refresh() {},
+    guestShown: () => ({ path: "index.html", source: "<img src=\"images/a.jpg\">" }),
+    ...guestEdits({
+      context: () => ({ links: context.links, pictures: context.pictures }),
+      sources: () => ({ "index.html": "<img src=\"images/a.jpg\">" }),
+      pictures: async (paths) => Object.fromEntries(paths.map(path => [path, `data:image/webp;base64,${path.length}`])),
+    }),
+  }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  render();
+  context = { ...context, pictures: ["images/a.jpg", "images/b.jpg"] };
+  render();
+  await settle();
+  const page = room.messages.filter(message => message.t !== "carets");
+  assert.deepEqual(page.map(message => message.t), ["context", "render", "render", "context", "render"], "the context goes once, then again only once it changed");
+  assert.deepEqual(page[3], { t: "context", context });
+  room.messages.length = 0;
+  await session.deliver("p1", "guest", { t: "sources", ask: 4 });
+  await session.deliver("p1", "guest", { t: "want", paths: ["images/a.jpg", "../x.png", 3] });
+  await session.deliver("p9", "guest", { t: "sources", ask: 5 }); // someone not listed
+  await settle();
+  assert.deepEqual(room.messages.filter(message => message.t !== "carets"), [
+    { t: "sources", to: "a".repeat(32), ask: 4, sources: { "index.html": "<img src=\"images/a.jpg\">" } },
+    { t: "pictures", to: "a".repeat(32), pictures: { "images/a.jpg": "data:image/webp;base64,12" } },
+  ], "only the site's pictures are looked up, and only for a listed guest");
+  (await session.started).stop();
 });
 
 test("the workspace to share is the GitHub branch shown while a site is open; sharing holds until another scope opens", () => {
