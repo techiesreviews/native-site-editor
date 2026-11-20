@@ -80,3 +80,10 @@ RESULT: fail prototype-regressions 35/36
 `RESULT: ok prototype-regressions 36/36`
 
 The full 88-state / 44-keyboard-flow matrix passed after these second-look fixes, including replacing the link address with Ctrl+A. The 36 regression cases passed again. All eleven index links resolve exactly once, and regenerating the pages leaves their bytes unchanged.
+
+The follow-up main review (`20261120T014936Z`) found a non-focusable fallback popup invoker and asked for RTL layout isolation. Popup invokers are now actual controls; leaf text alone chooses its direction, with the navigation still aligned at the end of the header. The requested phone Add test also proves unchanged document scroll, an in-panel new row and focus on that row. Checks first failed 37/39 and now pass 39/39.
+
+```text
+RESULT: fail prototype-regressions 37/39
+RESULT: ok prototype-regressions 39/39
+```
