@@ -61,18 +61,20 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
   const record = (name: string) => (...args: unknown[]) => { calls.push(`${name} ${args.map((arg) => JSON.stringify(arg)).join(" ")}`.trim()); };
   const ports = {
     appStore, runtime, guardedEdits: { stamp: () => stamp }, cleanSources,
-    setupController: { noteAgent: record("noteAgent") }, pageStructureController: { renderEditBar: record("renderEditBar") },
-    mediaPorts: { pin: () => { pins.push("pin"); return PIN; } },
-    workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
+    setupController: { noteAgent: record("noteAgent") },
     agentPresence: { questions: record("questioned"), onPin: (id: string) => ON_PIN.get(id), colour: (who: AgentWho) => { calls.push(`colour ${who.name}`); return 2; }, atWork: () => [{ name: "Copy editor", file: "index.html", section: "1.0" }], agents: () => [], stop: () => {}, stopped: () => false, heard: () => {}, listen: () => () => {} },
-    nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
-    api: (async () => { throw new Error("no reads"); }) as unknown as AgentMenuPorts["api"], // eslint-disable-line no-restricted-syntax -- the menu never reads GitHub here.
-    readFile: async () => "", readFiles: async () => ({}),
     loadAgentSite: async () => ({ buildAgentContext: async (input: AgentSiteInput) => { inputs.push(input); return { input } as unknown as SharedContext; } }), // eslint-disable-line no-restricted-syntax -- the stand-in context only carries the input back.
-    draftScope: options.draftScope ?? (() => SCOPE),
-    nativeRouteInfo: (route: string) => ({ title: `title of ${route}` }),
-    pathNow: (path: string) => (path === "index.html" ? "file" : undefined),
+    // The shared host modules (src/host-modules.ts) and the hosts handed over whole, one fake each.
+    session: { draftScope: options.draftScope ?? (() => SCOPE) },
+    repo: { api: (async () => { throw new Error("no reads"); }) as unknown as AgentMenuPorts["repo"]["api"], // eslint-disable-line no-restricted-syntax -- the menu never reads GitHub here.
+      readFile: async () => "", readFiles: async () => ({}) },
+    preview: { nativeRouteInfo: (route: string) => ({ title: `title of ${route}` }) },
+    textIndex: { nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } } },
+    panels: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
+    pageBuilder: { pageStructureController: { renderEditBar: record("renderEditBar") } },
+    media: { mediaPorts: { pin: () => { pins.push("pin"); return PIN; } } },
+    pagesAndFiles: { pathNow: (path: string) => (path === "index.html" ? "file" : undefined) },
   } satisfies AgentMenuPorts;
   const commands = { apply: async (command: AgentCommand) => { calls.push(`apply ${command.id}`); }, reload: async (snapshot: { revision: number }) => { calls.push(`reload ${snapshot.revision}`); } };
   // The options each mount of the menu is made with (src/controllers/agent-controller.ts).

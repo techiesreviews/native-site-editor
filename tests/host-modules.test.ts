@@ -16,19 +16,23 @@ const HOSTS = [
   { file: "src/controllers/source-pane-controller.ts", ports: "SourcePanePorts", ceiling: 20, shared: ["notices", "session", "repo", "view", "panels", "preview", "pageBuilder", "pagesAndFiles"] },
   { file: "src/controllers/page-structure-controller.ts", ports: "PageStructurePorts", ceiling: 30, shared: ["notices", "session", "view", "preview", "media", "pagesAndFiles"], own: ["openNativeNavigation"] },
   { file: "src/controllers/media-host.ts", ports: "MediaHostPorts", ceiling: 30, shared: ["notices", "session", "repo", "view", "panels", "preview", "textIndex", "pagesAndFiles", "pageBuilder"] },
+  // The agent host's ports are the agent's commands' and the agent menu's, which the command path takes whole, and its own.
+  { file: "src/agent-site-host.ts", ports: "AgentCommandPorts", ceiling: 24, shared: ["session", "repo", "view", "pageBuilder", "media", "pagesAndFiles"] },
+  { file: "src/agent-menu-host.ts", ports: "AgentMenuPorts", ceiling: 16, shared: ["session", "repo", "preview", "textIndex", "panels", "pageBuilder", "media", "pagesAndFiles"] },
+  { file: "src/agent-host.ts", ports: "AgentHostPorts", ceiling: 3, shared: ["notices"] },
 ];
 // Members of a shared module or a host handed over whole: a host takes them through it, never as a loose port of their own.
-const MODULE_MEMBERS = ["status", "settleStatus", "clearError", "errorMessage", "announce", "workspaceSession", "nextLoad", "currentLoad", "stampOf", "draftScope", "shownScope",
+const MODULE_MEMBERS = ["status", "settleStatus", "clearError", "errorMessage", "announce", "workspaceSession", "visits", "nextLoad", "currentLoad", "stampOf", "draftScope", "shownScope",
   "api", "apiResponse", "readFile", "readFiles", "entryAt", "findEntry", "fileGeneration", "setCurrentPage", "showDirectory", "openNewDraft", "openEntry", "mountSource",
   "restoreFile", "loadSnapshot", "updateAgentContext", "updateCurrentPageLabel", "updatePreview", "updateNativePreview", "updateNativePreviewSources",
   "nativeRouteForPath", "nativeRouteInfo", "nativeTitles", "nativeFallbackPage", "nativeModeActive", "nativeComponentTagForPath", "nativePageStyles", "nativePreviewBehind",
   "afterNativePaint", "ensureNativeTextIndex", "startNativeTextIndex", "wantNativeTextIndex", "noteNativePainted", "flushPendingNativePageTitles", "clearPendingTitles", "nativeTextIndexScopeKey",
-  "mediaController", "readMediaText", "mediaOrigins", "uploadFilesTo", "discardUpload", "nativeImagePaths",
+  "nativeTextIndexGate", "mediaController", "mediaPorts", "readMediaText", "mediaOrigins", "uploadFilesTo", "discardUpload", "nativeImagePaths",
   "cards", "nativeNavigationTarget", "writeNativePageMeta", "refreshNativeRoutes", "openNativePageSettings", "openNativeNavigation", "openNativeSiteSettings", "nativePageMeta",
   "paletteController", "pageStructureController", "nativeSectionChoices", "nativeElementAddPoint", "nativeAddPoints", "insertNativeComponent", "dragPageBlock",
   "structureDrop", "loadBlockDrag", "loadBlockInsert", "blockInsertPorts", "finishRailTyping", "elementMenuItems", "nativeComponentFieldsRevision", "nativeMoveItems", "mountComponentTools",
-  "nativeVariantFiles", "nativeCssWorkspace",
-  "ensureExplorer", "openCreate", "nativeSiteReadForCreate", "openAfter", "afterFileChanges", "discardedNewPages", "discardFileChange",
+  "nativeVariantFiles", "nativeCssWorkspace", "componentPorts", "nativeComponentLoaderPlan", "blockMoves",
+  "ensureExplorer", "pathNow", "openCreate", "nativeSiteReadForCreate", "openAfter", "afterFileChanges", "discardedNewPages", "discardFileChange",
   "takeStartingPoint", "writeStartingPoint", "readPartialStart", "offerFinishStarter", "removeFinishStarter",
   "nativeSite", "nativeSourcesRequest", "nativePaintedRequest", "nativePaintedPaths", "baseText", "nativeBaseSources", "nativeSources", "nativeEditableSource", "nativeEffectiveSource",
   "content", "files", "refreshButton", "branchSelect", "repositorySelect", "repositoryMenu", "explorerDropdown", "siteActions", "sidebarResize", "codePanes", "activeFileContext", "openCodeEditor"];

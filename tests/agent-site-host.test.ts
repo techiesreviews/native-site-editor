@@ -122,7 +122,15 @@ type PagesAndFilesPort = AgentCommandPorts["pagesAndFiles"];
 /** Overrides laid on by descriptor, not spread or Object.assign: either would read a getter once, as a copy. */
 const withPorts = <T extends object>(base: T, overrides: Partial<T>): T => Object.defineProperties(base, Object.getOwnPropertyDescriptors(overrides));
 
-function commandsFixture(overrides: Partial<AgentCommandPorts> = {}, files: Partial<PagesAndFilesPort> = {}) {
+type SessionPort = AgentCommandPorts["session"];
+/** The session module over a workspace session, its drafts' scope `scope`. */
+const sessionOver = (workspace: Pick<SessionPort, "begin" | "current" | "visits">, scope: DraftScope) =>
+  ({ begin: () => workspace.begin(), current: () => workspace.current(), visits: at => workspace.visits(at), draftScope: () => scope }) satisfies Partial<SessionPort>;
+
+/** `session` and `view` go over the fixture's fakes of those shared host modules member by member; any other override replaces its port. */
+function commandsFixture(overrides: Partial<Omit<AgentCommandPorts, "session" | "view">> & { session?: Partial<SessionPort>; view?: Partial<AgentCommandPorts["view"]> } = {},
+  files: Partial<PagesAndFilesPort> = {}) {
+  const { session, view, ...replaced } = overrides;
   const appStore = createAppStore(createDraftStore());
   const host = { info: signedOut as SessionInfo, pageStructure: undefined as AgentCommandPorts["pageStructure"],
     nativePreview: undefined as AgentCommandPorts["nativePreview"] };
@@ -134,21 +142,25 @@ function commandsFixture(overrides: Partial<AgentCommandPorts> = {}, files: Part
     branchPathProblem: unused, afterFileChanges: () => { calls.push("after"); },
   } satisfies PagesAndFilesPort;
   const ports = {
-    appStore, runtime: unusedPort("runtime"), workspaceSession: unusedPort("workspaceSession"), guardedEdits: unusedPort("guardedEdits"),
+    appStore, runtime: unusedPort("runtime"), guardedEdits: unusedPort("guardedEdits"),
     editorWorkspace: unusedPort("editorWorkspace"), versions: unusedPort("versions"), finishedWork: unusedPort("finishedWork"),
-    parkedSteps: unusedPort("parkedSteps"), repositoryIndex: unusedPort("repositoryIndex"), mediaController: unusedPort("mediaController"),
-    mediaPorts: unusedPort("mediaPorts"), blockMoves: unusedPort("blockMoves"), createBlockMoves: unusedPort("createBlockMoves"), agentPresence: unusedPort("agentPresence"),
-    pagesAndFiles: withPorts(pagesAndFiles, files), api: unused,
+    parkedSteps: unusedPort("parkedSteps"), repositoryIndex: unusedPort("repositoryIndex"), createBlockMoves: unusedPort("createBlockMoves"), agentPresence: unusedPort("agentPresence"),
+    pagesAndFiles: withPorts(pagesAndFiles, files),
     editorModule: { isMounted: () => false, getMountedSource: unused, dropDraft: unused, forgetDraftModel: unused, prepareHistorySources: unused,
       flushAgentTyping: unused, applyAgentDraft: async command => { calls.push(`draft ${command.path}`); } },
     get info() { return host.info; }, componentTools: undefined, loadComponentTools: async () => undefined,
     get pageStructure() { return host.pageStructure; }, get nativePreview() { return host.nativePreview; },
-    loadAgentSite: unused, draftScope: () => undefined, shownScope: () => undefined, restoreFile: unused,
-    openNewDraft: async draft => { calls.push(`open ${draft.account} ${draft.path}`); }, nativeComponentLoaderPlan: unused,
-    writeNativePageMeta: async () => undefined, nativeSectionChoices: () => [], componentPorts: unused,
-    refreshNativeRoutes: () => { calls.push("routes"); }, updateCurrentPageLabel: () => { calls.push("label"); }, updateAgentContext: () => { calls.push("context"); },
+    loadAgentSite: unused,
+    // The shared host modules (src/host-modules.ts) and the hosts handed over whole, one fake each.
+    session: { begin: unused, current: unused, visits: unused, draftScope: () => undefined, shownScope: () => undefined, ...session },
+    repo: { api: unused },
+    view: { restoreFile: unused, openNewDraft: async draft => { calls.push(`open ${draft.account} ${draft.path}`); },
+      updateCurrentPageLabel: () => { calls.push("label"); }, updateAgentContext: () => { calls.push("context"); }, ...view },
+    pageBuilder: { blockMoves: unusedPort("blockMoves"), nativeComponentLoaderPlan: unused, writeNativePageMeta: async () => undefined, nativeSectionChoices: () => [],
+      componentPorts: unused, refreshNativeRoutes: () => { calls.push("routes"); } },
+    media: { mediaController: unusedPort("mediaController"), mediaPorts: unusedPort("mediaPorts") },
   } satisfies AgentCommandPorts;
-  return { commands: createAgentCommands(withPorts(ports, overrides)), appStore, host, calls };
+  return { commands: createAgentCommands(withPorts(ports, replaced)), appStore, host, calls };
 }
 
 const command = (fields: Pick<AgentCommand, "id" | "operation" | "path" | "content"> & Partial<AgentCommand>) =>
@@ -234,12 +246,11 @@ test("a reload after an agent's write reads the open page again on the stamp it 
   let holds = true;
   const stamps: SessionStamp[] = [], restored: [string, SessionStamp][] = [];
   const f = commandsFixture({
-    draftScope: () => SCOPE,
-    workspaceSession: { begin: () => { const stamp = { load: 1, scope: githubScope(SCOPE), holds: () => holds, changed: () => undefined } satisfies SessionStamp; stamps.push(stamp); return stamp; },
-      current: unused, visits: unused },
+    session: { draftScope: () => SCOPE,
+      begin: () => { const stamp = { load: 1, scope: githubScope(SCOPE), holds: () => holds, changed: () => undefined } satisfies SessionStamp; stamps.push(stamp); return stamp; } },
     editorModule: { isMounted: () => true, getMountedSource: () => "<p>Old</p>", dropDraft: unused, forgetDraftModel: unused,
       prepareHistorySources: unused, flushAgentTyping: unused, applyAgentDraft: unused },
-    restoreFile: async (path, at) => { restored.push([path, at]); },
+    view: { restoreFile: async (path, at) => { restored.push([path, at]); } },
   });
   f.appStore.openFile.value = "index.html";
   const snapshot = { revision: 1, generation: 1, drafts: [[draftKey(SCOPE, "index.html"), draft]] } satisfies Parameters<typeof f.commands.reload>[0];
@@ -257,7 +268,7 @@ function resyncFixture(resync: () => Promise<void>) {
   session.next(githubScope(SCOPE));
   let pending: Promise<void> | undefined;
   const f = commandsFixture({
-    workspaceSession: session, draftScope: () => SCOPE,
+    session: sessionOver(session, SCOPE),
     runtime: unusedPort<AgentCommandPorts["runtime"]>("runtime", { source: () => "<p>Home</p>" }),
   }, { get nativeResyncDone() { return pending ??= resync(); } });
   return { ...f, switchBranch: () => session.next(githubScope({ ...SCOPE, branch: "dev" })) };
@@ -292,7 +303,7 @@ test("an agent's command on show is refused once its branch or revision moved, a
   const session = createWorkspaceSession();
   session.next(githubScope(SCOPE));
   const f = commandsFixture({
-    workspaceSession: session, draftScope: () => SCOPE, versions: { view: undefined },
+    session: sessionOver(session, SCOPE), versions: { view: undefined },
     // Its finishing elsewhere runs as it is: read on no other branch (no read files), it finishes nowhere else.
     finishedWork: { add: unused, agent: (_scope, _command, _draft, run) => run },
     loadAgentSite: async () => ({ ...agentSite, applySiteCommand: async () => { seen.push(f.commands.acting()); return { message: "done" }; } }),
@@ -312,7 +323,7 @@ function preNativeFixture(checkPath: (path: string) => Promise<string | undefine
   const session = createWorkspaceSession();
   session.next(githubScope(SCOPE));
   const f = commandsFixture({
-    workspaceSession: session, draftScope: () => SCOPE, versions: { view: undefined },
+    session: sessionOver(session, SCOPE), versions: { view: undefined },
     runtime: unusedPort<AgentCommandPorts["runtime"]>("runtime", { site: undefined, engaged: false }),
   }, { pathNow: () => undefined, treeState: () => unusedPort("treeState"), branchPathProblem: checkPath });
   f.appStore.repository.value = repository;
@@ -373,7 +384,7 @@ test("the chip's Undo writes nothing once another branch is shown at any of its 
       return { ok: true, status: "applied" };
     });
     const guardedEdits = unusedPort<AgentCommandPorts["guardedEdits"]>("guardedEdits", { run: runEdit });
-    const f = commandsFixture({ guardedEdits, draftScope: () => shown, loadChanges: race.port("load", async () => changes) });
+    const f = commandsFixture({ guardedEdits, session: { draftScope: () => shown }, loadChanges: race.port("load", async () => changes) });
     const run = { id, written, shift: () => { shown = { ...SCOPE, branch: "dev" }; }, outcome: undefined as string | undefined, done: Promise.resolve() };
     // The workspace the press was in, as the agent host takes it before any wait (src/agent-host.ts).
     run.done = f.commands.undoLatest(who, "index.html", id, shown).then(() => { run.outcome = "undone"; }, (error: Error) => { run.outcome = error.message; });

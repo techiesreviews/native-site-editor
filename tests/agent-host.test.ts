@@ -52,9 +52,9 @@ function setup() {
   // The host reads only these ports itself and hands them all to the path, a stand-in here.
   // eslint-disable-next-line no-restricted-syntax -- the command ports go to the path unread; the stand-in reads none.
   const ports = {
-    appStore, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
+    appStore, notices: { errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); } },
     get info() { return late.info; },
-    draftScope: () => late.scope,
+    session: { draftScope: () => late.scope },
     loadAgentMenu: async () => {
       calls.push("load menu");
       return { createAgentMenu: (mount: Mount) => {
