@@ -73,6 +73,11 @@ export const LIVE_SESSION_HOST = /^[a-f\d]{64}$/;
 export const LIVE_GUEST_ID = /^[a-f\d]{32}$/;
 /** The one room inside a synced session's relay instance (no file: the session carries the page Lex shows). */
 export const LIVE_SESSION_ROOM = "synced-session";
+/** A routed member (a synced session's guest that joined with `routed=1`, TOOLS-385) puts one byte before each frame
+ * saying where it goes: to everyone in the room (its presence), or to the tabs only (its content, such as an upload),
+ * so one guest's content never reaches another guest. The relay reads and strips it. */
+export const LIVE_TO_EVERYONE = 0;
+export const LIVE_TO_TABS = 1;
 
 /** Reads a participant's text frame; anything else is ignored. */
 export function readLiveClientMessage(text: string): LiveClientMessage | null {

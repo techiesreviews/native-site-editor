@@ -10,6 +10,7 @@ import type { createPreviewLink } from "./components/preview-link";
 import type { GuestContext } from "./components/native-preview";
 import type { MediaControllerPorts } from "./controllers/media-controller";
 import type { ImagePopupHost } from "./page-builder/image-popup";
+import { createGuestAsks } from "./guest-asks";
 import { GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange } from "./guest-changes";
 import { guestPhotoTypes } from "../shared/media-kinds";
 import { nativeKindLabel } from "./native-structure";
@@ -21,7 +22,8 @@ interface Selected extends Target { tag: string; link: string | undefined; rect:
 
 /** Photos only: a drawing (SVG) can carry a script (src/guest-changes.ts). */
 const ACCEPT = [...new Set(Object.values(guestPhotoTypes))].join(",");
-/** How long a change waits for Lex's tab to write it (an upload's bytes travel first). */
+/** How long a change waits for Lex's tab to write it, counted from the last part of its upload his tab said arrived
+ * (TOOLS-385): a slow upload that keeps arriving is waited for. */
 const ANSWER_MS = 60_000;
 const SOURCES_MS = 10_000;
 const MEASURE_MS = 8_000;
@@ -80,8 +82,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   const thumbnails = new Map<string, string>();
   const wanted = new Map<string, number>();
   // Each request waiting for its answer from Lex's tab, by number.
-  let asks = 0;
-  const waiting = new Map<number, (value: unknown) => void>();
+  const asks = createGuestAsks(send);
   // The address typed into the link's field, sent when the field closes (one Undo step for Lex).
   let draft: string | undefined;
   // The picture the selected image shows (its tile is ticked), once read.
@@ -97,16 +98,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let refusedLater: string | undefined;
   let linkRefused: string | undefined;
 
-  function request<T>(message: (ask: number) => GuestMessage, ms: number) {
-    const ask = ++asks;
-    return new Promise<T | undefined>((resolve) => {
-      const timer = setTimeout(() => { waiting.delete(ask); resolve(undefined); }, ms);
-      waiting.set(ask, (value) => { clearTimeout(timer); waiting.delete(ask); resolve(value as T | undefined); });
-      send(message(ask));
-    });
-  }
-  const write = async (change: GuestChange, on = selectedSeen) => (await request<boolean>((ask) => ({ t: "change", change, ask, seen: on }), ANSWER_MS)) === true;
-  const sources = () => request<Record<string, string>>((ask) => ({ t: "sources", ask }), SOURCES_MS);
+  const write = async (change: GuestChange, on = selectedSeen) =>
+    (await asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: on }), ANSWER_MS, true)) === true;
+  const sources = () => asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), SOURCES_MS);
   /** The selected element still is `target`, on the page Lex shows. */
   const still = (target: Target) => !closed && key(selected) === key(target) && context?.path === target.path;
   /** A refused picture change: the picture panel opens on it saying why (once Focus and crop is closed, if it is open). */
@@ -313,7 +307,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         context = message.context;
         render();
       } else if (message.t === "answer" || message.t === "sources") {
-        if (message.to === me) waiting.get(message.ask)?.(message.t === "answer" ? message.done : message.sources);
+        if (message.to === me) asks.answer(message.ask, message.t === "answer" ? message.done : message.sources);
+      } else if (message.t === "got") {
+        if (message.to === me) asks.heard();
       } else if (message.t === "pictures") {
         if (message.to !== me || !message.pictures || typeof message.pictures !== "object") return true;
         for (const [path, url] of Object.entries(message.pictures)) {
@@ -328,7 +324,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       closed = true;
       stops.forEach((stop) => stop());
       crop?.cancel();
-      for (const done of [...waiting.values()]) done(undefined);
+      asks.close();
       bar.destroy();
     },
   };

@@ -1,5 +1,8 @@
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { LIVE_HOST_LOST, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, LIVE_SESSION_ROOM, PRESENCE_TIMEOUT_MS, liveAccess, readLiveClientMessage, type LiveAccess, type LiveServerMessage } from "../shared/live-room";
+import {
+  LIVE_HOST_LOST, LIVE_MESSAGE_LIMIT, LIVE_ROOM_CLOSED, LIVE_SESSION_ROOM, LIVE_TO_EVERYONE, LIVE_TO_TABS, PRESENCE_TIMEOUT_MS, liveAccess,
+  readLiveClientMessage, type LiveAccess, type LiveServerMessage,
+} from "../shared/live-room";
 import { PREVIEW_ROOM } from "../shared/preview-link";
 
 export interface RelayScope {
@@ -513,10 +516,11 @@ export const LIVE_AGENT_CHECK_MS = 60_000;
 /** `keyed`: holds the room key, was told to make it, or was handed it (`handed`: a member's wrapped key went
  * to it, and its own `keyed` is still to come). `since`: join order, for choosing who makes a new key.
  * `rejoin`: the tab's own secret, never sent to peers, so its reconnect replaces a socket the relay has not yet seen drop.
- * `gone`: replaced by that reconnect; its late close is ignored. `heardAt`: its last frame, to within LIVE_HEARD_STEP_MS. */
+ * `gone`: replaced by that reconnect; its late close is ignored. `heardAt`: its last frame, to within LIVE_HEARD_STEP_MS.
+ * `routed`: a guest whose frames each start with where they go (LIVE_TO_EVERYONE or LIVE_TO_TABS, TOOLS-385). */
 interface LiveAttachment {
   role: "live"; room: string; peer: string; access: LiveAccess; keyed: boolean; since: number;
-  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true; heardAt?: number; handed?: true;
+  rejoin?: string; agent?: LiveAgent & { checkedAt: number }; gone?: true; heardAt?: number; handed?: true; routed?: true;
 }
 /** How often a socket's `heardAt` is written back to its attachment: often enough for a 30 s silence, rarely enough for typing. */
 const LIVE_HEARD_STEP_MS = 5_000;
@@ -529,8 +533,8 @@ const readLive = (value: unknown): LiveAttachment | null => {
 
 /** Forwards each room's frames and stores nothing: no storage port, no history, no keys. Who is in
  * which room, and who holds its key, lives in the socket attachments, which hibernation keeps with
- * the sockets. Binary frames (ciphertext) go to the room's other sockets unread; the only text
- * frames it acts on are the key handover's (shared/live-room.ts). */
+ * the sockets. Binary frames (ciphertext) go to the room's other sockets unread (a routed guest's to the tabs only,
+ * when its first byte says so); the only text frames it acts on are the key handover's (shared/live-room.ts). */
 export class LiveRooms {
   static readonly identityHeader = "X-Live-Room";
   private sockets = new Map<LiveSocket, LiveAttachment>();
@@ -570,7 +574,7 @@ export class LiveRooms {
   }
   /** Refuses (false) whom `admits` refuses. The first one into an empty room makes the key. A reconnect
    * naming its `rejoin` secret replaces its earlier socket and keeps whether it held the key. */
-  join(socket: LiveSocket, room: string, access: LiveAccess, options: { rejoin?: string; agent?: LiveAgent } = {}): boolean {
+  join(socket: LiveSocket, room: string, access: LiveAccess, options: { rejoin?: string; agent?: LiveAgent; routed?: true } = {}): boolean {
     if (!this.admits(room, access)) return false;
     let inherited = false;
     const ghost = options.rejoin === undefined ? undefined :
@@ -592,6 +596,7 @@ export class LiveRooms {
       role: "live", room, peer: hex(crypto.getRandomValues(new Uint8Array(16))), access, keyed: makes, since,
       ...(options.rejoin === undefined ? {} : { rejoin: options.rejoin }),
       ...(options.agent ? { agent: { ...options.agent, checkedAt: this.now() } } : {}),
+      ...(options.routed ? { routed: true as const } : {}),
       heardAt: this.now(),
     };
     socket.serializeAttachment(metadata);
@@ -656,12 +661,23 @@ export class LiveRooms {
     const now = this.now();
     if (now - (metadata.heardAt ?? 0) >= LIVE_HEARD_STEP_MS) { metadata.heardAt = now; socket.serializeAttachment(metadata); }
     if (typeof message !== "string") {
+      // A routed guest's first byte says where the frame goes (TOOLS-385): its content to the tabs only, its presence
+      // to everyone. The byte is taken off; a frame naming nowhere known goes nowhere.
+      let body = new Uint8Array(message);
+      let toTabs = false;
+      if (metadata.routed) {
+        const route = body[0];
+        if (route !== LIVE_TO_EVERYONE && route !== LIVE_TO_TABS) return false;
+        toTabs = route === LIVE_TO_TABS;
+        body = body.subarray(1);
+      }
       // Each frame goes on with its sender's peer id in front, which only the relay sets: a member can then not pass
       // for another (a synced session's guests take the page only from the sharing tab, slice 30).
-      const stamped = new Uint8Array(LIVE_SENDER_BYTES + message.byteLength);
+      const stamped = new Uint8Array(LIVE_SENDER_BYTES + body.byteLength);
       stamped.set(peerBytes(metadata.peer));
-      stamped.set(new Uint8Array(message), LIVE_SENDER_BYTES);
-      for (const [other] of this.members(metadata.room, socket)) this.send(other, stamped.buffer);
+      stamped.set(body, LIVE_SENDER_BYTES);
+      for (const [other, them] of this.members(metadata.room, socket))
+        if (!toTabs || them.access === "editor") this.send(other, stamped.buffer);
       return true;
     }
     const value = readLiveClientMessage(message);
