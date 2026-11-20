@@ -27,8 +27,14 @@ export const importSessionKey = (key: string) =>
 /**
  * The session's wire over one live room: JSON messages, each split into parts that fit a frame, sent one at a time in
  * order (sealing is asynchronous, so two sent at once could swap). `lost` hears a message the socket did not take.
+ * `heard` hears each part of a message in parts as it arrives, before the message is whole (TOOLS-385).
  */
-export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, receive: (message: In, from: Sender) => void, lost: () => void) {
+export function sessionWire<In>(
+  room: () => Pick<LiveRoom, "send"> | undefined,
+  receive: (message: In, from: Sender) => void,
+  lost: () => void,
+  heard?: (from: Sender) => void,
+) {
   let queue = Promise.resolve();
   const parts = new Map<string, { count: number; got: Map<number, Uint8Array> }>();
   const decoder = new TextDecoder();
@@ -72,6 +78,7 @@ export function sessionWire<In>(room: () => Pick<LiveRoom, "send"> | undefined, 
       if (entry.count !== count) return;
       entry.got.set(index, Uint8Array.from(body));
       parts.set(id, entry);
+      heard?.(from);
       // Only the latest few messages wait for their parts: an older one missing a part is let go.
       for (const old of [...parts.keys()].slice(0, Math.max(0, parts.size - 4))) parts.delete(old);
       if (entry.got.size < count) return;

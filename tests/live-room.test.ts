@@ -56,18 +56,21 @@ function relayHarness(now: () => number = () => Date.now()) {
   const seen: (string | Uint8Array)[] = [];
   const servers: LiveSocket[] = [];
   const record = (message: string | ArrayBuffer) => seen.push(typeof message === "string" ? message : new Uint8Array(message.slice(0)));
-  function pair(access: LiveAccess, tag = room, rejoin?: string) {
+  /** `routed`: the participant joined saying where each of its frames goes (TOOLS-385). */
+  function pair(access: LiveAccess, tag = room, rejoin?: string, routed = false) {
     const listeners = { message: [] as ((event: { data: unknown }) => void)[], close: [] as ((event: { code?: number }) => void)[] };
     let attachment: unknown = null;
     /** A vanished participant: its frames stop reaching the relay, and nobody is told. */
     const link = { cut: false, joined: true };
-    /** What the relay sent this socket (text frames), and the code it closed it with. */
-    const server: LiveSocket & { readyState: number; texts: string[]; closedWith?: number } = {
+    /** What the relay sent this socket (text frames and binary ones), and the code it closed it with. */
+    const server: LiveSocket & { readyState: number; texts: string[]; binaries: Uint8Array[]; closedWith?: number } = {
       readyState: 1,
       texts: [],
+      binaries: [],
       send(message) {
         record(message);
         if (typeof message === "string") server.texts.push(message);
+        else server.binaries.push(new Uint8Array(message.slice(0)));
         const data = typeof message === "string" ? message : message.slice(0);
         setImmediate(() => { for (const listener of listeners.message) listener({ data }); });
       },
@@ -102,7 +105,7 @@ function relayHarness(now: () => number = () => Date.now()) {
     const drop = () => { link.cut = true; for (const listener of listeners.close) listener({ code: 1006 }); };
     // The Worker refuses before any socket exists (409); an agent's connect reports that as LiveRoomClosed.
     link.joined = relay.admits(tag, access);
-    if (link.joined) { servers.push(server); relay.join(server, tag, access, rejoin === undefined ? {} : { rejoin }); }
+    if (link.joined) { servers.push(server); relay.join(server, tag, access, { ...(rejoin === undefined ? {} : { rejoin }), ...(routed ? { routed: true as const } : {}) }); }
     return { client, server, link, drop };
   }
   return {
@@ -305,24 +308,30 @@ test("an agent joins only a room a tab has open, gets the key from it, and leave
   assert.equal(agent.closed, true, "the room ends when its last tab leaves");
 });
 
-/** A synced session's participant (slice 30): the room key comes with the link, so nobody makes or hands one over. */
-function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, key: CryptoKey, access: LiveAccess) {
+/** A synced session's participant (slice 30): the room key comes with the link, so nobody makes or hands one over.
+ * `toTabs`: its content goes to the sharing tab only, as a guest page's does (TOOLS-385). */
+function sessionParticipant(h: ReturnType<typeof relayHarness>, clock: LiveClock, key: CryptoKey, access: LiveAccess, toTabs = false) {
   const got: string[] = [];
   const senders: { peer: string; access: LiveAccess }[] = [];
+  let peers: ReadonlyMap<string, LivePeer> = new Map();
   let made: ReturnType<typeof h.pair> | undefined;
   let closed: number | undefined | false = false;
   const live = openLiveRoom({
     address: access === "guest" ? "/api/live/guest?session=abc" : "/api/live/share?session=abc", key, clock,
+    ...(toTabs ? { toTabs: true as const } : {}),
     connect: async url => {
-      assert.match(url, /^\/api\/live\/(?:guest|share)\?session=abc&rejoin=[a-f\d]{32}$/);
-      made = h.pair(access, room);
+      assert.match(url, /^\/api\/live\/(?:guest|share)\?session=abc&rejoin=[a-f\d]{32}(?:&routed=1)?$/);
+      const routed = new URL(url, origin).searchParams.get("routed") === "1";
+      assert.equal(routed, toTabs, "the address says whether the frames carry where they go");
+      made = h.pair(access, room, undefined, routed);
       if (!made.link.joined) throw new LiveRoomClosed();
       return made.client;
     },
     onMessage: (bytes, from) => { got.push(new TextDecoder().decode(bytes)); senders.push(from); },
+    onPeers: next => { peers = next; },
     onClosed: why => { closed = why; },
   });
-  return { live, got, senders, get link() { return made!.link; }, get server() { return made!.server; }, get closed() { return closed; } };
+  return { live, got, senders, get peers() { return peers; }, get link() { return made!.link; }, get server() { return made!.server; }, get closed() { return closed; } };
 }
 
 test("a synced session: a guest joins only while the sharing tab is in, uses the link's key, and is closed when it leaves", async () => {
@@ -368,6 +377,66 @@ test("a synced session: a guest joins only while the sharing tab is in, uses the
   back.live.close();
   await settle();
   assert.equal(time.pending, 0);
+});
+
+test("a synced session's guest sends its content to the sharing tab only, and says it is here to everyone (TOOLS-385)", { timeout: 20_000 }, async () => {
+  const time = fakeClock();
+  const h = relayHarness();
+  const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+  const text = (value: string) => new TextEncoder().encode(value);
+  const lex = sessionParticipant(h, time.clock, key, "editor");
+  await lex.live.ready();
+  const anna = sessionParticipant(h, time.clock, key, "guest", true);
+  await anna.live.ready();
+  const sam = sessionParticipant(h, time.clock, key, "guest", true);
+  await sam.live.ready();
+  // A guest page opened before this change sends without saying where: its frames still go to everyone.
+  const old = sessionParticipant(h, time.clock, key, "guest");
+  await old.live.ready();
+  anna.live.setPresence({ name: "Anna" });
+  assert.equal(await anna.live.send(text("cake.png")), true);
+  assert.equal(await old.live.send(text("old page")), true);
+  assert.equal(await lex.live.send(text("the page")), true);
+  await until(() => lex.got.length === 2 && sam.got.length === 2 && anna.got.length === 2, "every frame due");
+  await until(() => sam.peers.get(peerOf(anna.server)) !== undefined, "Anna's presence at Sam's");
+  await settle();
+  assert.deepEqual([...lex.got].sort(), ["cake.png", "old page"], "the sharing tab gets the guest's content");
+  assert.deepEqual([...sam.got].sort(), ["old page", "the page"], "another guest never gets it");
+  assert.deepEqual(old.got, ["the page"]);
+  assert.deepEqual(sam.peers.get(peerOf(anna.server)), { access: "guest", state: { name: "Anna" } }, "but still sees who is here");
+  for (const participant of [anna, sam, old, lex]) participant.live.close();
+  await settle();
+  assert.equal(time.pending, 0);
+});
+
+test("the relay reads a routed member's first byte for where its frame goes, strips it, and drops a frame naming nowhere it knows (TOOLS-385)", () => {
+  const h = relayHarness();
+  const lex = h.pair("editor"), anna = h.pair("guest", room, undefined, true), sam = h.pair("guest");
+  const body = (frame: Uint8Array | undefined) => frame && [...frame.subarray(16)];
+  const after = (server: typeof lex.server, count: number) => server.binaries.slice(count).map(body);
+  let lexHad = lex.server.binaries.length, samHad = sam.server.binaries.length;
+  const sent = (server: typeof lex.server, bytes: number[]) => h.relay.message(server, Uint8Array.from(bytes).buffer);
+  const counts = () => { lexHad = lex.server.binaries.length; samHad = sam.server.binaries.length; };
+
+  assert.equal(sent(anna.server, [1, 7, 8]), true);
+  assert.deepEqual([after(lex.server, lexHad), after(sam.server, samHad)], [[[7, 8]], []], "to the tabs only");
+  assert.deepEqual([...lex.server.binaries.at(-1)!.subarray(0, 16)], [...Buffer.from(peerOf(anna.server), "hex")], "named as the sender's");
+  counts();
+  assert.equal(sent(anna.server, [0, 9]), true);
+  assert.deepEqual([after(lex.server, lexHad), after(sam.server, samHad)], [[[9]], [[9]]], "to everyone");
+  counts();
+  assert.equal(sent(anna.server, [2, 9]), false);
+  assert.equal(sent(anna.server, []), false);
+  assert.deepEqual([after(lex.server, lexHad), after(sam.server, samHad)], [[], []], "nowhere it knows: dropped");
+  // A member that joined without routing sends its frames whole, to everyone.
+  const annaHad = anna.server.binaries.length;
+  assert.equal(sent(sam.server, [1, 5]), true);
+  assert.deepEqual([after(lex.server, lexHad), after(anna.server, annaHad)], [[[1, 5]], [[1, 5]]]);
+  counts();
+  // Routing comes back from the attachments after hibernation.
+  h.wake();
+  assert.equal(sent(anna.server, [1, 6]), true);
+  assert.deepEqual([after(lex.server, lexHad), after(sam.server, samHad)], [[[6]], []]);
 });
 
 test("the relay forwards only to its room, refuses oversized frames and unknown targets, and survives hibernation", async () => {
@@ -1065,6 +1134,31 @@ test("Miniflare: a synced session's routes mint signed tokens, keep made-up ones
     assert.equal(held.status, 101);
     held.webSocket!.accept();
     assert.equal((await worker.dispatchFetch(guestUrl(session))).status, 426, "open to guests while it is held");
+
+    // A guest page sends its content to the sharing tab only (TOOLS-385): it says so once, as `routed=1`.
+    assert.equal((await worker.dispatchFetch(guestUrl(session, "&routed=1"))).status, 426);
+    assert.equal((await worker.dispatchFetch(guestUrl(session, "&routed=2"))).status, 400);
+    assert.equal((await worker.dispatchFetch(guestUrl(session, "&routed=1&routed=1"))).status, 400);
+    const binaries = (socket: NonNullable<typeof held.webSocket>) => {
+      const frames: number[][] = [];
+      socket.addEventListener("message", event => { if (typeof event.data !== "string") frames.push([...new Uint8Array(event.data as ArrayBuffer).subarray(16)]); });
+      return frames;
+    };
+    const atLex = binaries(held.webSocket!);
+    const guestAs = async (extra: string) => {
+      const response = await worker.dispatchFetch(guestUrl(session, extra), { headers: { Upgrade: "websocket", Origin: origin } });
+      assert.equal(response.status, 101);
+      response.webSocket!.accept();
+      return { socket: response.webSocket!, frames: binaries(response.webSocket!) };
+    };
+    const routed = await guestAs("&routed=1"), other = await guestAs("");
+    routed.socket.send(Uint8Array.of(1, 42).buffer);
+    routed.socket.send(Uint8Array.of(0, 43).buffer);
+    await until(() => atLex.length === 2 && other.frames.length === 1, "the routed guest's frames over the real Worker");
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual([atLex, other.frames], [[[42], [43]], [[43]]], "its content reaches the sharing tab only; its presence everyone");
+    routed.socket.close(1000);
+    other.socket.close(1000);
 
     // Stop sharing: the link refuses from then on.
     held.webSocket!.close(1000, "Stop sharing");

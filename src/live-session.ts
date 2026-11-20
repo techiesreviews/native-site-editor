@@ -36,7 +36,8 @@ export const LIVE_SESSION_PATH = "/live";
 /** Lex's tab to guests: the page on show (its components and stylesheets only when they changed), each guest's typing
  * written so far (its frame's numbering) and each guest's colour, by guest id; and everyone's carets in the page's text
  * (TOOLS-219, src/live-session-carets.ts). For the edit bar (TOOLS-185): the page's pictures and links before a render
- * that changed them, and to one guest (`to`) whether their change was written, the page's sources and thumbnails. */
+ * that changed them, and to one guest (`to`) whether their change was written, the page's sources and thumbnails.
+ * `got` (TOOLS-385): one part of that guest's message in parts arrived, so their wait for its answer starts again. */
 export type HostMessage =
   | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number>; colours: Record<string, string>; n: number }
   | { t: "assets"; assets: Extract<MirrorMessage, { kind: "assets" }>["assets"] }
@@ -44,7 +45,8 @@ export type HostMessage =
   | { t: "context"; context: GuestContext }
   | { t: "answer"; to: string; ask: number; done: boolean }
   | { t: "sources"; to: string; ask: number; sources: Record<string, string> }
-  | { t: "pictures"; to: string; pictures: Record<string, string> };
+  | { t: "pictures"; to: string; pictures: Record<string, string> }
+  | { t: "got"; to: string };
 /** A guest to Lex's tab: one text change typed in their copy, numbered as their frame numbered it; or where their caret
  * is in the page's text as they type (none once they stop). Who sent it is the relay's word, not the message's.
  * From the edit bar (TOOLS-185): a picture, link or crop change (src/guest-changes.ts), numbered so its answer finds
@@ -144,7 +146,11 @@ export async function startSharing(ports: SharePorts) {
     else if (message.t === "sources") sourcesAsked(message, from);
     else if (message.t === "want") picturesAsked(message, from);
     else if (message.t === "hold") renderHeld(message, from);
-  }, lost);
+  }, lost, (from) => {
+    // Each part of a guest's large message (an upload) as it arrives: their tab waits for the answer from here.
+    const guest = guestOf(from);
+    if (guest && !ended) wire.send({ t: "got", to: guest.id } satisfies HostMessage);
+  });
   // The page's pictures and links as guests last got them: sent again before a render only once they changed.
   let context = "";
   // Each recent render's page by its number: a guest's change is checked against the page they made it on.

@@ -143,7 +143,9 @@ export class SessionStore extends DurableObject {
       // Worker-internal only: app.ts checks room access and names the room, or (for /live/pushed) github-webhook.ts checks
       // the delivery's signature and names the room of its repository and branch. This stores nothing but a preview
       // link's "turned off" mark, kept until the link would have ended anyway.
-      let identity: { room?: unknown; access?: unknown; rejoin?: unknown; agent?: Partial<LiveAgent>; preview?: unknown; ends?: unknown; commit?: unknown } | null = null;
+      let identity: {
+        room?: unknown; access?: unknown; rejoin?: unknown; routed?: unknown; agent?: Partial<LiveAgent>; preview?: unknown; ends?: unknown; commit?: unknown;
+      } | null = null;
       try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
       const live = this.live();
       // Turning a preview link off (slice 35): every socket in it closes, and it refuses from now until it would end.
@@ -169,13 +171,14 @@ export class SessionStore extends DurableObject {
         for (const socket of live.agentSockets(identity.agent.id)) live.end(socket, LIVE_ACCESS_ENDED, "This agent connection ended.");
         return new Response(null, { status: 204 });
       }
-      const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin, agent = identity?.agent;
+      const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin, routed = identity?.routed, agent = identity?.agent;
       // Whether a synced session's room is still open to its guests (slice 30), asked without a socket.
       if (url.pathname === "/live/admits")
         return new Response(null, { status: typeof room === "string" && /^[a-f\d]{64}$/.test(room) && liveAccess(access) && live.admits(room, access) ? 204 : 409 });
       if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket" ||
         typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) ||
         (rejoin !== undefined && (typeof rejoin !== "string" || !/^[a-f\d]{32}$/.test(rejoin))) ||
+        (routed !== undefined && (routed !== true || access !== "guest")) ||
         (access === "agent") !== (agent !== undefined) ||
         (agent && (typeof agent.id !== "string" || typeof agent.sessionId !== "string" || !Number.isSafeInteger(agent.generation) ||
           !Number.isSafeInteger(agent.repoId) || typeof agent.branch !== "string"))) return new Response(null, { status: 400 });
@@ -183,7 +186,9 @@ export class SessionStore extends DurableObject {
       if (!live.admits(room, access)) return new Response(null, { status: 409 });
       const { 0: client, 1: server } = new WebSocketPair();
       this.ctx.acceptWebSocket(server, ["live"]);
-      live.join(server, room, access, { ...(rejoin === undefined ? {} : { rejoin }), ...(agent ? { agent: agent as LiveAgent } : {}) });
+      live.join(server, room, access, {
+        ...(rejoin === undefined ? {} : { rejoin }), ...(routed === true ? { routed: true } : {}), ...(agent ? { agent: agent as LiveAgent } : {}),
+      });
       return new Response(null, { status: 101, webSocket: client });
     }
     if (url.pathname.startsWith("/relay/")) {

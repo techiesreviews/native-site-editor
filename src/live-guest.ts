@@ -120,6 +120,8 @@ async function enter(shared: Shared, key: CryptoKey, presence: SessionPresence, 
     const room = openLiveRoom({
       address: `/api/live/guest?${new URLSearchParams({ session: shared.token })}`,
       key,
+      // This guest's content (an upload, their typing) goes to Lex's tab only, never to the other guests (TOOLS-385).
+      toTabs: true,
       onMessage: (bytes, from) => hooks.message(bytes, from),
       onPeers: (peers) => { if (settled) hooks.peers(peers); },
       onClosed: (why) => { if (settled) hooks.closed(why); else settle({ refused: refusal(why) }); },

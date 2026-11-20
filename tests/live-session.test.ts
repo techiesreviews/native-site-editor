@@ -5,6 +5,7 @@ import { mock, test } from "node:test";
 import { forEachAwait } from "./support/await-race";
 import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
+import { createGuestAsks } from "../src/guest-asks";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
@@ -336,6 +337,70 @@ test("a guest's upload keeps the render it names while its bytes travel, however
   assert.deepEqual(changed, ["<p>first</p>"]);
   assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done]), [[4, false], [1, true], [2, false], [3, false]]);
   (await session.started).stop();
+});
+
+test("Lex's tab tells a guest each part of their upload that arrived, so their wait counts from the last one (TOOLS-385)", async () => {
+  const room = heard();
+  const session = await fakeSession({ ...rendering(), guestTextEdit: async () => true, refresh() {}, ...guestEdits({ change: async () => true }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  // About 1.3 MB on the wire: three parts.
+  const upload = { kind: "upload", path: "index.html", node: [0], name: "cake.png", type: "image/png", data: btoa("x".repeat(1_000_000)) };
+  await session.deliver("p1", "guest", { t: "change", change: upload, ask: 1, seen: 1 });
+  await session.deliver("p2", "editor", { t: "change", change: upload, ask: 2, seen: 1 }); // not a guest
+  await session.deliver("p9", "guest", { t: "change", change: upload, ask: 3, seen: 1 }); // not listed
+  await session.deliver("p1", "guest", { t: "caret", caret: null }); // one part: nothing to tell
+  await settle();
+  const told = room.messages.filter(message => message.t === "got" || message.t === "answer");
+  assert.deepEqual(told, [
+    { t: "got", to: "a".repeat(32) }, { t: "got", to: "a".repeat(32) }, { t: "got", to: "a".repeat(32) },
+    { t: "answer", to: "a".repeat(32), ask: 1, done: true },
+  ]);
+  (await session.started).stop();
+});
+
+test("the session's wire says each part of a message as it arrives, by its sender, and nothing for a message of one part (TOOLS-385)", async () => {
+  const frames: Uint8Array[] = [];
+  const sender = sessionWire(() => ({ send: async (bytes: Uint8Array) => { frames.push(Uint8Array.from(bytes)); return true; } }), () => undefined, () => undefined);
+  const heardFrom: string[] = [], got: unknown[] = [];
+  const receiver = sessionWire<{ n: number }>(() => undefined, message => got.push(message.n), () => undefined, from => heardFrom.push(from.peer));
+  sender.send({ n: 1, text: "x".repeat(1_300_000) });
+  sender.send({ n: 2 });
+  await settle();
+  assert.equal(frames.length, 4);
+  const anna = { peer: "1".repeat(32), access: "guest" } as const;
+  receiver.receive(frames[0], anna);
+  assert.deepEqual([heardFrom, got], [[anna.peer], []], "the first part, before the message is whole");
+  for (const frame of frames.slice(1)) receiver.receive(frame, anna);
+  assert.deepEqual([heardFrom, got], [[anna.peer, anna.peer, anna.peer], [1, 2]]);
+});
+
+test("a guest's answer from Lex's tab is waited for from the last part he said arrived; other asks keep their own wait (TOOLS-385)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const sent: unknown[] = [];
+  const asks = createGuestAsks((message) => sent.push(message));
+  const results: unknown[] = [];
+  void asks.ask<boolean>((ask) => ({ t: "change", change: {} as never, ask, seen: 1 }), 60_000, true).then((done) => results.push(["upload", done]));
+  void asks.ask<boolean>((ask) => ({ t: "change", change: {} as never, ask, seen: 1 }), 60_000, true).then((done) => results.push(["lost", done]));
+  void asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), 10_000).then((sources) => results.push(["sources", sources]));
+  assert.deepEqual(sent.map((message) => (message as { ask: number }).ask), [1, 2, 3]);
+  t.mock.timers.tick(9_000);
+  asks.heard();
+  t.mock.timers.tick(1_000);
+  t.mock.timers.tick(40_000);
+  asks.heard(); // 50 s in: a part arrived
+  t.mock.timers.tick(40_000); // 90 s in
+  asks.answer(1, true);
+  t.mock.timers.tick(30_000);
+  asks.answer(2, true); // too late: it gave up 60 s after the last part
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(results, [["sources", undefined], ["upload", true], ["lost", undefined]]);
+  // Closing answers whatever still waits, with nothing.
+  void asks.ask<boolean>((ask) => ({ t: "sources", ask }), 10_000).then((value) => results.push(["closed", value]));
+  asks.close();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(results.at(-1), ["closed", undefined]);
 });
 
 test("a guest's upload reaches the page as a file with its name, type and bytes", async () => {

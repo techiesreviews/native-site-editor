@@ -10,7 +10,8 @@
 // protect against a changed server.
 
 import {
-  LIVE_ACCESS_ENDED, LIVE_HOST_LOST, LIVE_PING, LIVE_PING_MS, LIVE_ROOM_CLOSED, PRESENCE_HEARTBEAT_MS, PRESENCE_TIMEOUT_MS, readLiveServerMessage,
+  LIVE_ACCESS_ENDED, LIVE_HOST_LOST, LIVE_PING, LIVE_PING_MS, LIVE_ROOM_CLOSED, LIVE_TO_EVERYONE, LIVE_TO_TABS, PRESENCE_HEARTBEAT_MS,
+  PRESENCE_TIMEOUT_MS, readLiveServerMessage,
   type LiveAccess, type LiveClientMessage, type LiveServerMessage,
 } from "../shared/live-room";
 import type { JsonValue } from "../shared/agent-command";
@@ -41,6 +42,9 @@ export type LiveRoomOptions = LiveRoomPlace & {
   /** The room key, already shared (a synced session's, from its link): used from the start, never made, asked for
    * or handed on by the relay's handover. */
   key?: CryptoKey;
+  /** A synced session's guest (TOOLS-385): its content goes to the tabs only, never to other guests; its presence
+   * still goes to everyone. The relay reads where each frame goes from its first byte. */
+  toTabs?: true;
   /** Opens the room's socket; the default is the browser's WebSocket to this editor. Agents pass one that sends their
    * connection, and throws LiveRoomClosed on a 409. */
   connect?: (url: string) => Promise<LiveRoomSocket>;
@@ -155,7 +159,8 @@ export function openLiveRoom(options: LiveRoomOptions) {
   const connect = options.connect ?? browserSocket;
   // Only this participant knows it: a reconnect names it so the relay replaces a socket it has not yet seen drop.
   const rejoin = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
-  const url = options.address !== undefined ? `${options.address}${options.address.includes("?") ? "&" : "?"}${new URLSearchParams({ rejoin })}`
+  const url = options.address !== undefined
+    ? `${options.address}${options.address.includes("?") ? "&" : "?"}${new URLSearchParams({ rejoin, ...(options.toTabs ? { routed: "1" } : {}) })}`
     : `/api/live/room?${new URLSearchParams({ repo: options.repo, branch: options.branch, file: options.file, rejoin })}`;
   let socket: LiveRoomSocket | null = null;
   let peer = "";
@@ -204,7 +209,9 @@ export function openLiveRoom(options: LiveRoomOptions) {
     if (closed) throw new Error("The live room is closed.");
     const key = await keyed.promise;
     const on = socket;
-    const frame = await seal(key, joined(Uint8Array.of(kind), payload));
+    const sealed = await seal(key, joined(Uint8Array.of(kind), payload));
+    // A routed guest says where the frame goes, ahead of the sealed bytes: content to the tabs, presence to everyone.
+    const frame = options.toTabs ? joined(Uint8Array.of(kind === DATA ? LIVE_TO_TABS : LIVE_TO_EVERYONE), new Uint8Array(sealed)).buffer : sealed;
     if (closed) throw new Error("The live room is closed.");
     if (roomKey !== key || !on || socket !== on) return false;
     try { on.send(frame); return true; } catch { return false; }

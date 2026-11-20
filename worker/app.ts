@@ -792,9 +792,11 @@ async function route(
       const nonce = hexOf(crypto.getRandomValues(new Uint8Array(16)));
       return json({ session: nonce + await keys.guest(nonce), host: await keys.host(nonce, user.login, repo.id) });
     }
-    const token = url.searchParams.get("session") ?? "", rejoin = url.searchParams.get("rejoin");
+    const token = url.searchParams.get("session") ?? "", rejoin = url.searchParams.get("rejoin"), routed = url.searchParams.get("routed");
+    // `routed=1` (TOOLS-385): a guest whose frames each say where they go, so its content reaches the tabs only.
     if (url.searchParams.getAll("session").length !== 1 || !LIVE_SESSION_TOKEN.test(token) || url.searchParams.getAll("rejoin").length > 1 ||
-      (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)) || !keys || !sameHex(token.slice(32), await keys.guest(token.slice(0, 32))))
+      (rejoin !== null && !/^[a-f\d]{32}$/.test(rejoin)) || url.searchParams.getAll("routed").length > 1 ||
+      (routed !== null && (routed !== "1" || sharing)) || !keys || !sameHex(token.slice(32), await keys.guest(token.slice(0, 32))))
       throw new HttpError(400, "This edit link is not valid.");
     if (sharing) {
       const branch = url.searchParams.get("branch"), host = url.searchParams.get("host") ?? "";
@@ -805,7 +807,7 @@ async function route(
       if (!sameHex(host, await keys.host(token.slice(0, 32), user.login, repo.id))) throw new HttpError(403, "This session is someone else's.");
     }
     const access: LiveAccess = sharing ? "editor" : "guest";
-    const identity = { room: await liveSessionRoomTag(), access, ...(rejoin === null ? {} : { rejoin }) };
+    const identity = { room: await liveSessionRoomTag(), access, ...(rejoin === null ? {} : { rejoin }), ...(routed === "1" ? { routed: true } : {}) };
     const store = env.SESSIONS.get(env.SESSIONS.idFromName(await liveSessionObjectName(token)));
     const headers = { [LiveRooms.identityHeader]: JSON.stringify(identity) };
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
