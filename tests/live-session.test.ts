@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import { forEachAwait } from "./support/await-race";
-import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
+import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type GuestMessage, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
 import { createGuestAsks } from "../src/guest-asks";
 import type { GuestChange } from "../src/guest-changes";
@@ -405,25 +405,43 @@ test("a guest's answer from Lex's tab is waited for from the last part he said a
   assert.deepEqual(results.at(-1), ["closed", undefined]);
 });
 
-test("a guest's patient ask gives its first part longer to arrive than each part after it (TOOLS-385)", async (t) => {
+test("a guest's upload on a slow link is waited for as each of its parts arrives; a dropped change still gives up (TOOLS-385)", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const asks = createGuestAsks(() => {});
+  const sent: GuestMessage[] = [];
+  const asks = createGuestAsks((message) => sent.push(message));
   const results: unknown[] = [];
-  const change = { kind: "link", path: "index.html", node: [0], href: "/about" } satisfies GuestChange;
-  // A slow link: the first 512 KiB part takes 170 s to arrive, then the answer comes 50 s later.
-  void asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: 1 }), 60_000, 180_000).then((done) => results.push(["slow", done]));
-  t.mock.timers.tick(170_000);
-  asks.heard();
+  const settled = () => new Promise((resolve) => setImmediate(resolve));
+  const upload = { kind: "upload", path: "index.html", node: [0], name: "cake.png", type: "image/png", data: "" } satisfies GuestChange;
+  const link = { kind: "link", path: "index.html", node: [0], href: "/about" } satisfies GuestChange;
+  // About 3 KB/s: each 512 KiB part takes 170 s to arrive, and a link change waits behind the upload.
+  void asks.change(upload, 4).then((done) => results.push(["upload", done]));
+  void asks.change(link, 4).then((done) => results.push(["link", done]));
+  assert.deepEqual(sent, [{ t: "change", change: upload, ask: 1, seen: 4 }, { t: "change", change: link, ask: 2, seen: 4 }]);
+  for (let part = 0; part < 3; part++) {
+    t.mock.timers.tick(170_000);
+    asks.heard();
+  }
   t.mock.timers.tick(50_000);
   asks.answer(1, true);
-  // No part ever arrives: it gives up once the first wait is over.
-  void asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: 1 }), 60_000, 180_000).then((done) => results.push(["lost", done]));
-  t.mock.timers.tick(179_000);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(results, [["slow", true]], "still waiting a second before the first wait is over");
+  asks.answer(2, true);
+  await settled();
+  assert.deepEqual(results, [["upload", true], ["link", true]]);
+  // Nothing arrives: an upload gives up once one part's time is over, any other change sent with no upload waiting
+  // after a minute.
+  void asks.change(link, 4).then((done) => results.push(["lost link", done]));
+  void asks.change(upload, 4).then((done) => results.push(["lost upload", done]));
+  t.mock.timers.tick(59_000);
+  await settled();
+  assert.equal(results.length, 2, "both still wait a second before a minute is over");
   t.mock.timers.tick(1_000);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(results, [["slow", true], ["lost", undefined]]);
+  await settled();
+  assert.deepEqual(results.slice(2), [["lost link", false]]);
+  t.mock.timers.tick(119_000);
+  await settled();
+  assert.equal(results.length, 3, "the upload still waits a second before one part's time is over");
+  t.mock.timers.tick(1_000);
+  await settled();
+  assert.deepEqual(results.slice(2), [["lost link", false], ["lost upload", false]]);
 });
 
 test("a guest's upload reaches the page as a file with its name, type and bytes", async () => {
