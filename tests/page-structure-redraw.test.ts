@@ -14,6 +14,8 @@ declare global {
   var menuRuns: string[];
   // Edit component mode on the section: its template's bytes, each line a "Read more <line>" paragraph (unset: no mode).
   var templateBytes: string | undefined;
+  // A nested Edit component mode: the card's article opened, its template's bytes each line a part (unset: not nested).
+  var nestedBytes: string | undefined;
 }
 
 // Page Structure alone in a browser page: a heading, a section with a paragraph in it and a last
@@ -38,6 +40,7 @@ async function inBrowser(run: (page: import("@playwright/test").Page) => Promise
         item("h1", [0], "Title"), item("p", [1], "Last"), item("section", [2], "Box", [item("p", [2, 0], "Inside")])] });
       globalThis.menuRuns = [];
       globalThis.templateBytes = undefined;
+      globalThis.nestedBytes = undefined;
       const host = document.createElement("div"); document.body.append(host);
       const outside = document.createElement("input"); outside.id = "outside"; document.body.append(outside);
       globalThis.redrawSidebar = redrawFactory(host, {
@@ -46,7 +49,12 @@ async function inBrowser(run: (page: import("@playwright/test").Page) => Promise
         label: (entry: NativeStructureItem) => ({ kind: entry.tag, text: entry.text }),
         menuItems: (_path: string, entry: NativeStructureItem) => entry.tag === "section" || entry.text.startsWith("Read more") ? ["Make component", "Remove"].map(label =>
           ({ label, run: () => { menuRuns.push(`${label} ${entry.text} at ${entry.node.join(".")}`); } })) : [],
-        templateRows: (_path: string, at: readonly number[]) => templateBytes === undefined || at.join(".") !== "1" ? undefined : {
+        templateRows: (_path: string, at: readonly number[]) => at.join(".") !== "1" ? undefined : nestedBytes !== undefined ? {
+          path: "inner.html", nested: true, root: [0], source: nestedBytes, badge: () => undefined,
+          items: [{ tag: "div", node: [0], text: "", heading: "", slot: "", chips: [], path: "card.html", children: [
+            { tag: "article", node: [0, 0], text: "", heading: "", slot: "", chips: [], path: "card.html", opened: { path: "inner.html", root: [0], current: true },
+              children: nestedBytes.split("\n").map((line, part) => ({ tag: "p", node: [0, part], text: `Read more ${line}`, heading: "", slot: "", chips: [], paintedSource: nestedBytes, children: [] })) }] }],
+        } : templateBytes === undefined ? undefined : {
           path: "card.html", root: [0], source: templateBytes, badge: () => undefined,
           items: [{ tag: "div", node: [0], text: "", heading: "", slot: "", chips: [], paintedSource: templateBytes,
             children: templateBytes.split("\n").map((line, at) => ({ tag: "p", node: [0, at], text: `Read more ${line}`, heading: "", slot: "", chips: [], paintedSource: templateBytes, children: [] })) }],
@@ -267,4 +275,30 @@ test("a template row's menu opens again on a redraw of the same bytes, and stays
   await page.evaluate(() => { templateBytes = "new\nnewer\na"; redrawSidebar.refresh(); });
   assert.equal(await menu.isVisible(), false);
   assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("role")), "treeitem");
+}));
+
+// SL-1 and R6-11 for template parts: a part's keyboard menu closed by an empty tree, or by a part added above
+// it (also in a nested component mode), gives focus back to that part at its new number.
+test("a template part's keyboard menu gives focus back to its part through an empty tree and in a nested mode", () => inBrowser(async page => {
+  const part = (text: string) => page.locator("[role=treeitem][data-template-path]").filter({ hasText: text });
+  const menu = page.getByRole("menu");
+  const focusedText = () => page.evaluate(() => document.activeElement?.getAttribute("role") === "treeitem" ? document.activeElement.textContent : document.activeElement?.localName);
+  // The tree empties while the menu is open, and a part is added above it before the rows come back.
+  await page.evaluate(() => { templateBytes = "a\nb"; redrawSidebar.refresh(); });
+  await part("Read more b").focus();
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => redrawSidebar.update({ path: "", items: [] }));
+  assert.equal(await menu.isVisible(), false);
+  await page.evaluate(() => { templateBytes = "new\na\nb"; redrawSidebar.update(redrawPage("v1")); });
+  assert.match(await focusedText() ?? "", /Read more b/);
+  // A nested component opened inside the card: a part added above the one whose menu is open.
+  await page.evaluate(() => { nestedBytes = "a\nb"; redrawSidebar.refresh(); });
+  await part("Read more b").focus();
+  assert.equal(await part("Read more b").getAttribute("data-template-path"), "inner.html");
+  await page.keyboard.press("Shift+F10");
+  assert.equal(await menu.isVisible(), true);
+  await page.evaluate(() => { nestedBytes = "new\na\nb"; redrawSidebar.refresh(); });
+  assert.equal(await menu.isVisible(), false);
+  assert.match(await focusedText() ?? "", /Read more b/);
 }));
