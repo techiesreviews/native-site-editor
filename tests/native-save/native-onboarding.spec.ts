@@ -4,8 +4,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // New-user flows in the real editor UI, against the fake GitHub's onboarding
-// controls (see the top of server.ts): sign-in, Get started (creating a
-// repository), and Start your site (an empty or site-less repository).
+// controls (see the top of server.ts): sign-in, the Setup wizard's Create your
+// site when the editor cannot create the repository (the rest of the wizard is
+// in native-setup-wizard.spec.ts), and Start your site (an empty or site-less
+// repository).
 // Controls are per browser session, so each test sends them after the first
 // page load has minted the session cookie, and resets them first.
 
@@ -33,13 +35,12 @@ const head = async (page: Page, baseURL: string | undefined, repo: string) =>
 const file = async (page: Page, baseURL: string | undefined, repo: string, path: string) =>
   page.request.get(`${baseURL}/__demo/file?repo=${repo}&path=${encodeURIComponent(path)}`);
 
-async function openGetStarted(page: Page, baseURL: string | undefined) {
+/** An account with no repository: the Setup wizard opens on Create your site. */
+async function openCreateSite(page: Page, baseURL: string | undefined) {
   await control(page, baseURL, { repositories: "none" });
   await page.goto(`${baseURL}/`);
   await page.reload();
-  // The Setup wizard replaces Get started for an account with no repository; leaving it shows Get started.
-  await page.getByRole("button", { name: "Leave setup" }).click({ timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
 
 // Opens a repository the account has by name, through its workspace link.
@@ -89,21 +90,21 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
   await expect(button).toBeVisible();
   await expect(button).toHaveAttribute("href", "/auth/login");
   expect(Math.abs((await card.boundingBox())!.height - before!.height), "the card does not jump").toBeLessThan(80);
-  await expect(page.getByRole("heading", { name: "Welcome to Native Site Editor" })).toBeVisible();
-  // One way in: no second button, no choice cards.
+  // The welcome page (TOOLS-188): one question and one card, GitHub's.
+  await expect(page.getByRole("heading", { level: 1, name: "Where does your site live?" })).toBeVisible();
+  await expect(page.getByText("Welcome to Native Site Editor")).toBeVisible();
+  await expect(page.locator(".welcome-page__choice")).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 2, name: "On GitHub" })).toBeVisible();
+  // One way in: no second button.
   await expect(page.getByRole("button", { name: "Create your site" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toHaveCount(0);
   await expect(page.locator(".login-card").getByRole("button")).toHaveCount(0);
-  // The card is the heading and the button, nothing else: no subtitle, no notes, no sign-up line, no disclosure.
-  await expect(page.getByText("Open your sites, or create your first one.")).toHaveCount(0);
+  await expect(page.locator(".login-card").getByRole("link")).toHaveCount(1);
+  // No notes, no sign-up line, no disclosure.
   await expect(page.getByText(/asks GitHub for access only to the repositories you choose/)).toHaveCount(0);
   await expect(page.getByText(/New to GitHub\?/)).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Create a free account" })).toHaveCount(0);
   await expect(page.getByText("What happens next?")).toHaveCount(0);
   await expect(page.locator(".login-card details")).toHaveCount(0);
-  await expect(page.locator(".login-card img")).toHaveCount(0);
-  await expect(page.locator(".login-card p")).toHaveCount(0);
-  await expect(page.locator(".login-card a")).toHaveCount(2);
 });
 
 test("a valid session skips the sign-in screen: the editor opens with no button", async ({ page, baseURL }) => {
@@ -214,43 +215,13 @@ test("signing out of the last account forgets that this browser signed in before
   await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
 });
 
-test("creating a site from the Starter site makes the repository, shows the starter and saves it as the first commit", async ({ page, baseURL }) => {
-  await openGetStarted(page, baseURL);
-  await page.getByLabel("Repository name").fill("my-site");
-  await page.getByRole("radio", { name: /Starter site/ }).check();
-  await page.getByRole("button", { name: "Create repository" }).click();
-
-  await expect(frame(page).getByRole("heading", { name: "Starter site heading" })).toBeVisible({ timeout: 30_000 });
-  const created = (await state(page, baseURL)).created as { name: string }[];
-  expect(created.map((repo) => repo.name)).toEqual(["my-site"]);
-  expect(await head(page, baseURL, "my-site"), "nothing is committed before Save").toBeNull();
-
-  const panel = await listChanges(page);
-  for (const path of ["index.html", "styles/site.css", "images/logo.svg", ".editor/config.json"])
-    await expect(panel).toContainText(path);
-  await expect(panel).not.toContainText("wrangler.jsonc");
-  await expect(panel).not.toContainText(".github/");
-  await publishNow(page);
-
-  expect(await head(page, baseURL, "my-site")).toMatch(/^[0-9a-f]{40}$/);
-  for (const path of ["index.html", "styles/site.css", "images/logo.svg"])
-    expect((await file(page, baseURL, "my-site", path)).status(), path).toBe(200);
-  const config = JSON.parse(await (await file(page, baseURL, "my-site", ".editor/config.json")).text());
-  expect(config.site.name).toBe("My site");
-  expect(config.site.url).toBeUndefined();
-  expect(JSON.stringify(config)).not.toContain("starter-test.example");
-  for (const path of ["wrangler.jsonc", ".assetsignore", ".github/workflows/deploy.yml"])
-    expect((await file(page, baseURL, "my-site", path)).status(), path).toBe(404);
-  const home = await (await file(page, baseURL, "my-site", "index.html")).text();
-  expect(home).not.toContain("starter-test.example");
-  expect(home).not.toContain("noindex");
-});
+// Creating a site from the Starter site (committed as the repository's first commit) is in native-setup-wizard.spec.ts.
 
 test("when the editor may not create repositories, GitHub's New repository page is offered", async ({ page, baseURL }) => {
   await control(page, baseURL, { create: "forbidden" });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Repository name").fill("my-site");
-  await page.getByRole("button", { name: "Create repository" }).click();
+  await page.getByRole("button", { name: "Create site" }).click();
   const link = page.locator(".onboard-fallback").getByRole("link", { name: /Create my-site on GitHub/ });
   await expect(link).toBeVisible({ timeout: 30_000 });
   const url = new URL((await link.getAttribute("href"))!);
@@ -266,11 +237,11 @@ test("when the editor may not create repositories, GitHub's New repository page 
 
 test("a taken repository name is an inline error and the form stays", async ({ page, baseURL }) => {
   await control(page, baseURL, { create: "taken" });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Repository name").fill("my-site");
-  await page.getByRole("button", { name: "Create repository" }).click();
-  await expect(page.locator(".get-started .onboard-message").first()).toContainText(/did not accept the name my-site/, { timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Create repository" })).toBeEnabled();
+  await page.getByRole("button", { name: "Create site" }).click();
+  await expect(page.locator(".wizard-form .onboard-message").first()).toContainText(/did not accept the name my-site/, { timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Create site" })).toBeEnabled();
   await expect(page.getByLabel("Repository name")).toHaveValue("my-site");
   await expect(page.locator(".onboard-fallback")).toBeHidden();
   expect((await state(page, baseURL)).repositories).toEqual([]);
@@ -353,15 +324,16 @@ test("a normal native repository opens straight into the preview", async ({ page
 
 test("a repository made on GitHub's page gets the chosen starting point when it opens", async ({ page, baseURL }) => {
   await control(page, baseURL, { create: "forbidden" });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Repository name").fill("later-site");
-  await page.getByRole("button", { name: "Create repository" }).click();
+  await page.getByRole("radio", { name: /Starter site/ }).check();
+  await page.getByRole("button", { name: "Create site" }).click();
   await expect(page.locator(".onboard-fallback")).toBeVisible({ timeout: 30_000 });
   // The user makes it empty on GitHub and gives the editor access; it opens with the starter, unasked.
   await control(page, baseURL, { add: [{ name: "later-site", kind: "empty" }] });
-  // Opened once, without a reload in between: the choice is taken the first time the repository opens.
-  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
-  await page.goto(`${baseURL}/#repo=${repos.find((repo) => repo.name === "later-site")!.id}&branch=main`);
+  // Back in the wizard: the user says it is made, and the editor opens it; the choice is taken the first time it opens.
+  await page.getByRole("button", { name: "I've created it" }).click();
+  await page.getByRole("button", { name: "Open the editor" }).click({ timeout: 30_000 });
   await expect(frame(page).getByRole("heading", { name: "Starter site heading" })).toBeVisible({ timeout: 30_000 });
   const panel = await listChanges(page);
   await expect(panel).toContainText("index.html");
@@ -434,9 +406,9 @@ test("a home page an agent writes switches the site on, and discarding all bring
 
 test("a remembered starting point is dropped, not applied, when the repository has files", async ({ page, baseURL }) => {
   await control(page, baseURL, { create: "forbidden" });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Repository name").fill("notes");
-  await page.getByRole("button", { name: "Create repository" }).click();
+  await page.getByRole("button", { name: "Create site" }).click();
   await expect(page.locator(".onboard-fallback")).toBeVisible({ timeout: 30_000 });
   await control(page, baseURL, { add: [{ name: "notes", kind: "no-site" }] });
   const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];

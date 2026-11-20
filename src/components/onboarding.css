@@ -1,31 +1,20 @@
-/* Get started and Start your site: the screens of an account or repository with nothing to show yet. */
-.get-started,
+/* Start your site: the screen of a repository with nothing to show yet, and the pieces the setup wizard shares with it. */
 .start-site {
   max-width: 880px;
   margin: 0 auto;
   padding: 56px 32px 48px;
 }
-.get-started h1,
 .start-site h1 {
   font-size: var(--type-heading);
   margin: 8px 0 12px;
 }
-.get-started .intro,
 .start-site .intro {
   max-width: 560px;
   margin-bottom: 28px;
   font-size: var(--type-title);
   line-height: 1.6;
 }
-.get-started .intro-label { margin-bottom: 0; }
 .start-site .badge { margin-bottom: 4px; }
-
-.get-started__columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
 .onboard-card {
   display: flex;
   flex-direction: column;
@@ -160,9 +149,7 @@
 .start-site__choices[aria-busy="true"] { opacity: 0.6; pointer-events: none; }
 
 @media (max-width: 720px) {
-  .get-started,
   .start-site { padding: 32px 16px; }
-  .get-started__columns,
   .start-site__choices { grid-template-columns: minmax(0, 1fr); }
   .onboard-agent__row { flex-direction: column; align-items: stretch; }
 }

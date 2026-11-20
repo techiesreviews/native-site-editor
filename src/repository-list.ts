@@ -54,7 +54,8 @@ export interface RepositoryListPorts {
   /** Opens the project list (the project menu). */
   chooseProject: () => void;
   removeFinishStarter(): void;
-  showGetStarted(): Promise<void>;
+  /** The welcome page of a signed-in account with nothing to open (src/setup-host.ts). */
+  showWelcome(): void;
   knownRepositories(): number[] | undefined;
   rememberRepositories(list: Repository[]): void;
 }
@@ -113,9 +114,9 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         options(ports.repositorySelect, [
           { value: "", label: "No selected repositories" },
         ]);
-        if (setupEntry.dismissed()) void ports.showGetStarted().catch(errorMessage);
+        if (setupEntry.dismissed()) ports.showWelcome();
         else {
-          // A new user: the Setup wizard, full screen, in place of Get started.
+          // A new user: the Setup wizard, full screen, over the welcome page.
           ports.content.replaceChildren(node("p", "empty-message", "Create your first site to get started."));
           void setupEntry.open().catch(errorMessage);
         }

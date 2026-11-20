@@ -151,7 +151,7 @@ export interface WorkspaceMountPorts {
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
   versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
   pagesAndFiles: Pick<PagesAndFiles, "pageActions" | "mountExplorer"> & { loadPagesActions(): Promise<unknown>; filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh"> };
-  setup: { setupController: Pick<SetupHost["setupController"], "mount" | "dispose">; setupEntry: Pick<SetupHost["setupEntry"], "remove">; startSitePanel: () => Promise<HTMLElement> };
+  setup: { setupController: Pick<SetupHost["setupController"], "dispose">; setupEntry: Pick<SetupHost["setupEntry"], "remove">; startSitePanel: () => Promise<HTMLElement> };
   site: WorkspaceSitePorts;
   account: WorkspaceAccountPorts;
   repositoryIndex: Pick<RepositoryIndex, "clear">;
@@ -326,7 +326,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: notices.announce });
     const menuPanel = ports.element("repository-actions");
     menuPanel.addEventListener("toggle", () => {
-      if (menuPanel.matches(":popover-open")) { void ports.agentController.ensure().catch(notices.errorMessage); void ports.setup.setupController.mount().catch(notices.errorMessage); }
+      if (menuPanel.matches(":popover-open")) void ports.agentController.ensure().catch(notices.errorMessage);
     });
     repositorySelect = ports.element<HTMLSelectElement>("repository");
     blockRail = mountBlockRail(ports.app.querySelector<HTMLElement>(".workspace")!, ports.element<HTMLButtonElement>("add-panel-toggle"), {

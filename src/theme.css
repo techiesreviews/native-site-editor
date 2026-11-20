@@ -223,7 +223,7 @@
   --type-base: 13px;
   /* Panel and dialog titles. */
   --type-title: 15px;
-  /* A page's own heading: the wizard's last page, Get started. */
+  /* A page's own heading: the wizard's steps, Start your site. */
   --type-heading: 20px;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 

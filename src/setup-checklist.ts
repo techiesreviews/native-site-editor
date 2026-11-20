@@ -1,58 +1,38 @@
-// The Set up your site checklist: which items are done, from the state the
-// editor already holds, and what it remembers per account and repository.
-// Pure, so it is tested without a browser (tests/setup-checklist.test.ts).
+// Setup in the Inbox (TOOLS-188): the setup rows a site the editor made lists
+// until each is done, from the state the editor already holds, and what it
+// remembers per account and repository. Pure, so it is tested without a
+// browser (tests/setup-checklist.test.ts).
 
-export type SetupItemId = "start" | "save" | "name" | "agent";
+/** Name your site, and Connect an agent (optional). */
+export type SetupRow = "name" | "agent";
 
-export interface SetupState {
-  /** The repository has a root index.html, committed or drafted. */
-  homePage: boolean;
-  /** The branch has a commit (it is not an empty repository). */
-  committed: boolean;
-  /** The home page is still an unsaved new file. */
-  homeUnsaved: boolean;
+export interface SetupRowState {
   /** The site name in `.editor/config.json`, drafts included. */
   siteName?: string;
   /** The site name a repository of this name starts with. */
   defaultName: string;
-  /** The user confirmed the name in the checklist's own form. */
-  nameConfirmed?: boolean;
-  /** An agent is connected, or was for this repository. */
+  /** An agent is connected now. */
   agent: boolean;
 }
 
-export interface SetupProgress {
-  done: Record<SetupItemId, boolean>;
-  /** Items that count toward done: Start, Save and Name (Connect an agent is optional; putting the site online comes later). */
-  required: SetupItemId[];
-  doneCount: number;
-  total: number;
-  complete: boolean;
-}
-
-export const REQUIRED_ITEMS: SetupItemId[] = ["start", "save", "name"];
-
-export function setupProgress(state: SetupState): SetupProgress {
-  const named = Boolean(state.siteName && (state.siteName !== state.defaultName || state.nameConfirmed));
-  const done: Record<SetupItemId, boolean> = {
-    start: state.homePage,
-    save: state.committed && state.homePage && !state.homeUnsaved,
-    name: named,
-    agent: state.agent,
-  };
-  const doneCount = REQUIRED_ITEMS.filter((id) => done[id]).length;
-  return { done, required: REQUIRED_ITEMS, doneCount, total: REQUIRED_ITEMS.length, complete: doneCount === REQUIRED_ITEMS.length };
-}
-
-/** What the editor remembers about the checklist for one repository. */
+/** What the editor remembers about setup for one repository. */
 export interface SetupMemory {
-  /** A starting point was applied here: the checklist shows by itself. */
+  /** The setup wizard or Start your site made the site here: its setup rows show in the Inbox. */
   auto?: boolean;
-  dismissed?: boolean;
-  /** The completed state was shown; it does not come back by itself. */
-  finished?: boolean;
+  /** An agent was connected for this repository. */
   agent?: boolean;
+  /** The name was saved from the Inbox's own form, even the default one. */
   named?: boolean;
+}
+
+/** The setup rows still open: only for a site the editor made, each until done. */
+export function setupRows(memory: SetupMemory, state: SetupRowState): SetupRow[] {
+  if (!memory.auto) return [];
+  const named = Boolean(state.siteName && (state.siteName !== state.defaultName || memory.named));
+  const rows: SetupRow[] = [];
+  if (!named) rows.push("name");
+  if (!memory.agent && !state.agent) rows.push("agent");
+  return rows;
 }
 
 type Store = Pick<Storage, "getItem" | "setItem">;
@@ -64,7 +44,7 @@ export function readSetupMemory(store: Store, account: string, repoId: number): 
     const value = JSON.parse(store.getItem(setupKey(account, repoId)) ?? "null");
     if (!value || typeof value !== "object") return {};
     const out: SetupMemory = {};
-    for (const key of ["auto", "dismissed", "finished", "agent", "named"] as const) if (value[key] === true) out[key] = true;
+    for (const key of ["auto", "agent", "named"] as const) if (value[key] === true) out[key] = true;
     return out;
   } catch {
     return {};
@@ -76,14 +56,9 @@ export function writeSetupMemory(store: Store, account: string, repoId: number, 
   try {
     store.setItem(setupKey(account, repoId), JSON.stringify(next));
   } catch {
-    // Storage unavailable: the checklist works for this page load only.
+    // Storage unavailable: setup is remembered for this page load only.
   }
   return next;
-}
-
-/** Whether the checklist shows now: asked for, or by itself until dismissed or finished. */
-export function setupVisible(memory: SetupMemory, opened: boolean): boolean {
-  return opened || Boolean(memory.auto && !memory.dismissed && !memory.finished);
 }
 
 /**

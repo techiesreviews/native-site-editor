@@ -84,18 +84,6 @@
       ]
     },
     {
-      "id": "spotlight",
-      "name": "Spotlight",
-      "group": "shared",
-      "for": "Dims the page, rings one element and shows a callout beside it with a title, text and buttons.",
-      "use": "`spotlight(target, options)` from `src/components/spotlight.ts`; placement in `src/components/spotlight-layout.ts`.",
-      "files": [
-        "src/components/spotlight.ts",
-        "src/components/spotlight.css",
-        "src/components/spotlight-layout.ts"
-      ]
-    },
-    {
       "id": "refusal-note",
       "name": "Refusal note",
       "group": "shared",

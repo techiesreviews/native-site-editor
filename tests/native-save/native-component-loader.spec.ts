@@ -38,8 +38,6 @@ async function blankSite(page: Page, baseURL: string | undefined) {
   await expect(page.getByRole("heading", { name: "Start your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: /^Blank page/ }).click();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  // Keep checklist out of the editing controls.
-  if (await page.locator("#setup-checklist-panel").isVisible()) await page.keyboard.press("Escape");
   await openPages(page);
   await page.getByRole("button", { name: "+ New page", exact: true }).click();
   const title = page.getByRole("textbox", { name: "New page title", exact: true });

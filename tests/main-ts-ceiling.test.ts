@@ -111,15 +111,15 @@ test("setup, media, Pages & files, workspace, page-builder, site preview, text i
 
 test("a setup host member passed by value, called on the spot or reached through an early call above its destructuring is named", () => {
   const source = [
-    "const early = { show: showGetStarted, later: () => renderLogin() };",
+    "const early = { show: showWelcome, later: () => renderLogin() };",
     "(() => startSitePanel())();",
     "(function () { takeStartingPoint(); })();",
     "function early() { inner(); } function inner() { writeStartingPoint(); } early();",
     "const later = { open: early };",
     "const setup = createSetupHost({});",
-    "const answer = 1, { renderLogin, showGetStarted, startSitePanel, takeStartingPoint, writeStartingPoint } = setup;",
+    "const answer = 1, { renderLogin, showWelcome, startSitePanel, takeStartingPoint, writeStartingPoint } = setup;",
   ].join("\n");
-  assert.deepEqual(hostMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
+  assert.deepEqual(hostMembersUsedEarly(source), ["showWelcome (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
 });
 
 test("a member destructured straight from a factory's call, reached through an early hoisted call, is named", () => {

@@ -151,6 +151,17 @@
 .inbox__field { inline-size: 100%; min-block-size: var(--size-compact); }
 .inbox__refused { color: var(--warning-fg); font-size: var(--type-small); }
 .inbox__actions > .inbox__refused { flex-basis: 100%; }
+/* Name your site's form (TOOLS-188): the field and Save name side by side, starting under the row's words. */
+.inbox__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2xs);
+  margin: 0 var(--space-xs) var(--space-xs) calc(2 * var(--space-xs) + var(--space-m));
+}
+.inbox__name { display: grid; gap: var(--space-3xs); }
+.inbox__name > label { color: var(--muted); font-size: var(--type-small); }
+.inbox__form > .inbox__refused { grid-column: 1 / -1; }
 /* Fix all with AI and Accept all, over the list. */
 .inbox__all { display: flex; padding: 0 var(--space-xs) var(--space-xs); }
 @media (hover: none), (pointer: coarse), (width <= 768px) {

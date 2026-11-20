@@ -181,8 +181,8 @@ const lazyLoaders = createLazyLoaders({
     chooseRepository, forgetPartialStart, removeFinishStarter, loadSnapshot, announce, errorMessage,
   }),
 });
-const { loadConfirmDialog, loadHistory, loadMediaWorkspace, loadMedia, loadSetupActions, loadChecklist, loadAgentPrompts, loadWizard, loadGetStarted,
-  loadStartSite, loadSpotlight, loadAgentMenu, loadSiteSettings, loadAgentSite } = lazyLoaders;
+const { loadConfirmDialog, loadHistory, loadMediaWorkspace, loadMedia, loadSetupActions, loadAgentPrompts, loadWizard,
+  loadStartSite, loadAgentMenu, loadSiteSettings, loadAgentSite } = lazyLoaders;
 
 // Components as first-class page builder objects (src/page-builder/components.ts).
 let componentTools: ComponentTools | undefined;
@@ -298,13 +298,6 @@ const media = createMediaHost({
   setupScope: () => setupScope(),
 });
 const { mediaPorts, mediaController, discardUpload, readMediaText } = media;
-const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
-  files: () => runtime.files(), stamp: () => workspaceSession.begin(),
-  label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), showing: () => nativePreview?.route(), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
-  select: (request, later) => later ? nativePreview?.selectAfterUpdate(request, { reveal: "center" }) : nativePreview?.selectNode(request, false), error: errorMessage,
-  pageDetails: page => void openNativePageSettings(page), media: () => mediaController.workspaceContext(), site: () => runtime.site ?? undefined, // TOOLS-253: shared parts, Fix with AI
-  agent: () => agentController, edits: guardedEdits, announce: message => announce(message), tools: () => workspace.loadComponentTools(),
-  editComponent: (tag, instance, notes) => componentTools?.editComponent(tag, undefined, instance, notes) ?? Promise.resolve(undefined) });
 
 // `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
 let deactivatingAway = false;
@@ -337,21 +330,27 @@ let repositories: Repository[] = [];
 let info: SessionInfo;
 let fileGeneration = 0;
 
-// Login, Start your site, the Setup checklist and wizard, and Get started (src/setup-host.ts).
+// The welcome page, Start your site, the wizard and setup in the Inbox (src/setup-host.ts).
 const setup = createSetupHost({
-  app, element, appStore, workspaceSession, closeWorkspace: () => closeWorkspace(), setupScope: () => setupScope(), draftScope, draftStore, nativeEffectiveSource: (path, scope) => runtime.source(path, scope), api,
+  app, element, appStore, workspaceSession, closeWorkspace: () => closeWorkspace(), setupScope: () => setupScope(), draftScope, nativeEffectiveSource: (path, scope) => runtime.source(path, scope), api,
   get info() { return info; }, get repositories() { return repositories; }, get content() { return workspace.content; },
-  get repositoryMenu() { return workspace.repositoryMenu; }, get nativeEngaged() { return runtime.engaged; },
-  get agentPrompts() { return lazyLoaders.agentPrompts; }, get onboardingCopy() { return lazyLoaders.onboardingCopy; },
+  get repositoryMenu() { return workspace.repositoryMenu; }, get agentPrompts() { return lazyLoaders.agentPrompts; },
   get boot() { return boot; }, get agentController() { return agentController; },
   loadRepositories: (prefetched) => loadRepositories(prefetched),
-  loadSetupActions, loadWizard, loadChecklist, loadSpotlight, loadGetStarted, loadStartSite, loadAgentPrompts,
-  status, errorMessage, refuse,
+  loadSetupActions, loadWizard, loadStartSite, loadAgentPrompts, status, errorMessage,
 });
 const {
-  renderLogin, setupController, setupEntry, showGetStarted, checkNewRepositories,
+  renderLogin, setupController, setupEntry, showWelcome, checkNewRepositories,
   rememberRepositories, knownRepositories, rememberStartingPoint, rememberPartialStart, forgetPartialStart, removeFinishStarter,
 } = setup;
+const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
+  files: () => runtime.files(), stamp: () => workspaceSession.begin(),
+  label: file => pagesController.pageLabel(file), route: file => nativeRouteForPath(file), showing: () => nativePreview?.route(), picture: (...args) => mediaController.placeState(...args)?.state, open: page => openAfter(page),
+  select: (request, later) => later ? nativePreview?.selectAfterUpdate(request, { reveal: "center" }) : nativePreview?.selectNode(request, false), error: errorMessage,
+  pageDetails: page => void openNativePageSettings(page), media: () => mediaController.workspaceContext(), site: () => runtime.site ?? undefined, // TOOLS-253: shared parts, Fix with AI
+  agent: () => agentController, edits: guardedEdits, announce: message => announce(message), tools: () => workspace.loadComponentTools(),
+  editComponent: (tag, instance, notes) => componentTools?.editComponent(tag, undefined, instance, notes) ?? Promise.resolve(undefined),
+  setup: setupController }); // TOOLS-188: setup rows
 
 function imagesSignature() {
   const scope = draftScope();
@@ -433,7 +432,7 @@ const workspaceBoot = createWorkspaceBoot({
 });
 const { restoreFile, loadSnapshot, chooseRepository } = workspaceBoot;
 
-// Coming back to the tab lists the repositories again for Get started (src/setup-host.ts).
+// Coming back to the tab lists the repositories again for the welcome page (src/setup-host.ts).
 window.addEventListener("focus", () => void checkNewRepositories());
 document.addEventListener("visibilitychange", () => void checkNewRepositories());
 
@@ -447,7 +446,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get branchSelect() { return workspace.branchSelect; }, get repositorySelect() { return workspace.repositorySelect; },
   get repositoryMenu() { return workspace.repositoryMenu; }, get siteActions() { return workspace.siteActions; },
   nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage, chooseProject: () => workspace.chooseProject(),
-  removeFinishStarter, showGetStarted, knownRepositories, rememberRepositories,
+  removeFinishStarter, showWelcome, knownRepositories, rememberRepositories,
 });
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).

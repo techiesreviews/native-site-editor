@@ -1,10 +1,12 @@
 // The Inbox (site-quality slice 40, mock-up 05 v2; TOOLS-222; CONTEXT.md **Inbox**). The tray button comes with the
 // top bar (src/workspace-shell.ts); everything else, the checks, the list, the dots and the panel, loads once the
 // site's pages are read or the Inbox opens (src/inbox/inbox.ts), so the boot bundle holds only this. Every change
-// of the drafts checks again, so items go by themselves once fixed.
+// of the drafts checks again, so items go by themselves once fixed. A site the editor made also lists its setup rows
+// at the top (TOOLS-188; src/inbox/inbox-setup.ts), which load the list by themselves.
 
-import { effect } from "@preact/signals-core";
+import { effect, type ReadonlySignal } from "@preact/signals-core";
 import type { AppStore } from "../app-store";
+import type { SetupRow } from "../setup-checklist";
 import { lazyModule } from "../lazy-module";
 import type { NativeNodeRequest } from "../components/native-preview";
 import type { MediaWorkspaceContext } from "../page-builder/media-workspace";
@@ -52,6 +54,16 @@ export interface InboxPorts {
   error(error: unknown): void;
   /** Says a message on the editor's status line (#status), for a screen reader. */
   announce(message: string): void;
+  /** Setup in the Inbox (TOOLS-188): the setup rows still open for a site the editor made, and their actions. */
+  readonly setup: {
+    readonly items: ReadonlySignal<readonly SetupRow[]>;
+    /** The name the form starts with: the site's own, or the one its repository gives it. */
+    siteName(): string | undefined;
+    /** Writes the site's name; a problem to show, or nothing once written. */
+    saveName(name: string): Promise<string | undefined>;
+    /** Opens the project menu with Connect to MCP lit. */
+    connectAgent(): Promise<void>;
+  };
 }
 
 const idle = (run: () => void) => typeof requestIdleCallback === "function" ? requestIdleCallback(run, { timeout: 2000 }) : setTimeout(run);
@@ -66,8 +78,9 @@ export function createInbox(ports: InboxPorts) {
 
   function changed() {
     clearTimeout(timer);
-    // Nothing loads for a site not yet read: the text index calls this again once it has every page.
-    if (!loaded && !(ports.pages().length && ports.indexed())) return;
+    // Nothing loads for a site not yet read (the text index calls this again once it has every page), unless setup
+    // rows wait.
+    if (!loaded && !(ports.pages().length && ports.indexed()) && !ports.setup.items.peek().length) return;
     // After a pause in the changes, in the browser's idle time, so an edit's own work never waits for it.
     timer = setTimeout(() => idle(() => void load().then(inbox => inbox.check()).catch(fail)), 400);
   }
@@ -84,5 +97,7 @@ export function createInbox(ports: InboxPorts) {
     void ports.appStore.snapshot.value;
     changed();
   });
+  // Setup rows appearing load the list (which then follows them itself, src/inbox/inbox.ts).
+  effect(() => { if (ports.setup.items.value.length && !loaded) changed(); });
   return { changed };
 }

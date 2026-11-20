@@ -17,21 +17,42 @@ import {
   type WizardStepId,
 } from "../setup-wizard";
 import { closeLightbox, createGithubTrip } from "./github-trip";
-import { newRepositoryUrl, type CreateChoice } from "./get-started";
 import { createRepositoryNameField } from "./repository-name-field";
 import "./onboarding.css";
 import "./setup-wizard.css";
 
 // The Setup wizard: a full-screen guide for a signed-in account that has
 // nothing to open yet, from "no site" to a site open in the editor. Steps
-// down the left, the current step on the right. The sign-in screen has no
-// part in it: the worker sends an account without the App to GitHub's
-// install page by itself, so step 1 (Connect GitHub) shows done, and shows
-// its content only for an account that came back without having installed (a
-// retry, with screenshots of what GitHub asks). Step 2 makes the repository
-// with its starting point already committed; the last page celebrates, with a
-// preview of the new home page and the way into the editor. Connecting an
-// agent is in the editor's Set up your site checklist; publishing comes later.
+// down the left, the current step in one card on the right. The worker sends
+// an account without the App to GitHub's install page by itself, so step 1
+// (Connect GitHub) shows done, and shows its content only for an account that
+// came back without having installed (a retry, with screenshots of what
+// GitHub asks). Step 2 makes the repository with its starting point already
+// committed, or opens one the account has ("Use a site you have"); the last
+// page shows the new home page and the way into the editor. Naming the site
+// and connecting an agent are setup items in the editor's Inbox.
+
+export interface CreateChoice {
+  name: string;
+  /** The organisation to create it in; absent for the signed-in account. */
+  owner?: string;
+  private: boolean;
+  point: StartingPoint;
+}
+
+/**
+ * GitHub's New repository page, prefilled, for an empty repository: the
+ * starting point is written by the editor when the repository opens (a
+ * template copy would bring the template's own deployment and test address).
+ */
+export function newRepositoryUrl(choice: CreateChoice) {
+  const url = new URL("https://github.com/new");
+  if (choice.owner) url.searchParams.set("owner", choice.owner);
+  url.searchParams.set("name", choice.name);
+  url.searchParams.set("visibility", choice.private ? "private" : "public");
+  url.searchParams.set("description", "A website edited with Native Site Editor");
+  return url.href;
+}
 
 export type WizardCreateOutcome =
   | { ok: true; repo: WizardRepo; error?: string }
@@ -62,9 +83,13 @@ export interface SetupWizardOptions {
   remember: (change: Partial<WizardMemory>) => void;
   /** The home page of the new site as one HTML document (styles inlined, no scripts), for the preview; undefined when it cannot be had. */
   loadPreview?: (repo: WizardRepo) => Promise<string | undefined>;
-  /** The last step: open the editor on the new repository. */
+  /** The repositories the editor can open (uncached), for "Use a site you have". */
+  listRepositories?: () => Promise<WizardRepo[]>;
+  /** GitHub's page where the account chooses which repositories the editor may open; null when unknown. */
+  accessUrl?: string | null;
+  /** The last step, or a site the account has: open the editor on that repository. */
   finish: (repo: WizardRepo) => void;
-  /** Leave the wizard (to Get started). */
+  /** Leave the wizard (to the welcome page). */
   exit: () => void;
 }
 
@@ -87,18 +112,22 @@ export function createSetupWizard(options: SetupWizardOptions) {
     point: (memory?.point ?? "starter") as StartingPoint,
     visibility: (memory?.visibility ?? "public") as "public" | "private",
     repo: memory?.repo,
+    /** Step 2: make a new repository, or open one the account has. */
+    mode: "new" as "new" | "existing",
     busy: false,
     agentOpen: false,
     about: "",
     message: "",
     /** The repository the user was sent to create by hand on GitHub: this wizard waits for it to appear. */
     manual: undefined as CreateChoice | undefined,
-    progress: undefined as "creating" | "adding" | "done" | undefined,
   };
   let owners: OwnerInstallation[] | undefined;
   let progressTimer: ReturnType<typeof setTimeout> | undefined;
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   let destroyed = false;
   let confetti: { remove: () => void } | undefined;
+  /** "Use a site you have" with nothing to list: back on this tab, it lists again. */
+  let relist: (() => void) | undefined;
 
   const root = node("section", "wizard");
   root.setAttribute("aria-label", "Set up your site");
@@ -130,14 +159,17 @@ export function createSetupWizard(options: SetupWizardOptions) {
   const onVisible = () => {
     if (document.visibilityState !== "visible") return;
     void checkManual(false);
+    relist?.();
   };
   window.addEventListener("focus", onVisible);
   document.addEventListener("visibilitychange", onVisible);
   // ---- Navigation ----
-  function goTo(step: WizardStepId) {
+  function goTo(step: WizardStepId, mode: typeof state.mode = "new") {
     confetti?.remove();
     confetti = undefined;
+    relist = undefined;
     state.step = step;
+    state.mode = mode;
     state.message = "";
     options.remember({ step });
     render();
@@ -145,17 +177,17 @@ export function createSetupWizard(options: SetupWizardOptions) {
   }
 
   // ---- Pieces ----
-  function agentLink(choice: () => { name: string; private: boolean; owner?: string }) {
-    const wrap = node("div", "wizard-agent");
+  /** "Do this with an agent": a quiet button for the card's foot, and the box it opens in place. */
+  function agentBox(choice: () => { name: string; private: boolean; owner?: string }) {
     const toggle = button("Do this with an agent", () => {
       state.agentOpen = !state.agentOpen;
-      panel.hidden = !state.agentOpen;
+      box.hidden = !state.agentOpen;
       toggle.setAttribute("aria-expanded", String(state.agentOpen));
       if (state.agentOpen) about.focus();
-    }, "wizard-quiet");
+    }, "button wizard-quiet");
     toggle.setAttribute("aria-expanded", String(state.agentOpen));
-    const panel = node("div", "wizard-agent__panel");
-    panel.hidden = !state.agentOpen;
+    const box = node("div", "wizard-agent");
+    box.hidden = !state.agentOpen;
     const label = node("label", "onboard-field");
     const about = node("input", "onboard-input");
     about.placeholder = "a pottery studio in Bristol";
@@ -163,25 +195,26 @@ export function createSetupWizard(options: SetupWizardOptions) {
     about.value = state.about;
     about.addEventListener("input", () => (state.about = about.value));
     label.append(node("span", "onboard-field__label", "What is the site about?"), about);
-    const copied = node("span", "onboard-message");
-    copied.setAttribute("role", "status");
-    const copy = button("Copy agent prompt", async () => {
+    const failed = node("span", "onboard-message");
+    failed.setAttribute("role", "alert");
+    // The button says it copied, for a moment.
+    const showCopy = (copied: boolean) => {
+      copy.replaceChildren(icon(copied ? "check" : "copy", 14), copied ? "Copied" : "Copy agent prompt");
+    };
+    const copy = button("", async () => {
+      failed.textContent = "";
       try {
         await navigator.clipboard.writeText(options.agentPrompt(choice(), about.value));
-        copied.textContent = "Copied. Paste it into Claude Code, Codex or another coding agent.";
+        showCopy(true);
+        clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => showCopy(false), 1500);
       } catch {
-        copied.textContent = "Clipboard access was denied. Allow it in your browser and copy again.";
+        failed.textContent = "Clipboard access was denied. Allow it in your browser and copy again.";
       }
     }, "button secondary onboard-copy");
-    copy.prepend(icon("copy", 14));
-    const row = node("div", "onboard-agent__row");
-    row.append(label, copy);
-    panel.append(
-      row,
-      copied,
-    );
-    wrap.append(toggle, panel);
-    return wrap;
+    showCopy(false);
+    box.append(label, copy, failed);
+    return { toggle, box };
   }
 
   function stepper() {
@@ -202,57 +235,88 @@ export function createSetupWizard(options: SetupWizardOptions) {
     return list;
   }
 
+  const signedIn = () => {
+    const line = node("p", "wizard-signed");
+    line.append(icon("check", 14), `Signed in as ${options.login}`);
+    return line;
+  };
+
   // Step 1: done for an account with the App; for one that came back without it (cancelled on GitHub), the retry.
   function connectStep(content: HTMLElement, footer: HTMLElement) {
+    if (options.connectPurpose === "register-app") {
+      registerAppStep(content, footer);
+      return;
+    }
+    content.append(signedIn());
     if (state.connected) {
-      const done = node("p", "wizard-done");
-      done.append(icon("check", 16), ` GitHub is connected as ${options.login}. The editor can create and change your site's repository.`);
-      content.append(done);
       footer.append(nextButton("Next", () => goTo("create")));
       return;
     }
-    if (options.connectPurpose === "register-app") {
-      registerAppStep(content);
-      return;
-    }
-    const intro = node("p", "wizard-text wizard-signed-in");
-    intro.append(node("strong", "", "You're signed in."), " One more step on GitHub: install the editor on your account.");
-    const how = node("p", "wizard-text", "This is one trip: GitHub installs the editor and signs you in together, so there is nothing to do twice. If you left GitHub before finishing, connect again.");
-    const heading = node("h2", "wizard-subtitle", "What you'll see on GitHub");
-    const trip = createGithubTrip({
-      note: "GitHub asks you to authorize the editor (it signs you in) and to install it: choose All repositories. A new account has no repositories yet, and the editor only changes the ones you open. Then you come back here automatically, and the wizard carries on.",
-    });
-    const connect = link("Connect GitHub", options.connectUrl, "button primary wizard-connect__button");
-    const actions = node("div", "wizard-actions");
-    actions.append(connect);
-    content.append(intro, how, heading, trip, actions, agentLink(() => ({ name: state.name || DEFAULT_REPOSITORY_NAME, private: state.visibility === "private" })));
-    footer.append(nextButton("Next", () => goTo("create"), true));
+    const figure = node("figure", "wizard-trip");
+    figure.append(createGithubTrip(), node("figcaption", "wizard-hint", "What you'll see on GitHub"));
+    content.append(node("p", "wizard-lead", "One more step on GitHub: install the editor on your account."), figure);
+    footer.append(link("Connect GitHub", options.connectUrl, "button primary wizard-push"));
   }
 
   // Step 1 for the owner of a fresh editor: nobody is signed in yet, because the editor has no GitHub App to sign in with.
-  function registerAppStep(content: HTMLElement) {
-    const intro = node("p", "wizard-text");
-    intro.append(node("strong", "", "You're not signed in yet."), " This editor has no GitHub App, so first create one for it on GitHub.");
-    const how = node("p", "wizard-text", "GitHub asks you to confirm the new App and to install it, then you come back here to sign in and create your site. If you left GitHub before finishing, connect again.");
-    const connect = link("Create this editor's GitHub App", options.connectUrl, "button primary wizard-connect__button");
-    const actions = node("div", "wizard-actions");
-    actions.append(connect);
-    content.append(intro, how, actions);
+  function registerAppStep(content: HTMLElement, footer: HTMLElement) {
+    content.append(node("p", "wizard-lead", "This editor has no GitHub App yet. Create one for it on GitHub, then sign in here."));
+    footer.append(link("Create this editor's GitHub App", options.connectUrl, "button primary wizard-push"));
   }
 
-  const nextButton = (text: string, action: () => void, disabled = false, className = "button primary") => {
-    const next = button(text, action, className);
-    next.disabled = disabled;
-    return next;
-  };
+  const nextButton = (text: string, action: () => void) => button(text, action, "button primary wizard-push");
   const backButton = () => button("Back", () => goTo(stepBefore(state.step)), "button secondary");
+
+  // Step 2, "Use a site you have": the repositories the editor can open, each opened in one click.
+  function existingStep(content: HTMLElement, footer: HTMLElement) {
+    const list = node("ul", "wizard-repos");
+    list.setAttribute("aria-busy", "true");
+    const message = node("p", "onboard-message wizard-message");
+    message.setAttribute("role", "status");
+    content.append(list, message);
+    footer.append(button("Start a new site", () => goTo("create"), "button wizard-quiet"));
+    let listing = false;
+    const fill = async () => {
+      if (listing || !options.listRepositories) return;
+      listing = true;
+      try {
+        const repos = await options.listRepositories();
+        if (destroyed || !list.isConnected) return;
+        list.removeAttribute("aria-busy");
+        message.textContent = "";
+        relist = repos.length ? undefined : () => void fill();
+        if (repos.length) {
+          list.replaceChildren(...repos.map((repo) => {
+            const item = node("li", "wizard-repos__item");
+            const mark = node("span", "wizard-repos__mark", repo.name.charAt(0).toUpperCase());
+            mark.setAttribute("aria-hidden", "true");
+            const open = button("Open", () => options.finish(repo), "button secondary");
+            open.setAttribute("aria-label", `Open ${repo.fullName}`);
+            item.append(mark, node("b", "wizard-repos__name", repo.fullName), open);
+            return item;
+          }));
+          return;
+        }
+        // Nothing the editor may open yet: GitHub's page that gives it access, and back here it lists again.
+        const none = node("li", "wizard-repos__none");
+        none.append(node("span", "", "No repositories yet."));
+        if (options.accessUrl) none.append(external("Choose repositories on GitHub", options.accessUrl, "button secondary"));
+        list.replaceChildren(none);
+      } catch {
+        if (!destroyed) message.textContent = "GitHub could not be asked. Come back to this tab to try again.";
+        relist = () => void fill();
+      } finally {
+        listing = false;
+      }
+    };
+    void fill();
+  }
 
   // Step 2
   function createStep(content: HTMLElement, footer: HTMLElement) {
-    footer.append(backButton());
     if (state.repo) {
-      const done = node("p", "wizard-done");
-      done.append(icon("check", 16), ` ${state.repo.fullName} is created${state.repo.committed ? " with your starting point saved as its first commit" : ""}.`);
+      const done = node("p", "wizard-signed");
+      done.append(icon("check", 14), `${state.repo.fullName} is created`);
       content.append(done);
       footer.append(nextButton("Next", () => goTo("open")));
       return;
@@ -307,86 +371,61 @@ export function createSetupWizard(options: SetupWizardOptions) {
     if (owners) fillOwners(owners);
     else void options.loadOwners().then((list) => { owners = list; fillOwners(list); }, () => undefined);
 
-    const pointCard = (value: StartingPoint, label: string, hintText: string) => {
-      const card = node("label", "wizard-card");
+    // A choice as a tile: the whole tile is the radio's label, and a check shows on the chosen one.
+    const tile = <T extends string>(group: "point" | "visibility", value: T, label: string, chosen: () => T, choose: (value: T) => void, art?: HTMLElement) => {
+      const card = node("label", "wizard-tile");
       const input = node("input");
       input.type = "radio";
-      input.name = "point";
+      input.name = group;
       input.value = value;
-      input.checked = state.point === value;
-      input.addEventListener("change", () => {
-        state.point = value;
-        options.remember({ point: value });
-      });
-      const art = node("span", `wizard-card__art wizard-card__art--${value}`);
-      art.setAttribute("aria-hidden", "true");
-      art.append(node("i", "a"), node("i", "b"), node("i", "c"), node("i", "d"));
-      card.append(input, art, node("span", "wizard-card__label", label), node("span", "wizard-hint", hintText));
+      input.checked = chosen() === value;
+      input.addEventListener("change", () => choose(value));
+      const name = node("b", "wizard-tile__label", label);
+      name.append(icon("check", 14));
+      card.append(input, ...(art ? [art] : []), name);
       return card;
     };
-    const points = node("fieldset", "onboard-group wizard-points");
-    points.append(
-      node("legend", "onboard-field__label", "Start from"),
-      pointCard("starter", "Starter site", "Pages, components and styles to make your own."),
-      pointCard("blank", "Blank page", "One page and a stylesheet."),
-    );
-
-    const visibility = node("fieldset", "onboard-group");
-    const visibilityOption = (value: "public" | "private", label: string, hintText: string) => {
-      const row = node("label", "onboard-option");
-      const input = node("input");
-      input.type = "radio";
-      input.name = "visibility";
-      input.value = value;
-      input.checked = state.visibility === value;
-      input.addEventListener("change", () => {
-        state.visibility = value;
-        options.remember({ visibility: value });
-      });
-      const text = node("span", "onboard-option__text");
-      text.append(node("span", "onboard-option__label", label), node("span", "onboard-option__hint", hintText));
-      row.append(input, text);
-      return row;
+    const pointArt = (value: StartingPoint) => {
+      const art = node("span", `wizard-tile__art wizard-tile__art--${value}`);
+      art.setAttribute("aria-hidden", "true");
+      art.append(node("i", "a"), node("i", "b"), node("i", "c"), node("i", "d"));
+      return art;
     };
-    visibility.append(
-      node("legend", "onboard-field__label", "Visibility"),
-      visibilityOption("public", "Public", "Anyone can see the files."),
-      visibilityOption("private", "Private", "Only you and people you invite."),
+    const group = (legend: string, ...tiles: HTMLElement[]) => {
+      const set = node("fieldset", "onboard-group");
+      const row = node("div", "wizard-tiles");
+      row.append(...tiles);
+      set.append(node("legend", "onboard-field__label", legend), row);
+      return set;
+    };
+    const choosePoint = (value: StartingPoint) => { state.point = value; options.remember({ point: value }); };
+    const chooseVisibility = (value: "public" | "private") => { state.visibility = value; options.remember({ visibility: value }); };
+    const points = group("Start from",
+      tile("point", "starter", "Starter site", () => state.point, choosePoint, pointArt("starter")),
+      tile("point", "blank", "Blank page", () => state.point, choosePoint, pointArt("blank")),
     );
-    const note = node("p", "wizard-hint", "Free hosting needs Public.");
+    const visibility = group("Visibility",
+      tile("visibility", "public", "Public", () => state.visibility, chooseVisibility),
+      tile("visibility", "private", "Private", () => state.visibility, chooseVisibility),
+    );
 
     const message = node("p", "onboard-message wizard-message");
     message.setAttribute("role", "status");
     message.textContent = state.message;
-    const progress = node("ol", "wizard-progress");
-    progress.hidden = true;
     const fallback = node("div", "onboard-fallback");
     fallback.hidden = true;
 
-    const submit = node("button", "button primary", "Create site");
+    // While it works, the button itself says what is happening.
+    const submit = node("button", "button primary wizard-push", "Create site");
     submit.type = "submit";
-    const draw = (stage: typeof state.progress) => {
-      state.progress = stage;
-      progress.hidden = !stage;
-      if (!stage) return;
-      const point = state.point === "starter" ? "the Starter site" : "a blank page";
-      const lines: [string, "creating" | "adding" | "done"][] = [
-        ["Creating the repository…", "creating"],
-        [`Adding ${point}…`, "adding"],
-        ["Done", "done"],
-      ];
-      const order = ["creating", "adding", "done"];
-      progress.replaceChildren(
-        ...lines.map(([text, id]) => {
-          const item = node("li", "wizard-progress__item", text);
-          const at = order.indexOf(stage);
-          const here = order.indexOf(id);
-          item.classList.toggle("is-done", here < at || stage === "done");
-          if (here === at && stage !== "done") item.setAttribute("aria-current", "step");
-          if (here > at) item.classList.add("is-later");
-          return item;
-        }),
-      );
+    const progress = (text?: string) => {
+      if (!text) {
+        submit.replaceChildren("Create site");
+        return;
+      }
+      const spinner = node("span", "wizard-spinner");
+      spinner.setAttribute("aria-hidden", "true");
+      submit.replaceChildren(spinner, node("span", "", text));
     };
     form.addEventListener("submit", reported(async (event) => {
       event.preventDefault();
@@ -409,12 +448,11 @@ export function createSetupWizard(options: SetupWizardOptions) {
       state.busy = true;
       form.setAttribute("aria-busy", "true");
       for (const field of form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input, select, button")) field.disabled = true;
-      back.disabled = true;
       fallback.hidden = true;
       state.manual = undefined;
       message.textContent = "";
-      draw("creating");
-      progressTimer = setTimeout(() => state.busy && draw("adding"), 1200);
+      progress("Creating the repository…");
+      progressTimer = setTimeout(() => state.busy && progress(`Adding ${state.point === "starter" ? "the Starter site" : "a blank page"}…`), 1200);
       let outcome: WizardCreateOutcome;
       try {
         outcome = await options.create(choice);
@@ -426,16 +464,15 @@ export function createSetupWizard(options: SetupWizardOptions) {
       state.busy = false;
       form.removeAttribute("aria-busy");
       if (outcome.ok) {
-        draw("done");
+        progress("Done");
         state.repo = outcome.repo;
         options.remember({ repo: outcome.repo, step: "open" });
         setTimeout(() => !destroyed && goTo("open"), reducedMotion() ? 0 : 700);
         return;
       }
-      draw(undefined);
+      progress();
       for (const field of form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input, select, button")) field.disabled = false;
       ownerSelect.disabled = Boolean(owners && owners.length === 1);
-      back.disabled = false;
       message.textContent = outcome.message;
       message.setAttribute("role", "alert");
       if (outcome.fallback) {
@@ -443,37 +480,24 @@ export function createSetupWizard(options: SetupWizardOptions) {
         const first = node("li");
         first.append(external(`Create ${choice.name} on GitHub`, newRepositoryUrl(choice)), node("span", "wizard-hint", " Leave it empty: no README, .gitignore or license."));
         steps.append(first, node("li", "", "Give the editor access to it, then come back to this tab: the repository opens here."));
-        const other = button("Use a repository you have", options.exit, "button secondary");
         const created = button("I've created it", () => void checkManual(true), "button primary");
         const found = node("p", "onboard-message");
         found.setAttribute("role", "status");
         reportManual = (text) => (found.textContent = text);
-        const row = node("div", "wizard-actions");
-        row.append(created, other);
-        fallback.replaceChildren(steps, row, found);
+        fallback.replaceChildren(steps, created, found);
         fallback.hidden = false;
         state.manual = choice;
       }
     }));
     showName();
-    const back = footer.querySelector<HTMLButtonElement>("button")!;
-    form.append(
-      nameLabel,
-      ownerLabel,
-      points,
-      visibility,
-      note,
-      node("div", "wizard-actions"),
-      progress,
-      message,
-      fallback,
-      agentLink(() => ({ name: nameInput.value.trim() || DEFAULT_REPOSITORY_NAME, private: state.visibility === "private", ...(ownerName().toLowerCase() !== login.toLowerCase() ? { owner: ownerName() } : {}) })),
-    );
-    form.querySelector(".wizard-actions")!.append(submit);
+    const agent = agentBox(() => ({ name: nameInput.value.trim() || DEFAULT_REPOSITORY_NAME, private: state.visibility === "private", ...(ownerName().toLowerCase() !== login.toLowerCase() ? { owner: ownerName() } : {}) }));
+    const foot = node("div", "wizard-foot");
+    foot.append(button("Use a site you have", () => goTo("create", "existing"), "button wizard-quiet"), agent.toggle, submit);
+    form.append(nameLabel, ownerLabel, points, visibility, message, fallback, agent.box, foot);
     content.append(form);
   }
 
-  // Last page: the site is made. A moment, not a form.
+  // Last page: the site is made. A moment, not a form: its home page, its address and the way in.
   function openStep(content: HTMLElement, footer: HTMLElement, panel: HTMLElement) {
     const repo = state.repo;
     if (!repo) {
@@ -483,9 +507,6 @@ export function createSetupWizard(options: SetupWizardOptions) {
     }
     panel.classList.add("wizard__panel--celebrate");
     const siteName = siteNameFromRepository(repo.name);
-    const mark = node("span", "wizard-celebrate__mark");
-    mark.append(icon("confetti", 32));
-    const name = node("p", "wizard-celebrate__name", siteName);
 
     const frame = node("div", "wizard-preview");
     const placeholder = node("div", "wizard-preview__card");
@@ -508,19 +529,19 @@ export function createSetupWizard(options: SetupWizardOptions) {
       }, () => undefined);
     }
 
-    const made = node("p", "wizard-hint wizard-celebrate__note");
     const where = `github.com/${repo.fullName}`;
-    made.append(
-      "Created ",
-      external(where, `https://${where}`),
-      repo.committed ? " with your starting point as its first commit." : repo.partial ? ". Only part of your starting point was saved; the editor offers to finish adding it." : ". Its starting point is added when the editor opens it.",
-    );
-    const open = button("Open the editor", () => options.finish(repo), "button primary wizard-celebrate__open");
-    content.append(mark, name, frame, made, open);
+    const address = node("p", "wizard-ready__where");
+    address.append(external(where, `https://${where}`, "wizard-ready__link"));
+    const open = button("Open the editor", () => options.finish(repo), "button primary wizard-ready__open");
+    content.append(address);
+    if (repo.partial) content.append(node("p", "wizard-hint", "Only part of your starting point was saved; the editor offers to finish adding it."));
+    content.append(open);
+    // The home page sits above the heading.
+    panel.prepend(frame);
     if (!reducedMotion()) {
       void import("./confetti").then((module) => {
-        if (destroyed || state.step !== "open" || !mark.isConnected) return;
-        confetti = module.burst(mark);
+        if (destroyed || state.step !== "open" || !frame.isConnected) return;
+        confetti = module.burst(frame);
       }).catch((error) => { void handleChunkLoadFailure(error); });
     }
   }
@@ -547,22 +568,23 @@ export function createSetupWizard(options: SetupWizardOptions) {
     aside.setAttribute("aria-label", "Setup steps");
     aside.append(stepper());
 
+    const existing = state.step === "create" && state.mode === "existing";
     const panel = node("div", "wizard__panel");
-    const title = node("h1", "wizard__title", titles[state.step]);
+    const title = node("h1", "wizard__title", existing ? "Use a site you have" : titles[state.step]);
     title.tabIndex = -1;
     const content = node("div", "wizard__content");
-    const footer = node("div", "wizard__footer");
+    const footer = node("div", "wizard__footer wizard-foot");
+    panel.append(title, content, footer);
     if (state.step === "connect") connectStep(content, footer);
+    else if (existing) existingStep(content, footer);
     else if (state.step === "create") createStep(content, footer);
     else openStep(content, footer, panel);
-    panel.append(title, content, footer);
-    // The big icon sits above the heading.
-    const mark = content.querySelector(".wizard-celebrate__mark");
-    if (mark) panel.prepend(mark);
 
+    const main = node("div", "wizard__main");
+    main.append(compact, panel);
     const body = node("div", "wizard__body");
-    body.append(aside, panel);
-    root.replaceChildren(top, compact, body);
+    body.append(aside, main);
+    root.replaceChildren(top, body);
   }
   render();
 
@@ -573,6 +595,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
       destroyed = true;
       closeLightbox();
       clearTimeout(progressTimer);
+      clearTimeout(copiedTimer);
       confetti?.remove();
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);

@@ -33,7 +33,7 @@ its number unused.
 
 ### F-setup-01 Sign in with GitHub
 - Try: Open the editor signed out and press Continue with GitHub.
-- Good: A short loading state, then one button and no choice; back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
+- Good: A short loading state, then the welcome page "Where does your site live?" with one card, On GitHub, and its one button (TOOLS-188); back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
 - Files: `src/setup-host.ts`, `src/auto-signin.ts`, `src/sign-in-words.ts`, `shared/sign-in-error.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`
@@ -41,51 +41,51 @@ its number unused.
 
 ### F-setup-02 Setup wizard for a new account
 - Try: Sign in with an account that has no repositories and follow Connect GitHub, Create your site and Your site is ready.
-- Good: Three steps (Step 2 of 3 on a narrow screen), a trip to GitHub explained with screenshots only when the App is missing, and a calm finish (confetti, or a fade under reduced motion, U8).
+- Good: Three steps (Step 2 of 3 on a narrow screen), a trip to GitHub explained with screenshots only when the App is missing, and a calm finish (confetti, or a fade under reduced motion, U8); Open the editor shows the slim top bar with no Setup pill, and what is left of setup waits in the Inbox (TOOLS-188).
 - Files: `src/components/setup-wizard.ts`, `src/setup-wizard.ts`, `src/components/github-trip.ts`, `src/components/confetti.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-wizard.spec.ts`
 - Steps: none yet (needs an account with no repositories)
 
 ### F-setup-03 Create a site from the Starter site or a Blank page
-- Try: In Get started or the wizard, name a new site and pick the Starter site; then try a Blank page in an empty repository.
+- Try: In the wizard's Create your site, name a new site and pick the Starter site; then try a Blank page in an empty repository.
 - Good: The repository is made, the starter shows at once and is saved as the first commit; a taken name is an inline error and the form stays.
 - Files: `src/components/start-site.ts`, `src/setup-actions.ts`, `shared/starting-point.ts`, `worker/starter.ts`, `worker/first-commit.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-static-starter-create.spec.ts`
-- Steps: none yet (needs Get started or the wizard on an account with no site)
+- Steps: none yet (needs the wizard on an account with no site)
 
-### F-setup-04 Get started screen
-- Try: Leave setup on a signed-in account with no site.
-- Good: Get started offers creating a repository, choosing repositories on GitHub, or an agent prompt, in plain words (S7).
-- Files: `src/components/get-started.ts`, `src/controllers/setup-entry-controller.ts`
+### F-setup-04 Welcome page after Leave setup
+- Try: In the wizard press Leave setup (the X) on a signed-in account with no site.
+- Good: The welcome page "Where does your site live?" with its one GitHub card; Continue with GitHub opens the wizard again (TOOLS-188).
+- Files: `src/setup-host.ts`, `src/controllers/setup-entry-controller.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-wizard.spec.ts`
 - Steps: none yet (needs an account with no site)
 
-### F-setup-05 Build it with an agent
-- Try: On Get started press Build it with an agent and paste the copied prompt into an agent.
-- Good: The prompt connects the agent to this site and starts with get_site; the button confirms the copy on itself (S4).
-- Files: `src/agent-prompts.ts`, `src/components/get-started.ts`
+### F-setup-05 Do this with an agent
+- Try: In the wizard's Create your site press Do this with an agent, then Copy agent prompt, and paste it into an agent.
+- Good: The prompt names the chosen owner and site, connects the agent to this editor and starts with get_site; the button confirms the copy on itself (S4).
+- Files: `src/agent-prompts.ts`, `src/components/setup-wizard.ts`
 - Phone: yes
-- Spec: `tests/native-save/native-onboarding.spec.ts`
-- Steps: none yet (needs Get started on an account with no site)
+- Spec: `tests/native-save/native-org-repositories.spec.ts`
+- Steps: none yet (needs the wizard on an account with no site)
 
-### F-setup-06 Setup checklist
-- Try: Start a site in an empty repository and follow Start your site, Save to GitHub, Name your site and Connect an agent.
-- Good: The checklist follows what is done, works from the keyboard, fits a narrow window and stays hidden once dismissed.
-- Files: `src/components/setup-checklist.ts`, `src/controllers/setup-checklist-controller.ts`, `src/setup-checklist.ts`
+### F-setup-06 Setup in the Inbox
+- Try: Finish the wizard and open the Inbox.
+- Good: Name your site (Setup) and Connect an agent (Setup · Optional) sit at the top and light the Inbox dot; Save name in the row's own form writes the site name as a draft and the row goes; with nothing left the Inbox says All done. No Setup pill in the top bar (TOOLS-188).
+- Files: `src/inbox/inbox-setup.ts`, `src/inbox/inbox.ts`, `src/controllers/setup-checklist-controller.ts`, `src/setup-checklist.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-checklist.spec.ts`
-- Steps: none yet (needs a site started in an empty repository)
+- Steps: none yet (needs a site the wizard made)
 
-### F-setup-07 Connect an agent spotlight
-- Try: In the checklist press Connect an agent, then Show me.
-- Good: The project menu is lit with Connect to MCP; Escape, Got it or a click outside closes it and gives focus back (U7).
-- Files: `src/components/spotlight.ts`, `src/components/spotlight-layout.ts`
+### F-setup-07 Connect an agent from the Inbox
+- Try: In the Inbox press the Connect an agent row.
+- Good: The Inbox closes and the project menu opens with Connect to MCP lit and focused; Escape closes it (U7).
+- Files: `src/inbox/inbox-setup.ts`, `src/components/repository-menu.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-checklist.spec.ts`
-- Steps: none yet (opens from the setup checklist, which needs an empty repository)
+- Steps: none yet (needs a site the wizard made)
 
 ### F-setup-08 Organisation repositories
 - Try: With an account in an organisation, create a site and pick the organisation as owner.
