@@ -22,13 +22,18 @@ async function guest(browser: Browser, phone = false) {
   const page = await context.newPage();
   page.on("pageerror", (error) => pageErrors.push(error.message));
   const calls: string[] = [];
+  // Each session socket's address: a guest's says its content goes to Lex's tab only (`routed=1`, TOOLS-385).
+  const sockets: string[] = [];
   const note = (url: string) => {
     const path = new URL(url).pathname;
     if (/^\/(?:api|auth|mcp)\b/.test(path)) calls.push(path);
   };
   page.on("request", (request) => note(request.url()));
-  page.on("websocket", (socket) => note(socket.url()));
-  return { context, page, calls };
+  page.on("websocket", (socket) => {
+    note(socket.url());
+    if (new URL(socket.url()).pathname === "/api/live/guest") sockets.push(socket.url());
+  });
+  return { context, page, calls, sockets };
 }
 
 test.beforeEach(() => { pageErrors.length = 0; });
@@ -136,6 +141,9 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
     await expect(anna.page.getByRole("button", { name })).toHaveCount(0);
   await expect(anna.page.locator(".repository-menu, #explorer, .agent-menu")).toHaveCount(0);
   expect([...new Set(anna.calls)]).toEqual(["/api/live/guest"]);
+  // Her content goes to Lex's tab only, never to Ben (TOOLS-385); her presence still reached him (her chip above).
+  expect(anna.sockets.length).toBeGreaterThan(0);
+  expect(anna.sockets.map((url) => new URL(url).searchParams.get("routed"))).toEqual(anna.sockets.map(() => "1"));
 
   // Lex's Undo takes the guest's typing back, on his page, in his draft and on theirs.
   await lex.getByRole("banner").getByRole("button", { name: "Undo", exact: true }).click();
