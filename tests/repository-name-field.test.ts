@@ -167,7 +167,7 @@ test("setup wizard: Use a site you have lists the repositories the editor can re
   const { root, buttons, press, title } = wizard({
     accessUrl: "https://github.com/apps/native-site-editor/installations/new",
     listRepositories: async () => listed,
-    finish: (repo) => void finished.push(repo),
+    finish: (repo, made) => void finished.push([repo, made]),
   });
   press("Use a site you have");
   assert.equal(title(), "Use a site you have");
@@ -184,7 +184,7 @@ test("setup wizard: Use a site you have lists the repositories the editor can re
   const row = root.all().find((el) => el.localName === "li" && el.textContent.includes("lex/bakery"))!;
   assert.ok(row);
   row.all().find((el) => el.localName === "button" && el.textContent === "Open")!.dispatchEvent(new FakeEvent("click"));
-  assert.deepEqual(finished, [listed[0]]);
+  assert.deepEqual(finished, [[listed[0], false]], "a site the account had is opened as not made by the wizard");
 
   press("Start a new site");
   assert.equal(title(), "Create your site");

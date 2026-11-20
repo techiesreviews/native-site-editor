@@ -101,7 +101,7 @@ test("on another site the form starts closed and empty, and a save that ends aft
   assert.equal(f.refused(), undefined);
 });
 
-test("a save that fails after a switch to another site shows no error there and leaves its form closed", async () => {
+test("a save that fails after a switch to another site shows no error there and leaves its form ready", async () => {
   const f = fixture();
   f.redraw();
   f.toggle();
@@ -112,5 +112,7 @@ test("a save that fails after a switch to another site shows no error there and 
   await flush();
   f.redraw();
   assert.deepEqual(f.errors, []);
-  assert.equal(f.input(), undefined);
+  f.toggle();
+  assert.equal(f.save()!.textContent, "Save name");
+  assert.equal(f.refused(), undefined);
 });
