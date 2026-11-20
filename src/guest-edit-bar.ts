@@ -151,10 +151,13 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       onPick: (file) => {
         // Someone may have replaced the picture since the tick was read: a pick of the ticked one reads it again first.
         // The change names the render the pick was made on, noted before that wait.
-        const on = selectedSeen;
-        const shown = file === current ? sources().then((files) => files && pictureAt(files, target)).catch(() => undefined) : Promise.resolve(current);
+        // A reread that gets no answer sends nothing and says to try again; the answer becomes the tick.
+        const on = selectedSeen, ticked = file === current;
+        const shown = ticked ? sources().then((files) => files && pictureAt(files, target)).catch(() => undefined) : Promise.resolve(current);
         void shown.then((now) => {
-          if (file === now) return;
+          if (closed || file === now) return;
+          if (ticked && !now) { refuse(target, NOT_KEPT); return; }
+          if (ticked && still(target)) current = now;
           return write({ kind: "picture", ...target, file }, on).then((done) => refuse(target, done ? undefined : NOT_KEPT));
         });
       },
