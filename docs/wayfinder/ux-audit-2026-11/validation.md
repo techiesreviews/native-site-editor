@@ -17,7 +17,7 @@ Eleven self-contained HTML pages and an index. Each task has one commit. No edit
 - `RESULT: fail shots 0 files, 1 failed, 0 layout findings, contact none` — `Scenario file must live under .scratch/`; the task restricts authored files to this folder. No scenario was placed outside it.
 - `RESULT: ok unit none affected` — no application unit file is affected by prototype docs.
 
-Focused browser check, lint, independent review and PR results are appended after completion. Resource-gated browser checks use the normal port launcher without changing its thresholds.
+See Current evidence and limits for the actual browser-check status, lint results and review evidence. PR results are recorded in the handover. Resource-gated browser checks use the normal port launcher without changing its thresholds.
 
 ## Current evidence and limits
 
@@ -55,10 +55,12 @@ RESULT: fail review interrupted
 RESULT: ok bg stop ux-prototypes-focused pgid 2302615
 RESULT: fail go ux-prototypes-focused exit 143 without a RESULT line
 RESULT: skip second look (gpt-6.1-sol not used: docs-only change)
-RESULT: ok review git diff f2dfe9d27bce876a04a91fe647fdc592c0f720e6...HEAD evidence <review R1>
+RESULT: ok review git diff f2dfe9d27bce876a04a91fe647fdc592c0f720e6...HEAD evidence ../../../../native-site-editor/.scratch/reviews/gpt-nse-ux-protos/20261119T235627Z
 RESULT: ok bg stop ux-prototypes-browser pgid 2356566
 RESULT: fail go ux-prototypes-browser exit 143 without a RESULT line
-RESULT: ok review git diff f2dfe9d27bce876a04a91fe647fdc592c0f720e6...HEAD evidence <review R2>
+RESULT: ok review git diff f2dfe9d27bce876a04a91fe647fdc592c0f720e6...HEAD evidence ../../../../native-site-editor/.scratch/reviews/gpt-nse-ux-protos/20261120T000224Z
 RESULT: ok bg stop ux-prototypes-checked pgid 2669953
 RESULT: fail go ux-prototypes-checked exit 143 without a RESULT line
 ```
+
+The final Claude review (20261120T000753Z) found only P3 focus notes and validation gaps. The small focus notes were fixed: Remove preserves its originating control area, empty trees return focus to Undo, and wrap/copy/paste preserve a reachable selection. The focused test file also passed a standalone TypeScript check with `tsc --ignoreConfig --types node --noEmit --module nodenext --moduleResolution nodenext --target es2022 --skipLibCheck`.

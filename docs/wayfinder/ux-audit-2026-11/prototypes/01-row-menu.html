@@ -218,14 +218,13 @@ document.addEventListener('keydown',e=>{
 });
 
 
-let nodes, selected;
+let nodes, selected, removeOrigin;
 function reset(){ nodes=['Site header','Recent work','Contact']; selected=1; }
 function restore(s){ nodes=s.nodes;selected=s.selected; }
-function act(action){
+function act(action,fromToolbar=false){
  if(selected<0||selected>=nodes.length)return;
- const fromToolbar=$('#canvas-actions').contains(document.activeElement);
  closePopovers();
- if(action==='remove'){ $('#remove-dialog').showModal();return; }
+ if(action==='remove'){ removeOrigin=fromToolbar;$('#remove-dialog').showModal();return; }
  remember({nodes,selected});
  if(action==='duplicate') {nodes.splice(selected+1,0,nodes[selected]+' copy');selected++;}
  if(action==='up'&&selected>0) {[nodes[selected-1],nodes[selected]]=[nodes[selected],nodes[selected-1]];selected--;}
@@ -251,6 +250,6 @@ function refreshMenu(){
  p.querySelector('[data-action=down]')?.toggleAttribute('disabled',selected===nodes.length-1);
  $$('[data-node]').forEach((r,i)=>r.setAttribute('aria-current',String(i===selected)));
 }
-$('#confirm-remove').onclick=e=>{e.preventDefault();$('#remove-dialog').close();remember({nodes,selected});nodes.splice(selected,1);selected=Math.min(selected,nodes.length-1);render();attachPopovers();$(`[data-select="${selected}"]`)?.focus();};
+$('#confirm-remove').onclick=e=>{e.preventDefault();$('#remove-dialog').close();remember({nodes,selected});nodes.splice(selected,1);selected=Math.min(selected,nodes.length-1);render();attachPopovers();(removeOrigin?$('#canvas-actions button:not(:disabled)'):($(`#tree [data-select="${selected}"]`)||$('#undo')))?.focus();};
 
 switchMode('today');</script></body></html>
