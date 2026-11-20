@@ -272,7 +272,7 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 
 ## Main entry points
 
-Frequently used names in src/main.ts (28): its own top-level functions and constants, and the host members it destructures (the host's file in brackets). Descriptions stay within ten words.
+Frequently used names in src/main.ts (26): its own top-level functions and constants, and the host members it destructures (the host's file in brackets). Descriptions stay within ten words.
 
 | Symbol | Purpose |
 | --- | --- |
@@ -281,8 +281,6 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | `mountWorkspace` | Mounts editor DOM and controls (`workspace`, workspace-mount.ts). |
 | `pageBuilder` | Page builder host, handed whole to the workspace (page-builder-host.ts). |
 | `guardedEdits` | Runs proved edits as one undoable transaction. |
-| `blockMoves` | Guarded block moves across pages and templates (page-builder-host.ts). |
-| `pageStructureController` | Page Structure, edit-bar models and text edits (page-builder-host.ts). |
 | `draftScope` | Identifies the current account, repository and branch. |
 | `setupScope` | Current account/repository/branch key (`workspace`, workspace-mount.ts). |
 | `nativeModeActive` | Reports whether a native site is active (site-preview.ts). |
