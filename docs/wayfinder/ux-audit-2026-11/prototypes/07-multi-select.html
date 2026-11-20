@@ -184,7 +184,7 @@ function attachPopovers() {
     p.addEventListener('beforetoggle', e => { if(e.newState === 'open') trigger = document.activeElement; });
     p.addEventListener('toggle', e => {
       if(e.newState === 'open') p.querySelector('button,input,select,textarea')?.focus();
-      else if(trigger?.isConnected) trigger.focus();
+      else if(trigger?.isConnected && (p.contains(document.activeElement)||document.activeElement===document.body)) trigger.focus();
     });
     p.addEventListener('keydown', e => {
       const controls = [...p.querySelectorAll('button:not(:disabled),input,select,textarea,a[href]')];
@@ -223,10 +223,11 @@ function reset(){elements=[{id:1,name:'Heading'},{id:2,name:'Paragraph'},{id:3,n
 function snapshot(){return {elements,selection,clipboard,wrapped,groupIds};}
 function restore(s){({elements,selection,clipboard,wrapped,groupIds}=s);}
 function pick(id,event){
+ const parent=event.currentTarget?.hasAttribute('data-canvas')?'data-canvas':'data-tree';
  if(mode==='today'){selection=[id];}
  else if(event.shiftKey || event.ctrlKey || event.metaKey || toggle){selection=selection.includes(id)?selection.filter(n=>n!==id):[...selection,id];}
  else selection=[id];
- render();$(`[data-tree="${id}"]`)?.focus();
+ render();$(`[${parent}="${id}"]`)?.focus();
 }
 function contiguous(){const indices=elements.map((e,i)=>selection.includes(e.id)?i:-1).filter(i=>i>=0);return indices.length>0&&indices.at(-1)-indices[0]+1===indices.length;}
 function operate(action){
@@ -238,7 +239,7 @@ function operate(action){
  if(action==='unwrap'){wrapped=false;groupIds=[];}
  if(action==='copy')clipboard=structuredClone(elements.filter(e=>selection.includes(e.id)));
  if(action==='paste'&&clipboard.length){let id=Math.max(...elements.map(e=>e.id));const copies=clipboard.map(e=>({id:++id,name:e.name+' copy'}));elements.push(...copies);selection=copies.map(e=>e.id);}
- render();announce('Elements '+action);
+ render();$(`[data-op="${action}"]`)?.focus();announce('Elements '+action);
 }
 function render(){
  const treeNode=e=>`<button class="node" data-tree="${e.id}" aria-pressed="${selection.includes(e.id)}" aria-label="Tree: ${esc(e.name)}">${esc(e.name)}</button>`;
@@ -253,6 +254,6 @@ function render(){
  $$('[data-tree],[data-canvas]').forEach(b=>b.onclick=e=>pick(+(b.dataset.tree||b.dataset.canvas),e));
  $$('[data-op]').forEach(b=>b.onclick=()=>operate(b.dataset.op));
 }
-document.addEventListener('keydown',e=>{if(mode!=='after'||!e.target.closest('#selection-tree,#selection-canvas'))return;if((e.ctrlKey||e.metaKey)&&['c','v'].includes(e.key.toLowerCase())){e.preventDefault();operate(e.key.toLowerCase()==='c'?'copy':'paste');}});
+document.addEventListener('keydown',e=>{if(mode!=='after'||!e.target.closest('#selection-tree,#selection-canvas,#selection-actions'))return;if((e.ctrlKey||e.metaKey)&&['c','v'].includes(e.key.toLowerCase())){e.preventDefault();operate(e.key.toLowerCase()==='c'?'copy':'paste');}});
 
 switchMode('today');</script></body></html>

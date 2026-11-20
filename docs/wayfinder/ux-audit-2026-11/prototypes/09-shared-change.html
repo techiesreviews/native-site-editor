@@ -184,7 +184,7 @@ function attachPopovers() {
     p.addEventListener('beforetoggle', e => { if(e.newState === 'open') trigger = document.activeElement; });
     p.addEventListener('toggle', e => {
       if(e.newState === 'open') p.querySelector('button,input,select,textarea')?.focus();
-      else if(trigger?.isConnected) trigger.focus();
+      else if(trigger?.isConnected && (p.contains(document.activeElement)||document.activeElement===document.body)) trigger.focus();
     });
     p.addEventListener('keydown', e => {
       const controls = [...p.querySelectorAll('button:not(:disabled),input,select,textarea,a[href]')];
@@ -218,13 +218,13 @@ document.addEventListener('keydown',e=>{
 });
 
 
-let saved,draft,page;
-function reset(){saved='Larkspur';draft=saved;page='Home';$('#brand').value=draft;$('#save-shared').textContent='Save shared change';$('#save-shared').disabled=false;}
-function restore(s){({saved,draft,page}=s);$('#brand').value=draft;}
-function render(){ $('#save-shared').disabled=saved===draft;$('#save-shared').textContent=saved===draft?'Saved on both pages':'Save shared change';$('#page-name').textContent=page;$('#shared-brand').textContent=draft;$('#shared-heading').textContent=page==='Home'?'Thoughtful design.':'About Larkspur';$('#affected-list').innerHTML=['Home','About'].map(n=>`<button class="p-menu-item" data-open="${n}" aria-label="Open ${n}" aria-current="${page===n}">${esc(n)}<span>${esc(saved)} → ${esc(draft)}</span></button>`).join('');$$('[data-open]').forEach(b=>b.onclick=()=>{page=b.dataset.open;render();$(`[data-open="${page}"]`)?.focus();}); }
-$('#brand').oninput=e=>{draft=e.target.value;$('#save-shared').textContent='Save shared change';$('#save-shared').disabled=false;render();};
+let saved,draft,page,justSaved;
+function reset(){saved='Larkspur';draft=saved;page='Home';justSaved=false;$('#brand').value=draft;$('#save-shared').textContent='Save shared change';$('#save-shared').disabled=false;}
+function restore(s){justSaved=false;({saved,draft,page}=s);$('#brand').value=draft;}
+function render(){ $('#save-shared').disabled=saved===draft;$('#save-shared').textContent=justSaved?'Saved on both pages':'Save shared change';$('#page-name').textContent=page;$('#shared-brand').textContent=draft;$('#shared-heading').textContent=page==='Home'?'Thoughtful design.':'About Larkspur';$('#affected-list').innerHTML=['Home','About'].map(n=>`<button class="p-menu-item" data-open="${n}" aria-label="Open ${n}" aria-current="${page===n}">${esc(n)}<span>${esc(saved)} → ${esc(draft)}</span></button>`).join('');$$('[data-open]').forEach(b=>b.onclick=()=>{page=b.dataset.open;render();$(`[data-open="${page}"]`)?.focus();}); }
+$('#brand').oninput=e=>{justSaved=false;draft=e.target.value;$('#save-shared').textContent='Save shared change';$('#save-shared').disabled=false;render();};
 $$('[data-page]').forEach(b=>b.onclick=()=>{page=b.dataset.page;render();});
-function save(){remember({saved,draft,page});saved=draft;closePopovers();$('#save-shared').textContent='Saved on both pages';$('#save-shared').disabled=true;render();}
+function save(){remember({saved,draft,page});saved=draft;justSaved=true;closePopovers();$('#save-shared').textContent='Saved on both pages';$('#save-shared').disabled=true;render();}
 $('#shared-form').onsubmit=e=>{e.preventDefault();if(mode==='after'){$('#affected').showPopover({source:$('#save-shared')});}else save();};
 $('#confirm-shared').onclick=save;$('#cancel-shared').onclick=()=>{closePopovers();$('#brand').focus();};
 

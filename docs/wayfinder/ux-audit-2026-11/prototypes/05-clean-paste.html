@@ -184,7 +184,7 @@ function attachPopovers() {
     p.addEventListener('beforetoggle', e => { if(e.newState === 'open') trigger = document.activeElement; });
     p.addEventListener('toggle', e => {
       if(e.newState === 'open') p.querySelector('button,input,select,textarea')?.focus();
-      else if(trigger?.isConnected) trigger.focus();
+      else if(trigger?.isConnected && (p.contains(document.activeElement)||document.activeElement===document.body)) trigger.focus();
     });
     p.addEventListener('keydown', e => {
       const controls = [...p.querySelectorAll('button:not(:disabled),input,select,textarea,a[href]')];
@@ -222,7 +222,7 @@ const initial='<p>A small studio with a thoughtful approach.</p>';
 const sample='<p style="font-family:serif;color:red">Meet our <strong>small studio</strong>.</p><p>Explore <a href="/work/">our work</a>.</p><ul><li>Brand identity</li><li>Web design</li></ul>';
 let html,lastPaste;
 function reset(){html=initial;lastPaste=false;$('#paste-mode').value='clean';$('#undo-paste').disabled=true;}
-function restore(s){html=s;lastPaste=false;}
+function restore(s){html=s;lastPaste=history.length>0;}
 function render(){ $('#copy').innerHTML=html;$('#sample-view').innerHTML=sample;$('#paste-choice').hidden=mode==='today'; }
 function clean(input){
  const doc=new DOMParser().parseFromString(input,'text/html');

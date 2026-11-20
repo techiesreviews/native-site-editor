@@ -184,7 +184,7 @@ function attachPopovers() {
     p.addEventListener('beforetoggle', e => { if(e.newState === 'open') trigger = document.activeElement; });
     p.addEventListener('toggle', e => {
       if(e.newState === 'open') p.querySelector('button,input,select,textarea')?.focus();
-      else if(trigger?.isConnected) trigger.focus();
+      else if(trigger?.isConnected && (p.contains(document.activeElement)||document.activeElement===document.body)) trigger.focus();
     });
     p.addEventListener('keydown', e => {
       const controls = [...p.querySelectorAll('button:not(:disabled),input,select,textarea,a[href]')];

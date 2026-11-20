@@ -27,6 +27,7 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     await p.getByRole('button', { name: 'Remove', exact: true }).click();
     await p.getByRole('button', { name: 'Remove element', exact: true }).click();
     assert.equal(await p.locator('[data-node]').count(), 3);
+    assert.ok(await p.evaluate(() => document.activeElement?.hasAttribute('data-select')));
   }],
   ['02-link-popup', async p => {
     await p.getByRole('button', { name: 'Link selected words', exact: true }).click();
@@ -133,7 +134,7 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     await p.getByRole('button', { name: 'Unwrap', exact: true }).click();
     assert.equal(await p.locator('[data-wrapper]').count(), 0);
     await p.getByRole('button', { name: 'Copy elements', exact: true }).click();
-    await p.getByRole('button', { name: 'Paste elements', exact: true }).click();
+    await p.keyboard.press('Control+v');
     assert.equal(await p.locator('[data-tree]').count(), 5);
   }],
   ['08-command-search', async p => {
@@ -150,12 +151,14 @@ const checks: [string, (page: Page) => Promise<void>][] = [
     await p.getByLabel('Search commands', { exact: true }).fill('find recent');
     await p.keyboard.press('Enter');
     assert.match(await p.locator('[data-element][aria-pressed="true"]').innerText(), /Recent work/);
+    assert.ok(await p.evaluate(() => document.activeElement?.hasAttribute('data-element')));
     await p.keyboard.press('Control+k');
     await p.getByLabel('Search commands', { exact: true }).fill('duplicate');
     await p.keyboard.press('Enter');
     assert.equal(await p.locator('[data-element]').count(), 5);
   }],
   ['09-shared-change', async p => {
+    assert.equal(await p.getByRole('button', { name: 'Saved on both pages', exact: true }).count(), 0);
     await p.getByRole('button', { name: 'After', exact: true }).click();
     await p.getByLabel('Brand name', { exact: true }).fill('Audit Studio');
     await p.getByRole('button', { name: 'Save shared change', exact: true }).click();

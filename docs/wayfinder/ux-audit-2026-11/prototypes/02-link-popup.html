@@ -184,7 +184,7 @@ function attachPopovers() {
     p.addEventListener('beforetoggle', e => { if(e.newState === 'open') trigger = document.activeElement; });
     p.addEventListener('toggle', e => {
       if(e.newState === 'open') p.querySelector('button,input,select,textarea')?.focus();
-      else if(trigger?.isConnected) trigger.focus();
+      else if(trigger?.isConnected && (p.contains(document.activeElement)||document.activeElement===document.body)) trigger.focus();
     });
     p.addEventListener('keydown', e => {
       const controls = [...p.querySelectorAll('button:not(:disabled),input,select,textarea,a[href]')];
@@ -223,7 +223,7 @@ function reset(){href='';}
 function restore(s){href=s;}
 function render(){ $('#link-trigger').innerHTML=icon('link');$('#words').innerHTML=href?`<a href="${esc(href)}">Thoughtful design for your next chapter</a>`:'Thoughtful design for your next chapter';$('#words').classList.add('selection'); }
 function openLink(){
- const p=$('#link-popup');p.showPopover({source:$('#link-trigger')});
+ const p=$('#link-popup');p.style.maxBlockSize='';p.style.insetInlineStart='';p.showPopover({source:$('#link-trigger')});
  const rect=$('#words').getBoundingClientRect(), box=p.getBoundingClientRect();
  const y=mode==='today'?rect.top:rect.bottom+16;
  if(mode==='after'&&innerHeight-rect.bottom-28<box.height&&rect.top-28<box.height){$('#words').scrollIntoView({block:'start'});const moved=$('#words').getBoundingClientRect();p.style.maxBlockSize=Math.max(80,innerHeight-moved.bottom-28)+'px';p.style.positionArea='none';p.style.insetInlineStart='12px';p.style.insetBlockStart=(moved.bottom+16)+'px';$('#address').focus();return;}
