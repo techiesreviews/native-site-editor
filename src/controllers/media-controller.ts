@@ -270,6 +270,12 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
   async function editImage(target: { path: string; node: number[] }) {
     try { await loadPopups(); await popups!.edit(target); } catch (error) { ports.error(error); }
   }
+  /** A synced session guest's focus and crop, or picture, written as the image popup writes it (TOOLS-185). */
+  async function guestImage(target: { path: string; node: number[] }, change: import("../page-builder/image-popup").ImagePopupApply, proof: { stamp: Stamp; source: string }) {
+    // A stale guest change resolves false; one that throws (a failed encode or write) is answered false too and only
+    // logged, since Lex's notice bar is for his own work.
+    try { await loadPopups(); return await popups!.apply(target, change, proof); } catch (error) { console.error(error); return false; }
+  }
 
   let videos: ReturnType<typeof import("../page-builder/media-video-place")["createVideoPlaces"]> | undefined;
   let videosLoading: Promise<void> | undefined;
@@ -373,6 +379,6 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
         url: () => ports.usage?.url(),
       };
     },
-    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, mediaButton, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, mediaButton, placeState, placeFrame, editImage, guestImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: (away?: boolean) => loaded?.closeMediaPicker(away), galleryVisible: () => ports.galleryVisible() };
 }

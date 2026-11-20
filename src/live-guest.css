@@ -103,3 +103,9 @@ button, input { font: inherit; color: inherit; }
 .live-guest__waiting { place-self: center; padding: 16px; color: var(--muted); }
 .live-guest__frame { inline-size: 100%; block-size: 100%; min-block-size: 0; border: 0; background: var(--surface); }
 .live-guest__frame[hidden], .live-guest__waiting[hidden] { display: none; }
+/* Phones: the edit bar docks in its own row under the frame (edit-bar.css), as in the editor. */
+@media (max-width: 650px) {
+  .live-guest__canvas { display: flex; flex-direction: column; }
+  .live-guest__waiting { margin: auto; }
+  .live-guest__frame { flex: 1 1 auto; block-size: auto; }
+}

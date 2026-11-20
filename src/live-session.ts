@@ -26,7 +26,8 @@ import { createColourBook, shownName } from "./participant";
 import { b64u, sessionWire } from "./live-wire";
 // The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
 export { importSessionKey, randomId, sessionWire } from "./live-wire";
-import type { GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
+import type { GuestContext, GuestEditHandlers, GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
+import { guestPicturePath, readGuestChange, type GuestChange, type GuestPageChange } from "./guest-changes";
 import type { PageTextCaret } from "./components/page-caret-port";
 import type { SessionCaret } from "./live-session-carets";
 
@@ -34,14 +35,31 @@ import type { SessionCaret } from "./live-session-carets";
 export const LIVE_SESSION_PATH = "/live";
 /** Lex's tab to guests: the page on show (its components and stylesheets only when they changed), each guest's typing
  * written so far (its frame's numbering) and each guest's colour, by guest id; and everyone's carets in the page's text
- * (TOOLS-219, src/live-session-carets.ts). */
+ * (TOOLS-219, src/live-session-carets.ts). For the edit bar (TOOLS-185): the page's pictures and links before a render
+ * that changed them, and to one guest (`to`) whether their change was written, the page's sources and thumbnails. */
 export type HostMessage =
-  | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number>; colours: Record<string, string> }
+  | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number>; colours: Record<string, string>; n: number }
   | { t: "assets"; assets: Extract<MirrorMessage, { kind: "assets" }>["assets"] }
-  | { t: "carets"; carets: SessionCaret[] };
+  | { t: "carets"; carets: SessionCaret[] }
+  | { t: "context"; context: GuestContext }
+  | { t: "answer"; to: string; ask: number; done: boolean }
+  | { t: "sources"; to: string; ask: number; sources: Record<string, string> }
+  | { t: "pictures"; to: string; pictures: Record<string, string> };
 /** A guest to Lex's tab: one text change typed in their copy, numbered as their frame numbered it; or where their caret
- * is in the page's text as they type (none once they stop). Who sent it is the relay's word, not the message's. */
-export type GuestMessage = { t: "edit"; edit: GuestTextEdit; seq: number; session: number } | { t: "caret"; caret: PageTextCaret | null };
+ * is in the page's text as they type (none once they stop). Who sent it is the relay's word, not the message's.
+ * From the edit bar (TOOLS-185): a picture, link or crop change (src/guest-changes.ts), numbered so its answer finds
+ * it, with the number of the render it was made on (`seen`); a request for the page's sources (the image popup reads
+ * them); or for some site pictures' thumbnails. `hold` comes before an upload's bytes: it keeps the render the upload
+ * names while the bytes travel, however many renders come meanwhile. */
+export type GuestMessage = { t: "edit"; edit: GuestTextEdit; seq: number; session: number } | { t: "caret"; caret: PageTextCaret | null }
+  | { t: "change"; change: GuestChange; ask: number; seen: number } | { t: "sources"; ask: number } | { t: "want"; paths: string[] }
+  | { t: "hold"; seen: number };
+/** How many thumbnails one request may ask for. */
+export const GUEST_PICTURES_MAX = 30;
+/** How many recent renders' pages Lex's tab keeps for checking a guest's change against the one they saw. */
+export const GUEST_RENDERS_KEPT = 50;
+/** Renders held per guest for uploads still on their way. */
+const GUEST_HOLDS_KEPT = 4;
 /** Who sent a frame, as the relay names it. */
 type Sender = { peer: string; access: LiveAccess };
 /** What each participant shows the others: a name, and for a guest the id its messages carry. */
@@ -97,6 +115,11 @@ async function mintSession(repo: string, branch: string) {
 export async function startSharing(ports: SharePorts) {
   const openRoom = ports.open ?? (await import("./live-room")).openLiveRoom;
   const { guestCaret, startSessionCarets } = await import("./live-session-carets");
+  // Guests' picture, crop and link edits load with the session; if that load fails, guests only type
+  // for this session (no render offers them pictures or links).
+  let edits: GuestEditHandlers | undefined;
+  const loadEdits = async () => edits ??= await ports.preview()?.guestEdits?.();
+  await loadEdits().catch((error: unknown) => console.error(error));
   const { session: token, host } = await (ports.mint ?? mintSession)(ports.repo, ports.branch);
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
   const raw = b64u.encode(new Uint8Array(await crypto.subtle.exportKey("raw", key)));
@@ -117,7 +140,18 @@ export async function startSharing(ports: SharePorts) {
   const wire = sessionWire<GuestMessage>(() => room, (message, from) => {
     if (message.t === "edit") written(message, from);
     else if (message.t === "caret") caretTold(message, from);
+    else if (message.t === "change") changeWritten(message, from);
+    else if (message.t === "sources") sourcesAsked(message, from);
+    else if (message.t === "want") picturesAsked(message, from);
+    else if (message.t === "hold") renderHeld(message, from);
   }, lost);
+  // The page's pictures and links as guests last got them: sent again before a render only once they changed.
+  let context = "";
+  // Each recent render's page by its number: a guest's change is checked against the page they made it on.
+  const shown = new Map<number, { path: string; source: string }>();
+  // Renders kept per guest while their uploads travel (`hold`), by render number; only the upload naming one uses it up.
+  const heldRender = new Map<string, Map<number, { path: string; source: string }>>();
+  let renders = 0;
   // Everyone's carets, both ways: the guests' drawn here, Lex's and the room's sent to the guests.
   const carets = startSessionCarets({
     host: ports.host,
@@ -143,15 +177,26 @@ export async function startSharing(ports: SharePorts) {
     const preview = ports.preview();
     if (!preview || ended || !guests.length) return;
     carets.again();
+    context = "";
     mirror = preview.mirror((message) => {
       if (!ports.holds()) { end(); return; }
-      wire.send(message.kind === "render" ? { t: "render", payload: message.payload, typed, colours: Object.fromEntries(guests.map((guest) => [guest.id, guest.colour])) } satisfies HostMessage
-        : { t: "assets", assets: message.assets } satisfies HostMessage);
+      if (message.kind !== "render") { wire.send({ t: "assets", assets: message.assets } satisfies HostMessage); return; }
+      // The page's pictures and links, once its edits have loaded.
+      const page = preview.guestShown?.();
+      const now: GuestContext | undefined = page && edits ? { path: page.path, ...edits.context(page.path) } : undefined;
+      const json = now ? JSON.stringify(now) : "";
+      if (now && json !== context) wire.send({ t: "context", context: now } satisfies HostMessage);
+      context = json;
+      const n = ++renders;
+      if (page) shown.set(n, page);
+      if (shown.size > GUEST_RENDERS_KEPT) shown.delete(shown.keys().next().value!);
+      wire.send({ t: "render", payload: message.payload, typed, colours: Object.fromEntries(guests.map((guest) => [guest.id, guest.colour])), n } satisfies HostMessage);
     }, end);
   };
-  // A change counts only from a guest's own socket, as the relay names it: never from someone claiming their id.
+  // A message counts only from a guest's own socket, as the relay names it: never from someone claiming their id.
+  const guestOf = (sender: Sender) => sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
   const written = (message: Extract<GuestMessage, { t: "edit" }>, sender: Sender) => {
-    const from = sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
+    const from = guestOf(sender);
     if (!from || !message.edit || typeof message.seq !== "number" || typeof message.session !== "number") return;
     const edit = message.edit;
     if (typeof edit.path !== "string" || !Array.isArray(edit.node) || !edit.node.every((step) => Number.isInteger(step) && step >= 0) ||
@@ -167,9 +212,58 @@ export async function startSharing(ports: SharePorts) {
       if (!done) preview?.refresh();
     });
   };
+  // A picture, link or crop change is written in turn with the typing, as this tab's own change (its Undo here);
+  // the guest hears whether it was written. Anything the rules do not know is dropped unanswered. A change made on a
+  // render this tab no longer keeps, or on another page, is not written.
+  const changeWritten = (message: Extract<GuestMessage, { t: "change" }>, sender: Sender) => {
+    const from = guestOf(sender), change = readGuestChange(message.change), ask = message.ask;
+    if (!from || !change || !Number.isInteger(ask) || !Number.isInteger(message.seen)) return;
+    writing = writing.then(async () => {
+      if (ended || !ports.holds()) return;
+      const holds = change.kind === "upload" ? heldRender.get(from.id) : undefined;
+      const seen = shown.get(message.seen) ?? holds?.get(message.seen);
+      holds?.delete(message.seen);
+      const refused = () => wire.send({ t: "answer", to: from.id, ask, done: false } satisfies HostMessage);
+      if (!seen || seen.path !== change.path) { refused(); return; }
+      let held: GuestPageChange;
+      if (change.kind === "upload") {
+        let bytes: Uint8Array;
+        try { bytes = Uint8Array.from(atob(change.data), (char) => char.charCodeAt(0)); } catch { refused(); return; }
+        held = { kind: "upload", path: change.path, node: change.node, file: new File([bytes as Uint8Array<ArrayBuffer>], change.name, { type: change.type }) };
+      } else held = change;
+      // Written only to the page still on show, once the edits have loaded.
+      const done = ports.preview()?.guestShown?.()?.path === change.path
+        && await loadEdits().then((loaded) => loaded?.change(held, seen.source) ?? false).catch(() => false);
+      if (!ended && ports.holds()) wire.send({ t: "answer", to: from.id, ask, done } satisfies HostMessage);
+    });
+  };
+  // The image popup on a guest's page reads the page's sources as Lex's tab holds them, when it opens.
+  const sourcesAsked = (message: Extract<GuestMessage, { t: "sources" }>, sender: Sender) => {
+    const path = ports.preview()?.guestShown?.()?.path;
+    const from = guestOf(sender), sources = from && path && Number.isInteger(message.ask) ? edits?.sources(path) : undefined;
+    if (from && sources && !ended) wire.send({ t: "sources", to: from.id, ask: message.ask, sources } satisfies HostMessage);
+  };
+  const renderHeld = (message: Extract<GuestMessage, { t: "hold" }>, sender: Sender) => {
+    const from = guestOf(sender), page = Number.isInteger(message.seen) ? shown.get(message.seen) : undefined;
+    if (!from || !page) return;
+    const holds = heldRender.get(from.id) ?? new Map<number, { path: string; source: string }>();
+    holds.set(message.seen, page);
+    if (holds.size > GUEST_HOLDS_KEPT) holds.delete(holds.keys().next().value!);
+    heldRender.set(from.id, holds);
+  };
+  // Thumbnails of some of the site's pictures, for a guest's picture panel.
+  const picturesAsked = (message: Extract<GuestMessage, { t: "want" }>, sender: Sender) => {
+    const from = guestOf(sender);
+    if (!from || !ports.preview()?.guestShown?.() || !Array.isArray(message.paths)) return;
+    const paths = message.paths.slice(0, GUEST_PICTURES_MAX).map(guestPicturePath).filter((path): path is string => Boolean(path));
+    if (!paths.length) return;
+    void loadEdits().then((loaded) => loaded?.pictures(paths) ?? {}).then((pictures) => {
+      if (!ended && ports.holds() && Object.keys(pictures).length) wire.send({ t: "pictures", to: from.id, pictures } satisfies HostMessage);
+    }, () => undefined);
+  };
   // A caret counts only from a guest's own socket, as for their typing.
   const caretTold = (message: Extract<GuestMessage, { t: "caret" }>, sender: Sender) => {
-    const from = sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
+    const from = guestOf(sender);
     const caret = guestCaret(message.caret);
     if (from && caret !== undefined && !ended) carets.guestCaret(from.id, caret);
   };

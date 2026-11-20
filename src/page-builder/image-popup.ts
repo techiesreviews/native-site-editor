@@ -54,7 +54,15 @@ export interface ImagePopupOptions {
   /** The press that opened it still owns the popup (no later press, repository or page change). */
   live(): boolean;
   closed(): void;
+  /** On a synced session's guest page (TOOLS-185): closing hands the focus and crop to Lex's tab instead of writing
+   * them, and Replace opens the guest's own picture panel. */
+  guest?: { write(edit: PopupEdit, recrop: boolean): void; replace(): void };
+  /** On Lex's tab, a guest's change written with no window: their focus and crop, or another picture for the place. */
+  apply?: ImagePopupApply;
 }
+/** A guest's change for a picture (TOOLS-185): a focus and crop, a site picture, or their upload saved into `folder`.
+ * A crop says whether the guest's popup re-opened a trimmed spot on its original: Lex's tab opens on the same picture. */
+export type ImagePopupApply = { edit: PopupEdit; recrop: boolean } | { file: string } | { upload: File; folder: string };
 
 export async function openImagePopup(options: ImagePopupOptions) {
   const { host, target } = options;
@@ -73,7 +81,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
   const start = { shape: read.shape as PopupShape, focus: read.focus };
   // A trimmed spot re-opens on the full original with the earlier trim put back (an original that
   // is gone leaves the trimmed copy as the picture).
-  const earlier = read.trimmed && read.source ? records?.files[placed]?.trimmedFrom : undefined;
+  // A guest's crop is measured on the picture their popup opened on: a crop of the trimmed copy is not re-opened.
+  const crop = options.apply && "edit" in options.apply ? options.apply : undefined;
+  const earlier = read.trimmed && read.source && crop?.recrop !== false ? records?.files[placed]?.trimmedFrom : undefined;
   // A trim is cut from the revision the popup shows: it is read before the picture's bytes.
   const files = workspaceContext().catch(() => undefined);
   const load = async (path: string) => {
@@ -85,6 +95,8 @@ export async function openImagePopup(options: ImagePopupOptions) {
   };
   let picture = earlier ? await load(earlier.source) : undefined;
   const restored = picture?.size && earlier ? { trim: earlier.trim } : undefined;
+  // A guest's re-crop of an original Lex's tab no longer has would land on the wrong picture: refused.
+  if (crop?.recrop && !restored) return undefined;
   if (!restored) picture = placed ? await load(placed) : undefined;
   const state: ImagePopupState = {
     file: restored ? earlier!.source : placed, url: picture?.url, image: picture?.image, size: picture?.size, version: picture?.version,
@@ -152,7 +164,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     state.cutUrl = trim && state.image ? trimmedPreview(state.image, trim) : undefined;
   };
   // The popup and, when open, the large editor show the same state.
-  const redraw = () => { view.draw(); large?.draw(); };
+  const redraw = () => { view?.draw(); large?.draw(); };
   const update = () => {
     redraw();
     clearTimeout(pause);
@@ -166,9 +178,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
     closed = true;
     cancelAnimationFrame(painting); clearTimeout(pause);
     // Done leaves the look until the page draws the change; then the image's own attributes are right.
-    host.look(target);
+    if (view) host.look(target);
     large?.remove(); large = undefined;
-    view.remove();
+    view?.remove();
     options.closed();
   }
   // There is no Done: the page shows each change as it is made, and ✕, Escape or a press elsewhere
@@ -181,13 +193,20 @@ export async function openImagePopup(options: ImagePopupOptions) {
       sameBytes: ports.source(target.path) === source, viewingVersion: ports.viewingVersion() })) void done();
     else close();
   };
-  async function done() {
-    if (state.busy) return;
+  async function done(): Promise<boolean> {
+    if (state.busy) return false;
+    // A guest's popup writes nothing itself: Lex's tab writes what changed as his own change.
+    if (options.guest) {
+      const changed = editKey(edit()) !== opened;
+      if (changed) options.guest.write(edit(), state.recrop);
+      close();
+      return changed;
+    }
     const trim = trimNow(), proof = { stamp: pin ? ports.stamp() : stamp, epoch, source: source!, expected }, initialAlt = mediaExistingAlt(expected);
     // A re-crop left as it was keeps its copy; at most the place's shape changes.
     const same = restored && trim && (sameTrim(trim, restored.trim) || editKey(edit()) === opened);
     const shape = kept(), change = same ? (frameNow()?.shape !== undefined ? shape : undefined) : frameNow();
-    if (!trim && !swapped() && !change || same && !change) { close(); return; }
+    if (!trim && !swapped() && !change || same && !change) { close(); return false; }
     state.busy = true; redraw();
     try {
       if (trim && !same) {
@@ -203,13 +222,40 @@ export async function openImagePopup(options: ImagePopupOptions) {
         ports.announce(change.shape !== undefined ? "Image shape changed" : "Focus point moved");
       }
       close();
+      return true;
     } catch (error) {
       state.busy = false;
       close();
-      ports.error(error);
+      // A guest's refused change is told to the guest (the answer), not on Lex's notice bar.
+      if (!options.apply) ports.error(error);
+      return false;
     }
   }
+  // Another picture for the place with no window (a guest's choice, TOOLS-185), placed as Replace places it.
+  // An upload is held as the picker holds a file added in it: the file and the place are one Undo step.
+  async function place(choice: { file: string } | { upload: File; folder: string }) {
+    // The proof is taken before the first await and checked again (with the guest's own) when the place is written.
+    const proofStamp = pin ? ports.stamp() : stamp;
+    const picture = "file" in choice ? await loadPicture(host, choice.file) : undefined;
+    if (!stamp.holds() || !options.live() || ports.source(target.path) !== source || ports.viewingVersion()) { close(); return false; }
+    const frame = frameChange(start, { shape: shapeNow(), focus: centred, component: state.component }, true);
+    try {
+      const { image, held } = "file" in choice
+        ? { image: mediaImageForPlacement(choice.file, picture?.size ?? {}, (await workspaceContext()).paths), held: undefined }
+        : await (await import("./held-upload")).holdUpload(choice.upload, choice.folder, workspaceContext);
+      // A place stopped part way (the guest's change no longer holds) writes nothing. The checks run before the write
+      // only: once written the page is new, so the guest's proof no longer matching it does not undo the answer.
+      let stopped = false;
+      const cancelled = () => (stopped ||= !options.live());
+      await placeMediaImage(ports, workspaceContext, target, image, { stamp: proofStamp, epoch, source: source!, expected, initialAlt: mediaExistingAlt(expected) }, cancelled, held, frame);
+      return !stopped;
+    } catch {
+      // Refused (the page changed, not a photo): the guest is told by the answer, Lex's notice bar stays clear.
+      return false;
+    } finally { close(); }
+  }
   async function replace() {
+    if (options.guest) { close(); options.guest.replace(); return; }
     const { openMediaPicker } = await options.load();
     if (closed) return;
     // A picture spot (a slotted image) keeps its own rule below, even as the placeholder: a picture or a looping video.
@@ -258,7 +304,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     const { mountLargeEditor } = await import("./image-large-editor").finally(() => { opening = false; });
     if (closed || large) return;
     const before = edit();
-    const back = () => { large?.remove(); large = undefined; view.draw(); view.focusLarge(); };
+    const back = () => { large?.remove(); large = undefined; view?.draw(); view?.focusLarge(); };
     large = mountLargeEditor(state, start.shape, {
       change: (next: PopupEdit) => { Object.assign(state, { around: undefined, aroundFocus: undefined }, structuredClone(next)); update(); },
       done: () => { void done(); },
@@ -266,7 +312,8 @@ export async function openImagePopup(options: ImagePopupOptions) {
     });
   }
 
-  const view = mountImagePopupView(state, host, {
+  // Lex's tab writing a guest's change has no window and no look on the page: the change is written at once.
+  const view = options.apply ? undefined : mountImagePopupView(state, host, {
     shape: (shape: PopupShape) => { Object.assign(state, chooseShape(state.size, edit(), shape)); update(); },
     focus: (focus: PlaceFocus) => { state.focus = focus; update(); },
     zoom: (percent: number) => { state.cut = zoomTo(state.shape, state.cut, percent); update(); },
@@ -277,8 +324,13 @@ export async function openImagePopup(options: ImagePopupOptions) {
     done: () => { void done(); },
     cancel,
   });
+  if (options.apply) {
+    if (!("edit" in options.apply)) return { cancel, applied: place(options.apply) };
+    Object.assign(state, { around: undefined, aroundFocus: undefined }, structuredClone(options.apply.edit));
+    return { cancel, applied: done() };
+  }
   paint();
   look();
   void measure();
-  return { cancel };
+  return { cancel, applied: undefined };
 }

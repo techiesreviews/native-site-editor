@@ -11,6 +11,8 @@ import { frameBadge } from "./image-popup-rules";
 import { locateNativeElementRange } from "../native-source-location";
 import { mediaAttribute } from "./media-attributes";
 import { startTags } from "../../shared/html-source";
+import type { ImagePopupApply } from "./image-popup";
+import type { Stamp } from "../guarded-edit";
 
 export interface ImagePopupsDeps {
   ports: MediaControllerPorts;
@@ -61,6 +63,17 @@ export function createImagePopups(deps: ImagePopupsDeps) {
       if (!session || popup !== entry) { session?.cancel(); release(); return; }
       entry.cancel = session.cancel;
       ports.refreshDescriptions();
+    },
+    /** A synced session guest's focus and crop, or picture, for an image of the page (TOOLS-185): written as the
+     * popup writes it, with no window, as Lex's own change. `proof`: the load and page the change was checked
+     * against; anything newer refuses. Resolves to whether it was written. */
+    async apply(target: { path: string; node: number[] }, change: ImagePopupApply, proof: { stamp: Stamp; source: string }) {
+      const { stamp, source } = proof;
+      if (!ports.imagePopup || /^components\//i.test(target.path) || !stamp.holds() || ports.source(target.path) !== source) return false;
+      const { openImagePopup } = await import("./image-popup");
+      const session = await openImagePopup({ ports, host: ports.imagePopup, workspaceContext: deps.workspaceContext, load: deps.load, target,
+        live: () => stamp.holds() && ports.source(target.path) === source, closed: () => undefined, apply: change });
+      return await session?.applied ?? false;
     },
   };
 }
