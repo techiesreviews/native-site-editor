@@ -571,14 +571,13 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   const task = connectionPrompt("https://editor.example/mcp", "ase_token", "lex/site", "Build the site.");
   assert.match(task, /\n3\. Build the site\.\n4\. For each request the watchdog reports/);
   // Ticket am-16: the helper's start command, on this connection, only when the user asks for it. TOOLS-270: the helper
-  // reads its token from a file only the user can read, which the agent saves first with a shell builtin (printf, in no
-  // process list); no start command holds the token, so it never reaches a command line, shell history or the user
-  // service's settings.
+  // reads its token from a file only the user can read, which the agent saves first; no start command holds the token,
+  // so it never reaches the helper's command line, shell history typed by the user or the user service's settings.
   assert.equal(HELPER_TOKEN_FILE, "~/.config/editor-helper/token");
   assert.equal(helperTokenSave("ase_token"), "(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ~/.config/editor-helper/token && printf '%s\\n' 'ase_token' > ~/.config/editor-helper/token)");
   assert.match(prompt, /create helper files \(the helper's token file below excepted\)/);
   assert.equal(helperCommand("https://e.example/mcp"), "npx -y @techiesreviews/editor-helper@0.2.0 https://e.example/mcp");
-  assert.ok(prompt.includes("If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of every command line: first save it there with "
+  assert.ok(prompt.includes("If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of the helper's start command: first save it there with "
     + `\`${helperTokenSave("ase_token")}\`, then start the helper with \`npx -y @techiesreviews/editor-helper@0.2.0 https://editor.example/mcp\` (it needs Node 24 or later).`));
   // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
   const detached = helperDetached("https://editor.example/mcp");
@@ -587,7 +586,7 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   assert.ok(prompt.includes(`on Linux run \`${detached.systemd}\` (stop it with \`systemctl --user stop editor-helper\`), elsewhere \`${detached.nohup}\`. Check a few seconds later that it still runs`));
   assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me \(it holds no token\)\./);
   // An agent that cannot write the file either has the user save it by hand, the token pasted, never typed in a command.
-  assert.ok(prompt.includes("If you cannot save the token file either, also tell me to run `(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ~/.config/editor-helper/token && cat > ~/.config/editor-helper/token)` there first, paste the token from the Authorization line of the prompt I gave you, then press Enter and Ctrl+D."));
+  assert.ok(prompt.includes("If you cannot save the token file either, also tell me to run `(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ~/.config/editor-helper/token && cat > ~/.config/editor-helper/token)` there first, paste the token from the Authorization line of the prompt I gave you (the part after Bearer), then press Enter and Ctrl+D."));
   // The token appears where the prompt gives it to the agent and in the one command that saves it, never in a start command.
   assert.equal(prompt.split("ase_token").length - 1, 2);
   // Lex removed the menu's "Pins go to" (2026-10-30): the default command starts Claude Code.
