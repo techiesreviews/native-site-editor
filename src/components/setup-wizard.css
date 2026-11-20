@@ -121,6 +121,8 @@
 /* Chosen: the edge turns the action colour and a second line inside it makes it 2px. */
 .wizard-tile:has(:checked) { border-color: var(--primary); outline: 1px solid var(--primary); outline-offset: -2px; background: var(--current); }
 .wizard-tile:has(:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+/* A tile with only its label (Public, Private) is still a finger's height on touch. */
+@media (hover: none), (pointer: coarse) { .wizard-tile { min-block-size: var(--size-touch); } }
 .wizard-tile__label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px; padding-inline: 4px; font-weight: 600; }
 .wizard-tile__label .icon { margin-inline: 0; color: var(--primary); opacity: 0; transition: opacity var(--dur-hover) ease-out; }
 .wizard-tile:has(:checked) .wizard-tile__label .icon { opacity: 1; }
@@ -170,7 +172,8 @@
 .wizard-repos__item { display: grid; grid-template-columns: var(--size-control) minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px; border-radius: var(--radius-panel); }
 .wizard-repos__item:hover { background: var(--hover); }
 .wizard-repos__mark { display: grid; place-items: center; width: var(--size-control); height: var(--size-control); border-radius: var(--radius); background: var(--current); font-weight: 600; }
-.wizard-repos__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wrapped, never cut: two long names that share a start stay told apart on a phone. */
+.wizard-repos__name { font-weight: 600; overflow-wrap: anywhere; }
 .wizard-repos__item .button { min-width: 104px; }
 .wizard-repos__none { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 8px; color: var(--muted); }
 .wizard-repos__none .button { text-decoration: none; }
