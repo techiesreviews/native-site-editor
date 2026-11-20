@@ -280,8 +280,9 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   await expect(panel).toBeHidden();
   await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
   const picked = await heroTag(lex);
+  // A shape other than the 16:9 the picture already has, so his crop is a change.
   await benPopup.getByRole("button", { name: /^Shape:/ }).click();
-  await benPopup.getByRole("menuitemradio", { name: "16:9", exact: true }).click();
+  await benPopup.getByRole("menuitemradio", { name: "Square", exact: true }).click();
   await ben.page.keyboard.press("Escape");
   await expect(benPopup).toBeHidden();
   // Refused, and his picture panel opens saying so.

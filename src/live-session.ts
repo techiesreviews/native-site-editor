@@ -233,7 +233,7 @@ export async function startSharing(ports: SharePorts) {
       } else held = change;
       // Written only to the page still on show, once the edits have loaded.
       const done = ports.preview()?.guestShown?.()?.path === change.path
-        && await loadEdits().then((loaded) => loaded?.change(held, seen.source) ?? false).catch(() => false);
+        && await loadEdits().then((loaded) => !ended && ports.holds() && (loaded?.change(held, seen.source) ?? false)).catch(() => false);
       if (!ended && ports.holds()) wire.send({ t: "answer", to: from.id, ask, done } satisfies HostMessage);
     });
   };
