@@ -1,6 +1,6 @@
 # Round-two validation
 
-The lead’s browser review accepted the original pages’ basic opening/switching but rejected their fidelity. Round two replaces the thin frames with catalogue 51’s actual tree renderer, row anatomy, styles, icon paths, component and slot badges, and workspace layout. Each page has a complete bakery site, System / Light / Dark controls and 4–5 guided steps plus Start again. The guidance is explicitly marked as mock-up controls outside the editor. Media also repeats those labelled mock-up controls above its modal editor surface, so the modal does not block the walkthrough.
+The lead’s browser review accepted the original pages’ basic opening/switching but rejected their fidelity. Round two replaces the thin frames with catalogue 51’s actual tree renderer, row anatomy, styles, icon paths, component and slot badges, and workspace layout. Each page has a complete bakery site, System / Light / Dark controls and 4–6 guided steps plus Start again. The guidance is explicitly marked as mock-up controls outside the editor. Media also repeats those labelled mock-up controls above its modal editor surface, so the modal does not block the walkthrough.
 
 ## Browser evidence
 
@@ -86,4 +86,18 @@ The follow-up main review (`20261120T014936Z`) found a non-focusable fallback po
 ```text
 RESULT: fail prototype-regressions 37/39
 RESULT: ok prototype-regressions 39/39
+```
+
+## Save, paste and activation proof
+
+The next independent second look (`20261120T020822Z`) found a real submit-button bug: the helper and callers both emitted a `type` attribute. The helper now owns the type; Save and Link submit correctly. Close dismisses the live-edit popup even with an invalid local draft. A media Save walkthrough step follows the Back-loss comparison, preserving that Today demonstration. New checks save one description, edit a second, then Discard back to the first; they no longer mistake an unfinished draft for a saved value.
+
+Seven new cases first failed (39/46). They now prove button clicks, true saved state, caret restoration after paste, accessible affected-page names and focus on an enabled popup control. A direct palette activation check also found two insertions per click/Enter because option buttons submitted their parent form as well as invoking their own handler; those options now have explicit button types. Its case failed 46/47 before correction. Strengthened context-menu assertions caught native right-mouse release dismissing a newly opened popup; opening after release now keeps it open and focused. Slot editing uses the actual button as the popover source, including clicks on its SVG icon.
+
+```text
+RESULT: fail prototype-regressions 39/46
+RESULT: fail prototype-regressions 45/46
+RESULT: ok prototype-regressions 46/46
+RESULT: fail prototype-regressions 46/47
+RESULT: ok prototype-regressions 47/47
 ```
