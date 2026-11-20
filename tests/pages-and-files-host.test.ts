@@ -103,7 +103,7 @@ function setup() {
     announce: (text: string) => { calls.push(`announce ${text}`); } } satisfies Notices;
   const workspaceSession = createWorkspaceSession();
   const session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), nextLoad: () => holds, currentLoad: () => 1, stampOf: () => holds,
-    draftScope: () => scope } satisfies Session;
+    visits: () => 0, draftScope: () => scope, shownScope: () => undefined } satisfies Session;
   const repo = { api: async <T>() => ({}) as T, apiResponse: async () => ({ value: undefined as never, sessionTag: null }), readFile: async () => "", readFiles: async () => ({}),
     entryAt: () => undefined, findEntry: async () => undefined } satisfies Repo;
   const preview = { nativeRouteForPath: () => undefined, nativeRouteInfo: () => ({}), nativeTitles: () => ({}), nativeFallbackPage: () => undefined, nativeModeActive: () => false,

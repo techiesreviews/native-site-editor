@@ -6,7 +6,6 @@
 
 import type { SharedContext } from "./agent-site";
 import { createAgentSiteHost, type AgentSiteHostPorts, type createAgentCommands } from "./agent-site-host";
-import type { AgentReadFiles } from "./agent-tools-read";
 import type { AppStore } from "./app-store";
 import type { CleanSourceCache } from "./clean-source-cache";
 import type { PinRequest } from "./components/agent-pins";
@@ -15,9 +14,9 @@ import type { createAgentMenu } from "./components/agent-menu";
 import type { createPageStructureController } from "./controllers/page-structure-controller";
 import type { MediaPin } from "./controllers/media-controller";
 import { draftStore } from "./drafts";
-import type { Session } from "./host-modules";
+import type { Preview, Repo, Session, TextIndex } from "./host-modules";
 import type { GuardedEdits } from "./guarded-edit";
-import { withSiteIndexed, type SiteIndexGate } from "./native-boot";
+import { withSiteIndexed } from "./native-boot";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
 import type { createSetupHost } from "./setup-host";
 import { workingPart } from "./working-part";
@@ -40,9 +39,9 @@ export interface AgentMenuPorts {
   loadAgentSite: AgentSiteHostPorts["load"];
   // The shared host modules (src/host-modules.ts) and the hosts handed over whole, as much of each as the menu reads.
   session: Pick<Session, "draftScope">;
-  repo: { api: AgentReadFiles["api"]; readFile: AgentReadFiles["read"]; readFiles: AgentReadFiles["batch"] };
-  preview: { nativeRouteInfo: (route: string, site: NonNullable<ReturnType<typeof createNativeSiteRuntime>["site"]>) => { title?: string; description?: string } };
-  textIndex: { nativeTextIndexGate: SiteIndexGate };
+  repo: Pick<Repo, "api" | "readFile" | "readFiles">;
+  preview: Pick<Preview, "nativeRouteInfo">;
+  textIndex: Pick<TextIndex, "nativeTextIndexGate">;
   /** The workspace screen's parts (src/workspace-mount.ts). */
   panels: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
   pageBuilder: { pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "renderEditBar"> };
@@ -54,8 +53,13 @@ export interface AgentMenuPorts {
 export function agentMenuOptions(ports: AgentMenuPorts, agentCommands: Pick<ReturnType<typeof createAgentCommands>, "apply" | "reload">) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
   const { appStore, runtime, guardedEdits, cleanSources, setupController, agentPresence, loadAgentSite, panels: workspace } = ports;
-  const { draftScope } = ports.session, { api, readFile, readFiles } = ports.repo, { nativeRouteInfo } = ports.preview;
-  const { nativeTextIndexGate } = ports.textIndex, { pageStructureController } = ports.pageBuilder, { mediaPorts } = ports.media, { pathNow } = ports.pagesAndFiles;
+  const { draftScope } = ports.session;
+  const { api, readFile, readFiles } = ports.repo;
+  const { nativeRouteInfo } = ports.preview;
+  const { nativeTextIndexGate } = ports.textIndex;
+  const { pageStructureController } = ports.pageBuilder;
+  const { mediaPorts } = ports.media;
+  const { pathNow } = ports.pagesAndFiles;
 
   // The pins of the requests last told, each named as the agent presence names it; told again when an agent acting
   // or stopped names one anew (ticket am-45), so the name shows without waiting for a request to change.

@@ -415,7 +415,7 @@ const { agentController, agentCommands } = createAgentHost({
   appStore, runtime, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
   createBlockMoves, agentPresence, loadAgentSite, cleanSources, setupController, loadAgentMenu,
   // Read at call time.
-  loadComponentTools: workspace.loadComponentTools,
+  loadComponentTools: () => workspace.loadComponentTools(),
   get info() { return info; }, get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
   get nativePreview() { return nativePreview; },
 });

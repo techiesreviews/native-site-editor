@@ -86,7 +86,7 @@ function fixture({ remember = true, early, native = false }: { remember?: boolea
   const sessionModule = {
     begin: () => session.begin(), current: () => session.current(), currentLoad: () => session.current().load, stampOf: () => session.begin(),
     nextLoad: (scope?: WorkspaceScope) => { session.next(scope); return session.begin(); },
-    draftScope: () => undefined,
+    visits: (scope: WorkspaceScope | undefined) => session.visits(scope), draftScope: () => undefined, shownScope: () => undefined,
   } satisfies Session;
   const repo = {
     api: <T>(path: string, params?: Record<string, string>) => read(path, params) as Promise<T>,
