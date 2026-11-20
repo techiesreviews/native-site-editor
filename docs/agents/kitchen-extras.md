@@ -52,9 +52,14 @@ This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit r
 ## Release to production
 
 - After Lex's written "ship it": `kit pr --release` (`dev` → `main`), merge once CI passes,
-  `npm run deploy:techies`, record the production version in
+  `npm run deploy:techies` from a checkout of `main`, record the production version in
   [NATIVE-PROJECT.md](../NATIVE-PROJECT.md#remote-state), then a first-hour check (sign in, edit,
   agent). Done when production serves the new version and its number is recorded (station 12).
+- `npm run deploy:techies` is
+  `scripts/agents/kit release-check && wrangler deploy --config wrangler.techies.jsonc`: a changed or
+  untracked file, or a HEAD that is not exactly `origin/main`, stops it before wrangler runs. In an
+  emergency a lead runs `scripts/agents/kit release-check --waive "<reason>"` and then
+  `wrangler deploy --config wrangler.techies.jsonc` by hand. `npm run deploy:preview` runs no check.
 
 ## The starter
 
