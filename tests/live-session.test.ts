@@ -361,6 +361,31 @@ test("Lex's tab tells a guest each part of their upload that arrived, so their w
   (await session.started).stop();
 });
 
+test("a guest whose presence is queued behind their upload still counts while their socket is open (TOOLS-385)", async () => {
+  const room = heard();
+  const session = await fakeSession({ ...rendering(), guestTextEdit: async () => true, refresh() {}, ...guestEdits({ change: async () => true }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  session.options.onMembers!(new Map([["p1", "guest"], ["p2", "editor"]]));
+  await settle();
+  // Anna's heartbeats wait behind her upload: her tab shows her gone, yet the relay still holds her socket.
+  session.options.onPeers!(new Map([["p2", { access: "editor", state: { name: "Sam", guest: "d".repeat(32) } }]]));
+  const upload = { kind: "upload", path: "index.html", node: [0], name: "cake.png", type: "image/png", data: btoa("x".repeat(1_000_000)) };
+  await session.deliver("p1", "guest", { t: "change", change: upload, ask: 1, seen: 1 });
+  await settle();
+  const told = () => room.messages.filter(message => message.t === "got" || message.t === "answer");
+  assert.deepEqual(told(), [
+    { t: "got", to: "a".repeat(32) }, { t: "got", to: "a".repeat(32) }, { t: "got", to: "a".repeat(32) },
+    { t: "answer", to: "a".repeat(32), ask: 1, done: true },
+  ]);
+  // Her socket closed: whatever still comes from that peer counts for no one.
+  session.options.onMembers!(new Map([["p2", "editor"]]));
+  await session.deliver("p1", "guest", { t: "change", change: upload, ask: 2, seen: 1 });
+  await settle();
+  assert.equal(told().length, 4);
+  (await session.started).stop();
+});
+
 test("the session's wire says each part of a message as it arrives, by its sender, and nothing for a message of one part (TOOLS-385)", async () => {
   const frames: Uint8Array[] = [];
   const sender = sessionWire(() => ({ send: async (bytes: Uint8Array) => { frames.push(Uint8Array.from(bytes)); return true; } }), () => undefined, () => undefined);

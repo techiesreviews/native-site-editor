@@ -200,7 +200,9 @@ export async function startSharing(ports: SharePorts) {
     }, end);
   };
   // A message counts only from a guest's own socket, as the relay names it: never from someone claiming their id.
-  const guestOf = (sender: Sender) => sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) : undefined;
+  // A guest stays known while the relay holds their socket, though shown gone: their heartbeats wait behind a slow
+  // upload, and the upload still counts (TOOLS-385).
+  const guestOf = (sender: Sender) => sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) ?? known.get(sender.peer) : undefined;
   const written = (message: Extract<GuestMessage, { t: "edit" }>, sender: Sender) => {
     const from = guestOf(sender);
     if (!from || !message.edit || typeof message.seq !== "number" || typeof message.session !== "number") return;
@@ -273,6 +275,14 @@ export async function startSharing(ports: SharePorts) {
     const caret = guestCaret(message.caret);
     if (from && caret !== undefined && !ended) carets.guestCaret(from.id, caret);
   };
+  // Whose sockets the relay holds; and each guest by their socket, for as long as the relay holds it.
+  let members: ReadonlyMap<string, LiveAccess> = new Map();
+  const known = new Map<string, SessionGuest>();
+  const membersChanged = (now: ReadonlyMap<string, LiveAccess>) => {
+    members = now;
+    for (const peer of known.keys()) if (members.get(peer) !== "guest") known.delete(peer);
+    for (const guest of guests) if (members.get(guest.peer) === "guest") known.set(guest.peer, guest);
+  };
   const peersChanged = (peers: ReadonlyMap<string, LivePeer>) => {
     const next: SessionGuest[] = [];
     for (const [peer, at] of peers) {
@@ -286,6 +296,7 @@ export async function startSharing(ports: SharePorts) {
     const joined = next.some((guest) => !guests.some((known) => known.id === guest.id));
     const same = next.length === guests.length && !joined;
     guests = next;
+    for (const guest of guests) if (members.get(guest.peer) === "guest") known.set(guest.peer, guest);
     if (joined || !guests.length) sendWhole();
     if (!same) { carets.guestsChanged(); ports.changed({ guests }); }
   };
@@ -295,6 +306,7 @@ export async function startSharing(ports: SharePorts) {
     key,
     onMessage: (bytes, from) => wire.receive(bytes, from),
     onPeers: peersChanged,
+    onMembers: membersChanged,
     // Back after a dropped socket: frames meanwhile may be lost, so every guest gets the whole page.
     onKey: () => { if (!ended) ports.dropped?.(false); sendWhole(); },
     onDropped: () => ports.dropped?.(true),
