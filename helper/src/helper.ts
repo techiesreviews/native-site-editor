@@ -15,7 +15,7 @@ import {
 } from "./agents.ts";
 
 export const HELPER_NAME = "editor-helper";
-export const HELPER_VERSION = "0.1.0";
+export const HELPER_VERSION = "0.2.0";
 
 /** A started agent program. */
 export interface AgentProcess { input: Readable; output: Writable; stop(): void }

@@ -48,22 +48,32 @@ Your changes appear in my editor as unsaved drafts; I review them and save them 
 }
 
 /** The helper's package (helper/, ticket am-16), its version pinned. */
-export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.1.0";
+export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.2.0";
+/**
+ * Where the helper reads its token (TOOLS-270; `defaultTokenFile` in helper/src/token.ts): a file only the user can
+ * read, so no start command holds the token and it never reaches a command line, shell history or a service's settings.
+ */
+export const HELPER_TOKEN_FILE = "~/.config/editor-helper/token";
+/**
+ * Saves the token in the helper's file, readable by the user alone. `printf` is a shell builtin, so the token is in no
+ * process list; the token is `ase_` and hex, safe inside single quotes.
+ */
+export function helperTokenSave(token: string) {
+  return `(umask 077 && mkdir -p ~/.config/editor-helper && printf '%s\\n' '${token}' > ${HELPER_TOKEN_FILE})`;
+}
 /** The command that starts the helper on this connection: it waits for pins and starts Claude Code for each (its default; `--agent` names another). */
-export function helperCommand(url: string, token: string) {
-  return `EDITOR_HELPER_TOKEN=${token} npx -y ${HELPER_PACKAGE} ${url}`;
+export function helperCommand(url: string) {
+  return `npx -y ${HELPER_PACKAGE} ${url}`;
 }
 /**
- * The same command started apart from the conversation that runs it, so it outlives it. The token travels in the
- * environment, never as an argument: the started helper's arguments never hold it. Linux: a user service
- * (`systemd-run` passes no environment of its own: a bare `--setenv` copies the token from its own, PATH is set, and
- * npx is found by its full path), stopped with `systemctl --user stop editor-helper`. Elsewhere: `nohup`, which hands
- * its environment to npx.
+ * The same command started apart from the conversation that runs it, so it outlives it. Linux: a user service
+ * (`systemd-run` passes no environment of its own: PATH is set, and npx is found by its full path), stopped with
+ * `systemctl --user stop editor-helper`. Elsewhere: `nohup`.
  */
-export function helperDetached(url: string, token: string) {
+export function helperDetached(url: string) {
   return {
-    systemd: `EDITOR_HELPER_TOKEN=${token} systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
-    nohup: `EDITOR_HELPER_TOKEN=${token} nohup npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
+    systemd: `systemd-run --user --collect --unit editor-helper --setenv=PATH="$PATH" "$(command -v npx)" -y ${HELPER_PACKAGE} ${url}`,
+    nohup: `nohup npx -y ${HELPER_PACKAGE} ${url} >/dev/null 2>&1 &`,
   };
 }
 
@@ -82,7 +92,7 @@ Server: ${code(url)}
 
 Authorization: ${code(`Bearer ${token}`)}
 
-**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.** Keep the token in memory; never save it or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
+**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.** Keep the token in memory; never save it (the helper's token file below excepted) or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
 
 Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}. Give curl a timeout of at least 40 seconds.
 
@@ -96,5 +106,5 @@ A change to the part I am typing in answers waiting and lands once I leave that 
 
 Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).
 
-If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: ${code(helperCommand(url, token))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper apart from it: on Linux run ${code(helperDetached(url, token).systemd)} (stop it with ${code("systemctl --user stop editor-helper")}), elsewhere ${code(helperDetached(url, token).nohup)}. Check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token. For each pin the helper starts Claude Code, until Disconnect MCP.`;
+If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of every command line: first save it there with ${code(helperTokenSave(token))}, then start the helper with ${code(helperCommand(url))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper apart from it: on Linux run ${code(helperDetached(url).systemd)} (stop it with ${code("systemctl --user stop editor-helper")}), elsewhere ${code(helperDetached(url).nohup)}. Check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me (it holds no token). For each pin the helper starts Claude Code, until Disconnect MCP.`;
 }
