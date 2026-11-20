@@ -303,7 +303,9 @@ export function createSetupWizard(options: SetupWizardOptions) {
         if (options.accessUrl) none.append(external("Choose repositories on GitHub", options.accessUrl, "button secondary"));
         list.replaceChildren(none);
       } catch {
-        if (!destroyed) message.textContent = "GitHub could not be asked. Come back to this tab to try again.";
+        // A picker left meanwhile keeps its hands off the open one's message and refresh.
+        if (destroyed || !list.isConnected) return;
+        message.textContent = "GitHub could not be asked. Come back to this tab to try again.";
         relist = () => void fill();
       } finally {
         listing = false;

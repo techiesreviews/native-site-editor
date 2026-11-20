@@ -116,3 +116,15 @@ test("a save that fails after a switch to another site shows no error there and 
   assert.equal(f.save()!.textContent, "Save name");
   assert.equal(f.refused(), undefined);
 });
+
+// The Inbox may be closed when the site changes: its rows are not drawn again, so the save itself checks the site.
+test("a save that fails after a switch made while the Inbox is closed shows no error on the other site", async () => {
+  const f = fixture();
+  f.redraw();
+  f.toggle();
+  f.submit();
+  f.switchTo("lex/florist/main");
+  f.fail(new Error("GitHub did not answer."));
+  await flush();
+  assert.deepEqual(f.errors, []);
+});

@@ -47,14 +47,16 @@ export function createInboxSetup(setup: InboxPorts["setup"], panel: { hide(): vo
       refused = undefined;
       panel.redraw();
       const asked = visit;
+      // The site may have changed while the Inbox was closed and its rows not drawn: each answer checks it first.
+      const current = () => { follow(); return asked === visit; };
       void setup.saveName(name).then(problem => {
-        if (asked !== visit) return;
+        if (!current()) return;
         saving = false;
         refused = problem;
         // Saved: the row goes with the next refresh of setup; the form closes with it.
         if (!problem) { open = false; typed = undefined; }
         panel.redraw();
-      }, error => { if (asked !== visit) return; saving = false; panel.redraw(); panel.error(error); });
+      }, error => { if (!current()) return; saving = false; panel.redraw(); panel.error(error); });
     });
     const field = node("div", "inbox__name");
     field.append(label, input);
