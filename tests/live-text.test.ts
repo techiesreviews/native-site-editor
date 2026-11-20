@@ -2019,7 +2019,7 @@ test("a tab's presence is read for at most 16 agents' carets, and entries that a
 const named = async (who: ReturnType<typeof tab>, account = who.scope.account) =>
   (await who.authors.collect([{ key: draftKey(who.scope, path), baseSha: sha }], account)).authors;
 const byName = (authors: { name: string }[]) => [...authors].sort((a, b) => a.name.localeCompare(b.name));
-/** Every one of `tabs` takes part in the room's copy: a tab tells its caret only once its copy does. */
+/** Every one of `tabs` takes part in the room's copy: a tab tells its caret only once its copy takes part. */
 const takingPart = (room: ReturnType<typeof fakeRoom>, ...tabs: ReturnType<typeof tab>[]) =>
   tabs.every(who => room.said.some(item => who.sockets.includes(item.from)));
 
@@ -2028,8 +2028,12 @@ test("saving names everyone whose changes the file carries: another person and a
   // Anna's Yjs arrives late, as on a busy machine: loading Yjs is not taking part yet. An agent's change written into her
   // drafts before her copy takes part is her own words in the copy (TOOLS-219), so Lex's tab would never name the agent
   // (TOOLS-128): the changes wait until both copies take part.
-  const anna = tab(room, base, { account: "anna", loadYjs: () => new Promise(resolve => setTimeout(() => resolve(import("yjs")), 100)) });
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const anna = tab(room, base, { account: "anna", loadYjs: () => held.then(() => import("yjs")) });
   const lex = tab(room);
+  await until(() => anna.yjsLoads === 1 && lex.yjsLoads === 1, "both loading Yjs");
+  release();
   await until(() => takingPart(room, anna, lex), "both taking part");
   await quiet();
   anna.type(4, "Warm ");
