@@ -63,3 +63,20 @@ The final round-two review (`20261120T011657Z`) found that rerendering reset the
 RESULT: fail prototype-regressions 25/28
 RESULT: ok prototype-regressions 28/28
 ```
+
+## Second-look fixes
+
+The first round-two `kit pr --no-merge` reached PR #414, then stopped on seven P2 findings from `opencode/deepseek-v4.1-flash-free` (`20261120T013415Z`). Eight focused cases first failed (28/36). The corrected paths cover route-specific client headings and bar scope, valid-only Duplicate commands, independent source-scope inspection, explicit Today source/paste guidance, long/bidirectional names, accessible popup names and expanded state through Escape/outside dismissal, and temporary link highlighting. The tree grid now constrains each row to its panel; its menu trigger can be clicked directly without the canvas intercepting the hit. New selection targets are recorded before rendering, and tree focus prevents document scrolling.
+
+Declined in part: SL-1's suggestion to make Today's page control follow the canvas would remove the audited problem that the user explicitly requires. NSE-06 (`audit.md` row 6) records Home still naming the canvas after following About, then the top control/source changing when About's heading is selected. Today preserves that stale source identity, including when navigating back to Home. Its extra bar now uses the same stale identity; the mock-up guidance explicitly names the mismatch. After follows the visible route immediately. The new browser case exercises all four Today steps and checks this distinction. This retains the audited fault deliberately; it is not a claimed After fix.
+
+The client preview uses separate Home and About heading drafts; its permissions remain simulated. The screen-width chip filters source inspection without changing the phone-canvas padding. Real system-clipboard interoperability, exhaustive content/contrast coverage and physical devices remain outside the claims here.
+
+```text
+RESULT: fail prototype-regressions 28/36
+RESULT: fail prototype-regressions 35/36
+```
+
+`RESULT: ok prototype-regressions 36/36`
+
+The full 88-state / 44-keyboard-flow matrix passed after these second-look fixes, including replacing the link address with Ctrl+A. The 36 regression cases passed again. All eleven index links resolve exactly once, and regenerating the pages leaves their bytes unchanged.

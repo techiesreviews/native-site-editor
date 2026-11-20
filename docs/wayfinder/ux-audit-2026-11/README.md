@@ -47,3 +47,5 @@ nice -n 15 node docs/wayfinder/ux-audit-2026-11/review-regressions.mjs
 ```
 
 The shell checks failed 0/11 before round two, then passed 11/11. The browser script launches and closes one owned Chromium instance, serially checks 88 combinations (eleven pages × two widths × Today/After × light/dark), plays every guided step, exercises 44 additional keyboard flows, checks visible state and horizontal overflow, and saves screenshots only under the ignored runtime folder `.scratch/ux-round2/`. It makes no server or outside requests. This is manual prototype validation, separate from production application tests. Final results are recorded in validation.md and the PR.
+
+Today intentionally retains NSE-06’s stale source-based page identity, including after returning Home from an opened About source. The After control follows the visible route. Source-scope inspection in prototype 11 leaves the rendered phone padding unchanged. Client-preview headings have separate Home/About drafts; permissions are still simulated.
