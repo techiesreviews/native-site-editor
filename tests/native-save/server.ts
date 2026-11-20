@@ -994,9 +994,9 @@ const liveRooms = new Map<string, LiveRooms>();
 // Preview links turned off (slice 35), by instance, as SessionStore keeps its "preview-off" mark.
 const previewsOff = new Set<string>();
 function liveJoin(id: string, request: Request, live?: LiveConnect) {
-  let identity: { room?: unknown; access?: unknown; rejoin?: unknown; preview?: unknown; commit?: unknown } | null = null;
+  let identity: { room?: unknown; access?: unknown; rejoin?: unknown; routed?: unknown; preview?: unknown; commit?: unknown } | null = null;
   try { identity = JSON.parse(request.headers.get(LiveRooms.identityHeader) ?? "null"); } catch { /* Refused below. */ }
-  const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin;
+  const room = identity?.room, access = identity?.access, rejoin = identity?.rejoin, routed = identity?.routed;
   // Agents come in as the Worker lets them (a bearer connection), and a synced session's guests by its link (slice 30):
   // the room admits them only while a tab has it open.
   const rooms = liveRooms.get(id) ?? liveRooms.set(id, new LiveRooms([], () => Date.now(), livePingedAt)).get(id)!;
@@ -1011,9 +1011,11 @@ function liveJoin(id: string, request: Request, live?: LiveConnect) {
     return typeof identity?.commit === "string" ? Response.json({ told: rooms.pushed(identity.commit) }) : new Response(null, { status: 400 });
   if (new URL(request.url).pathname === "/live/admits")
     return new Response(null, { status: typeof room === "string" && liveAccess(access) && rooms.admits(room, access) ? 204 : 409 });
-  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) || (rejoin !== undefined && typeof rejoin !== "string"))
+  // A synced session's guest whose frames each say where they go (TOOLS-385), as worker/index.ts checks it.
+  if (!live || typeof room !== "string" || !/^[a-f\d]{64}$/.test(room) || !liveAccess(access) || (rejoin !== undefined && typeof rejoin !== "string") ||
+    (routed !== undefined && (routed !== true || access !== "guest")))
     return new Response(null, { status: 400 });
-  return live(rooms, { room, access, ...(typeof rejoin === "string" ? { rejoin } : {}) });
+  return live(rooms, { room, access, ...(typeof rejoin === "string" ? { rejoin } : {}), ...(routed === true ? { routed: true as const } : {}) });
 }
 
 function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConnect): Env {

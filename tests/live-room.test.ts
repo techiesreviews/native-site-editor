@@ -1139,6 +1139,14 @@ test("Miniflare: a synced session's routes mint signed tokens, keep made-up ones
     assert.equal((await worker.dispatchFetch(guestUrl(session, "&routed=1"))).status, 426);
     assert.equal((await worker.dispatchFetch(guestUrl(session, "&routed=2"))).status, 400);
     assert.equal((await worker.dispatchFetch(guestUrl(session, "&routed=1&routed=1"))).status, 400);
+    // Only a guest is routed: the sharing tab's own address, or an editor's identity at the relay, is refused with it.
+    assert.equal((await worker.dispatchFetch(`${shareUrl(session, host)}&routed=1`, { headers: { Upgrade: "websocket", Origin: origin, Cookie: anna.cookie } })).status, 400);
+    const namespace = await worker.getDurableObjectNamespace("SESSIONS");
+    const store = namespace.get(namespace.idFromName("routed-identity"));
+    const joinAs = (identity: Record<string, unknown>) =>
+      store.fetch("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify({ room: "a".repeat(64), ...identity }) } });
+    assert.equal((await joinAs({ access: "editor", routed: true })).status, 400, "an editor never routes");
+    assert.equal((await joinAs({ access: "guest", routed: "yes" })).status, 400, "only `true` routes");
     const binaries = (socket: NonNullable<typeof held.webSocket>) => {
       const frames: number[][] = [];
       socket.addEventListener("message", event => { if (typeof event.data !== "string") frames.push([...new Uint8Array(event.data as ArrayBuffer).subarray(16)]); });
@@ -1155,6 +1163,7 @@ test("Miniflare: a synced session's routes mint signed tokens, keep made-up ones
     routed.socket.send(Uint8Array.of(1, 42).buffer);
     routed.socket.send(Uint8Array.of(0, 43).buffer);
     await until(() => atLex.length === 2 && other.frames.length === 1, "the routed guest's frames over the real Worker");
+    // A deliberate short wait: a frame that wrongly reached the other guest would show up within it.
     await new Promise(resolve => setTimeout(resolve, 50));
     assert.deepEqual([atLex, other.frames], [[[42], [43]], [[43]]], "its content reaches the sharing tab only; its presence everyone");
     routed.socket.close(1000);

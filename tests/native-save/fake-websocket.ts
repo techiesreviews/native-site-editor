@@ -119,7 +119,7 @@ class NodeSocket implements RelaySocket, LiveSocket {
 }
 
 /** Live rooms through the fixture: SESSIONS answers `/live/join` by having the upgrade join `rooms`. */
-export type LiveConnect = (rooms: LiveRooms, join: { room: string; access: LiveAccess; rejoin?: string }) => Response;
+export type LiveConnect = (rooms: LiveRooms, join: { room: string; access: LiveAccess; rejoin?: string; routed?: true }) => Response;
 
 /** Authorize through the real public Worker route before accepting the Node upgrade. */
 export function installRelayUpgrade(server: { on(event: "upgrade", listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void): unknown }, route: (request: IncomingMessage, connect: RelayConnect, live: LiveConnect) => Promise<Response>) {
@@ -141,7 +141,9 @@ export function installRelayUpgrade(server: { on(event: "upgrade", listener: (re
         // As SessionStore does: an agent waits for a tab; the welcome goes out once the socket is accepted.
         if (!rooms.admits(join.room, join.access)) return new Response(null, { status: 409 });
         const live = adapter = new NodeSocket(socket, { owner: rooms, limit: LIVE_MESSAGE_LIMIT, binary: true, message: (from, message) => rooms.message(from, message), gone: (from, code) => rooms.leave(from, code) });
-        joined = () => rooms.join(live, join.room, join.access, join.rejoin === undefined ? {} : { rejoin: join.rejoin });
+        joined = () => rooms.join(live, join.room, join.access, {
+          ...(join.rejoin === undefined ? {} : { rejoin: join.rejoin }), ...(join.routed ? { routed: true as const } : {}),
+        });
         return new Response(null, { status: 204 });
       });
       if (adapter && response.ok) { adapter.accept(key, head); joined?.(); }

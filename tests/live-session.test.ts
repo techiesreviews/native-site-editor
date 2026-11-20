@@ -6,6 +6,7 @@ import { forEachAwait } from "./support/await-race";
 import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
 import { createGuestAsks } from "../src/guest-asks";
+import type { GuestChange } from "../src/guest-changes";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
@@ -381,8 +382,9 @@ test("a guest's answer from Lex's tab is waited for from the last part he said a
   const sent: unknown[] = [];
   const asks = createGuestAsks((message) => sent.push(message));
   const results: unknown[] = [];
-  void asks.ask<boolean>((ask) => ({ t: "change", change: {} as never, ask, seen: 1 }), 60_000, true).then((done) => results.push(["upload", done]));
-  void asks.ask<boolean>((ask) => ({ t: "change", change: {} as never, ask, seen: 1 }), 60_000, true).then((done) => results.push(["lost", done]));
+  const change = { kind: "link", path: "index.html", node: [0], href: "/about" } satisfies GuestChange;
+  void asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: 1 }), 60_000, 60_000).then((done) => results.push(["upload", done]));
+  void asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: 1 }), 60_000, 60_000).then((done) => results.push(["lost", done]));
   void asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), 10_000).then((sources) => results.push(["sources", sources]));
   assert.deepEqual(sent.map((message) => (message as { ask: number }).ask), [1, 2, 3]);
   t.mock.timers.tick(9_000);
@@ -401,6 +403,27 @@ test("a guest's answer from Lex's tab is waited for from the last part he said a
   asks.close();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(results.at(-1), ["closed", undefined]);
+});
+
+test("a guest's patient ask gives its first part longer to arrive than each part after it (TOOLS-385)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const asks = createGuestAsks(() => {});
+  const results: unknown[] = [];
+  const change = { kind: "link", path: "index.html", node: [0], href: "/about" } satisfies GuestChange;
+  // A slow link: the first 512 KiB part takes 170 s to arrive, then the answer comes 50 s later.
+  void asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: 1 }), 60_000, 180_000).then((done) => results.push(["slow", done]));
+  t.mock.timers.tick(170_000);
+  asks.heard();
+  t.mock.timers.tick(50_000);
+  asks.answer(1, true);
+  // No part ever arrives: it gives up once the first wait is over.
+  void asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: 1 }), 60_000, 180_000).then((done) => results.push(["lost", done]));
+  t.mock.timers.tick(179_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(results, [["slow", true]], "still waiting a second before the first wait is over");
+  t.mock.timers.tick(1_000);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(results, [["slow", true], ["lost", undefined]]);
 });
 
 test("a guest's upload reaches the page as a file with its name, type and bytes", async () => {
