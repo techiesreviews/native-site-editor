@@ -148,7 +148,14 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
           render();
         }).catch(() => undefined);
       },
-      onPick: (file) => { if (file !== current) void write({ kind: "picture", ...target, file }).then((done) => refuse(target, done ? undefined : NOT_KEPT)); },
+      onPick: (file) => {
+        // Someone may have replaced the picture since the tick was read: a pick of the ticked one reads it again first.
+        const shown = file === current ? sources().then((files) => files && pictureAt(files, target)).catch(() => undefined) : Promise.resolve(current);
+        void shown.then((now) => {
+          if (file === now) return;
+          return write({ kind: "picture", ...target, file }).then((done) => refuse(target, done ? undefined : NOT_KEPT));
+        });
+      },
     };
   }
 
@@ -178,8 +185,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     cropOpening = true;
     render();
     try {
+      // The render is noted before the sources are asked for, so they are never older than the render the crop names.
+      const opened = selectedSeen;
       const [{ openImagePopup }, files] = await Promise.all([import("./page-builder/image-popup"), sources()]);
-      const opened = selectedSeen, openedTag = await pictureTagAt(files, target);
+      const openedTag = await pictureTagAt(files, target);
       if (!files || !openedTag || !still(target)) return;
       // The crop is made on the picture as the popup opened on it. It names the render it opened on, or, while the
       // same picture stays selected with the same tag on Lex's page now, the latest render: Lex's tab keeps only
