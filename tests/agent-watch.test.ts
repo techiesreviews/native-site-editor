@@ -575,7 +575,8 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // process list); no start command holds the token, so it never reaches a command line, shell history or the user
   // service's settings.
   assert.equal(HELPER_TOKEN_FILE, "~/.config/editor-helper/token");
-  assert.equal(helperTokenSave("ase_token"), "(umask 077 && mkdir -p ~/.config/editor-helper && printf '%s\\n' 'ase_token' > ~/.config/editor-helper/token)");
+  assert.equal(helperTokenSave("ase_token"), "(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ~/.config/editor-helper/token && printf '%s\\n' 'ase_token' > ~/.config/editor-helper/token)");
+  assert.match(prompt, /create helper files \(the helper's token file below excepted\)/);
   assert.equal(helperCommand("https://e.example/mcp"), "npx -y @techiesreviews/editor-helper@0.2.0 https://e.example/mcp");
   assert.ok(prompt.includes("If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of every command line: first save it there with "
     + `\`${helperTokenSave("ase_token")}\`, then start the helper with \`npx -y @techiesreviews/editor-helper@0.2.0 https://editor.example/mcp\` (it needs Node 24 or later).`));
@@ -585,6 +586,8 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   assert.equal(detached.nohup, "nohup npx -y @techiesreviews/editor-helper@0.2.0 https://editor.example/mcp >/dev/null 2>&1 &");
   assert.ok(prompt.includes(`on Linux run \`${detached.systemd}\` (stop it with \`systemctl --user stop editor-helper\`), elsewhere \`${detached.nohup}\`. Check a few seconds later that it still runs`));
   assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me \(it holds no token\)\./);
+  // An agent that cannot write the file either has the user save it by hand, the token pasted, never typed in a command.
+  assert.ok(prompt.includes("If you cannot save the token file either, also tell me to run `(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ~/.config/editor-helper/token && cat > ~/.config/editor-helper/token)` there first, paste the token from the Authorization line of the prompt I gave you, then press Enter and Ctrl+D."));
   // The token appears where the prompt gives it to the agent and in the one command that saves it, never in a start command.
   assert.equal(prompt.split("ase_token").length - 1, 2);
   // Lex removed the menu's "Pins go to" (2026-10-30): the default command starts Claude Code.

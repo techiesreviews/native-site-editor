@@ -1,11 +1,11 @@
 // The helper (helper/, ticket am-16) against the real Worker in Miniflare and a receiving tab, with a fake ACP
 // agent in place of Claude Code: a pin starts one agent, its question comes back to the pin, its change lands,
 // a tool outside the allowed list is asked on the pin, and Disconnect MCP ends the helper.
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
@@ -18,9 +18,9 @@ import {
   AGENT_COMMANDS, AGENT_FLAGS, ALLOWED_TOOLS, approvalQuestion, approves, commandName, editorTool, HELPER_AGENT, LOCKED_DOWN, notLockedDown, PIN_AGENTS, refuses, sessionMeta, toolAllowed,
 } from "../helper/src/agents";
 import { answerTo, HELPER_VERSION, runHelper, type AgentProcess } from "../helper/src/helper";
-import { HELPER_PACKAGE, HELPER_TOKEN_FILE } from "../src/agent-prompts";
+import { HELPER_PACKAGE, HELPER_TOKEN_FILE, helperTokenSave } from "../src/agent-prompts";
 import { launchAgent } from "../helper/src/launch";
-import { defaultTokenFile } from "../helper/src/token";
+import { defaultTokenFile, readToken } from "../helper/src/token";
 import { files, origin, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness";
 import { receivingTab } from "./support/receiving-tab";
 
@@ -698,26 +698,46 @@ test("the helper reads its token from the file the copied prompt saves, which on
   // The helper's own default is the path the copied prompt saves to.
   assert.equal(defaultTokenFile(), HELPER_TOKEN_FILE.replace("~", homedir()));
   const home = mkdtempSync(join(tmpdir(), "editor-helper-home-"));
+  const none = (file: string) => `No token in ${file}. Choose Connect to MCP in the editor, whose copied prompt saves it there, or run (umask 077 && mkdir -p "${dirname(file)}" && rm -f "${file}" && cat > "${file}"), paste the token, then press Enter and Ctrl+D.`;
   try {
-    // No file: one line naming where it goes. The old environment variable is no longer read.
+    // No file: one line naming where it goes and how to save it by hand. The old environment variable is no longer read.
     const missing = await cli(["--max-agents", "1"], { HOME: home, EDITOR_HELPER_TOKEN: "ase_old" }).exited;
     assert.equal(missing.code, 1);
-    assert.equal(missing.err.trim(), `No token in ${join(home, ".config", "editor-helper", "token")}: choose Connect to MCP in the editor, whose copied prompt saves it there.`);
-    // A file other users can read is refused, like ssh refuses a key others can read.
-    const open = tokenFile("ase_fake_open", 0o644);
-    try {
-      const refused = await cli(["--token-file", open.file], { HOME: home }).exited;
-      assert.equal(refused.code, 1);
-      assert.equal(refused.err.trim(), `${open.file} can be read by other users: run chmod 600 ${open.file}`);
-      assert.doesNotMatch(refused.err, /ase_fake_open/, "the token is never printed");
-    } finally { rmSync(open.folder, { recursive: true, force: true }); }
+    assert.equal(missing.err.trim(), none(join(home, ".config", "editor-helper", "token")));
+    // A file other users can read or change is refused, like ssh refuses such a key.
+    for (const mode of [0o644, 0o620]) {
+      const open = tokenFile("ase_fake_open", mode);
+      try {
+        const refused = await cli(["--token-file", open.file], { HOME: home }).exited;
+        assert.equal(refused.code, 1);
+        assert.equal(refused.err.trim(), `${open.file} can be read or changed by other users: run chmod 600 ${open.file}`);
+        assert.doesNotMatch(refused.err, /ase_fake_open/, "the token is never printed");
+      } finally { rmSync(open.folder, { recursive: true, force: true }); }
+    }
     // An empty file is no token either.
     const empty = tokenFile("   ");
     try {
       const run = await cli(["--token-file", empty.file], { HOME: home }).exited;
       assert.equal(run.code, 1);
-      assert.equal(run.err.trim(), `No token in ${empty.file}: choose Connect to MCP in the editor, whose copied prompt saves it there.`);
+      assert.equal(run.err.trim(), none(empty.file));
     } finally { rmSync(empty.folder, { recursive: true, force: true }); }
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("the copied save command writes the token file for its owner alone, even over an older file others could read", () => {
+  const home = mkdtempSync(join(tmpdir(), "editor-helper-home-"));
+  try {
+    const file = join(home, ".config", "editor-helper", "token");
+    const save = (token: string) => execFileSync("bash", ["-c", helperTokenSave(token)], { env: { ...process.env, HOME: home } });
+    save("ase_fake1");
+    assert.equal(readFileSync(file, "utf8"), "ase_fake1\n");
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.equal(statSync(dirname(file)).mode & 0o777, 0o700);
+    chmodSync(file, 0o644);
+    save("ase_fake2");
+    assert.equal(readFileSync(file, "utf8"), "ase_fake2\n");
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    assert.deepEqual(readToken(file), { token: "ase_fake2" });
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
@@ -737,19 +757,21 @@ test("the start command refuses bad options in one line, and a closed terminal a
   const token = { HOME: fake.folder };
   const version = await cli(["--version"]).exited;
   assert.deepEqual([version.code, version.out.trim()], [0, HELPER_VERSION]);
-  for (const [args, message] of [
-    [["--agent", "copilot"], /--agent is one of claude, codex, gemini, opencode\./],
-    [["--agent-command", " "], /--agent-command needs a command\./],
-    [["--max-agents", "0"], /--max-agents is a whole number, 1 or more\./],
-    [["--max-agents", "1.5"], /--max-agents is a whole number, 1 or more\./],
-    [["--max-agents", "lots"], /--max-agents is a whole number, 1 or more\./],
-  ] as const) {
-    const run = await cli([...args, "--token-file", fake.file], token).exited;
-    assert.equal(run.code, 1, args.join(" "));
-    assert.match(run.err, message);
-    assert.equal(run.err.trim().split("\n").length, 1, "one line");
-  }
-  rmSync(fake.folder, { recursive: true, force: true });
+  try {
+    for (const [args, message] of [
+      [["--agent", "copilot"], /--agent is one of claude, codex, gemini, opencode\./],
+      [["--agent-command", " "], /--agent-command needs a command\./],
+      [["--max-agents", "0"], /--max-agents is a whole number, 1 or more\./],
+      [["--max-agents", "1.5"], /--max-agents is a whole number, 1 or more\./],
+      [["--max-agents", "lots"], /--max-agents is a whole number, 1 or more\./],
+    ] as const) {
+      // The options are checked after the token is read, so each run also shows `--token-file` read a good file.
+      const run = await cli([...args, "--token-file", fake.file], token).exited;
+      assert.equal(run.code, 1, args.join(" "));
+      assert.match(run.err, message);
+      assert.equal(run.err.trim().split("\n").length, 1, "one line");
+    }
+  } finally { rmSync(fake.folder, { recursive: true, force: true }); }
 
   // A real helper on the Worker's own address, with an agent program that keeps at work: SIGHUP (the terminal closed).
   const { worker, github } = await startWorker({ streaming: true });
