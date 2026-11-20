@@ -122,7 +122,7 @@
 .wizard-tile:has(:checked) { border-color: var(--primary); outline: 1px solid var(--primary); outline-offset: -2px; background: var(--current); }
 .wizard-tile:has(:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
 .wizard-tile__label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px; padding-inline: 4px; font-weight: 600; }
-.wizard-tile__label .icon { color: var(--primary); opacity: 0; transition: opacity var(--dur-hover) ease-out; }
+.wizard-tile__label .icon { margin-inline: 0; color: var(--primary); opacity: 0; transition: opacity var(--dur-hover) ease-out; }
 .wizard-tile:has(:checked) .wizard-tile__label .icon { opacity: 1; }
 .wizard-tile__art { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); outline: 1px solid var(--line); }
 .wizard-tile__art i { position: absolute; display: block; border-radius: var(--radius-small); background: var(--control-line); }

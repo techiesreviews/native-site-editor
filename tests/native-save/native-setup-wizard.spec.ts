@@ -244,9 +244,17 @@ test("Leave setup shows the welcome page, whose GitHub card opens setup again", 
   await control(page, baseURL, { reset: true, repositories: "none" });
   await page.reload();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
+  // A chosen tile's check sits at the end of its label, not centred in the gap.
+  const label = page.locator(".wizard-tile:has(:checked) .wizard-tile__label").first();
+  const [labelBox, checkBox] = [await label.boundingBox(), await label.locator(".icon").boundingBox()];
+  expect(labelBox!.x + labelBox!.width - (checkBox!.x + checkBox!.width)).toBeLessThan(8);
   await page.getByRole("button", { name: "Leave setup" }).click();
   await expect(page.getByRole("heading", { name: "Where does your site live?" })).toBeVisible();
   await expect(page.locator(".welcome-page__choice")).toHaveCount(1);
+  // The GitHub mark starts the card's heading, beside the words.
+  const heading = page.locator(".welcome-page h2");
+  const [headingBox, markBox] = [await heading.boundingBox(), await heading.locator(".icon").boundingBox()];
+  expect(markBox!.x - headingBox!.x).toBeLessThan(2);
   await page.getByRole("button", { name: "Continue with GitHub" }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible();
 });
