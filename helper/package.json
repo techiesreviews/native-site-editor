@@ -1,11 +1,11 @@
 {
   "name": "@techiesreviews/editor-helper",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Starts Claude Code, on your own plan, for each pin in Native Site Editor.",
   "license": "MIT",
   "type": "module",
   "bin": { "editor-helper": "dist/cli.js" },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "README.md", "CHANGELOG.md"],
   "engines": { "node": ">=24" },
   "repository": { "type": "git", "url": "git+https://github.com/techiesreviews/native-site-editor.git", "directory": "helper" },
   "scripts": {

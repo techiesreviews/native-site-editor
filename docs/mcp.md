@@ -49,8 +49,10 @@ request tools below carry their conversation.
 `helper/` is a small program for the user's computer, the npm package
 `@techiesreviews/editor-helper` (ticket am-16; see `helper/README.md`). It is an
 MCP client of `/mcp` on the connection Connect to MCP made: the copied prompt
-gives its start command (`helperCommand` in `src/agent-prompts.ts`, the token in
-`EDITOR_HELPER_TOKEN`). When the user asks for pins to be picked up after the
+gives its start command (`helperCommand` in `src/agent-prompts.ts`). The helper
+reads the token from `~/.config/editor-helper/token`, a file only the user may
+read, which the prompt has the agent save first (`helperTokenSave`, TOOLS-270), so
+no command line, shell history or service setting holds it. When the user asks for pins to be picked up after the
 conversation, the agent starts it detached from the conversation (a background
 job would end with it), or has the user run it in a terminal they keep open. It keeps calling `wait_for_requests` under the
 name "Pin helper" (`HELPER_AGENT`), like any agent's wait. For each pin it starts
