@@ -168,6 +168,10 @@ test("the login page clears the workspace first and keeps one card for every sta
   assert.equal(f.app.className, "login-page");
   assert.match(f.app.innerHTML, /data-mode="loading"/);
   assert.match(f.action.text(), /Checking your account…/);
+  // An editing session passes through this state: the welcome picture is not loaded for it.
+  assert.match(f.app.innerHTML, /<div class="welcome-page__picture"><\/div>/);
+  f.setup.renderLogin("auto");
+  assert.doesNotMatch(f.app.innerHTML, /first-visit-on-github/);
 });
 
 test("the login page asks where the site lives, with the GitHub card only", () => {

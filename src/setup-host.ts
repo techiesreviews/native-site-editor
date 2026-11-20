@@ -58,15 +58,16 @@ const WELCOME_PICTURE = "/onboarding/first-visit-on-github.webp";
 /**
  * The first page: where the site lives, with one card (GitHub) and its action
  * area. The same page for a visitor (the login page) and for a signed-in
- * account with nothing to open yet.
+ * account with nothing to open yet. While the session is checked the picture
+ * stays out (its box keeps the size), so an editing session never loads it.
  */
-function welcomeMarkup(titleId: string, actionId: string) {
+function welcomeMarkup(titleId: string, actionId: string, picture = true) {
   return `
       <p class="welcome-page__hello">Welcome to Native Site Editor</p>
       <h1 id="${titleId}">Where does your site live?</h1>
       <div class="welcome-page__choices">
         <article class="welcome-page__choice">
-          <div class="welcome-page__picture"><img src="${WELCOME_PICTURE}" alt="" width="1536" height="768"></div>
+          <div class="welcome-page__picture">${picture ? `<img src="${WELCOME_PICTURE}" alt="" width="1536" height="768">` : ""}</div>
           <div class="welcome-page__body">
             <h2>${iconMarkup("github-logo", 20)}On GitHub</h2>
             <div id="${actionId}" class="login-action"></div>
@@ -84,7 +85,7 @@ export function createSetupHost(ports: SetupHostPorts) {
     // One layout for every state, so nothing jumps when the answer arrives: the
     // loading and automatic states keep the card's size and hide what is below.
     ports.app.innerHTML = `
-    <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action")}
+    <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", mode !== "loading" && mode !== "auto")}
       <div id="notice" class="login-notice" role="alert" hidden></div>
     </main>
   `;
