@@ -80,7 +80,8 @@ const appStore = createAppStore(editorModule.sourceStore());
 // What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
-const session: Session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), nextLoad, currentLoad, stampOf, draftScope, shownScope };
+const session: Session = { begin: () => workspaceSession.begin(), current: () => workspaceSession.current(), visits: scope => workspaceSession.visits(scope),
+  nextLoad, currentLoad, stampOf, draftScope, shownScope };
 // Tickets 33, am-11 (src/agent-presence.ts): the agents at work on the site's pages, drawn while their workspace is.
 const agentPresence = createAgentPresence({
   pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),
@@ -144,7 +145,7 @@ const textIndex = createSiteTextIndex({
   get componentTools() { return componentTools; }, get nativePreview() { return nativePreview; }, get pageStructure() { return pageStructure; },
   get nativePreviewBehind() { return sitePreview.nativePreviewBehind; }, set nativePreviewBehind(value) { sitePreview.nativePreviewBehind = value; },
 });
-const { nativeTextIndexScopeKey, startNativeTextIndex, nativeTextIndexGate, clearPendingTitles } = textIndex;
+const { nativeTextIndexScopeKey, startNativeTextIndex, clearPendingTitles } = textIndex;
 // A controller's load number as a stamp (until the follow-ups in ticket 22's Done section); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
@@ -247,8 +248,7 @@ const pageBuilder = createPageBuilderHost({
   get panels() { return workspace; }, get media() { return media; }, get pagesAndFiles() { return pagesAndFiles; },
   setupScope: () => setupScope(), nativeHistorySession: (scope, path) => nativeHistorySession(scope, path),
 });
-const { componentPorts, nativeSectionChoices, nativeComponentLoaderPlan,
-  blockMoves, previewSelection, nativeVariantFiles, nativeCssWorkspace, pageStructureController, writeNativePageMeta, openNativePageSettings, refreshNativeRoutes } = pageBuilder;
+const { nativeSectionChoices, previewSelection, nativeVariantFiles, nativeCssWorkspace, openNativePageSettings } = pageBuilder;
 
 const versions = createVersionView({
   appStore, workspaceSession, guardedEdits, editorModule,
@@ -411,12 +411,11 @@ function updateAgentContext() {
 // The agent menu's controller; the agent's commands and the menu's wiring load with the menu (src/agent-host.ts, src/agent-path.ts).
 // By value: consts declared above and hoisted functions; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
 const { agentController, agentCommands } = createAgentHost({
-  appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
-  mediaController, mediaPorts, blockMoves, createBlockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, openNewDraft,
-  nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext,
-  cleanSources, setupController, pageStructureController, workspace, nativeTextIndexGate, readFile, readFiles, loadAgentMenu, nativeRouteInfo, pathNow, errorMessage,
-  // Declared further down: read at call time.
-  restoreFile: (...args) => restoreFile(...args), loadComponentTools: workspace.loadComponentTools,
+  notices, session, repo, view, preview: sitePreview, textIndex, panels: workspace, pageBuilder, media, pagesAndFiles,
+  appStore, runtime, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
+  createBlockMoves, agentPresence, loadAgentSite, cleanSources, setupController, loadAgentMenu,
+  // Read at call time.
+  loadComponentTools: workspace.loadComponentTools,
   get info() { return info; }, get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
   get nativePreview() { return nativePreview; },
 });

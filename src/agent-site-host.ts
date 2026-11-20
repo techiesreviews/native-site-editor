@@ -12,7 +12,8 @@ import { parentProblem } from "../shared/site-rules";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import type { createBlockMoves } from "./page-builder/block-move";
 import { withPageField } from "./page-builder/site-head";
-import { githubScope, holdsDraftScope, sameBranch, type WorkspaceScope, type WorkspaceSession } from "./workspace-session";
+import { githubScope, holdsDraftScope, sameBranch } from "./workspace-session";
+import type { Repo, Session, View } from "./host-modules";
 import type { AppStore } from "./app-store";
 import type { BackgroundSitePorts } from "./background-site";
 import type { createNativePreview } from "./components/native-preview";
@@ -20,14 +21,12 @@ import type { PageMetaField } from "./components/page-structure";
 import type * as sourceEditor from "./components/source-editor";
 import type { createAgentPresence } from "./agent-presence";
 import type { createFinishedElsewhere } from "./finished-elsewhere";
-import type { createGitHubReads } from "./github-reads";
 import type { createParkedSteps } from "./guarded-edit/parked";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
 import type { ComponentTools, PreparedComponentLoader } from "./page-builder/components";
 import type { createPagesAndFilesHost } from "./pages-and-files-host";
 import type { RepositoryIndex } from "./repository-loading";
 import type { createVersionView } from "./version-view";
-import type { createWorkspaceBoot } from "./workspace-boot";
 
 type PagesAndFiles = ReturnType<typeof createPagesAndFilesHost>;
 
@@ -82,7 +81,6 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
 export interface AgentCommandPorts {
   appStore: AppStore;
   runtime: Pick<ReturnType<typeof createNativeSiteRuntime>, "site" | "engaged" | "base" | "source">;
-  workspaceSession: Pick<WorkspaceSession, "begin" | "current" | "visits">;
   guardedEdits: GuardedEdits;
   editorModule: Pick<typeof sourceEditor, "isMounted" | "getMountedSource" | "dropDraft" | "forgetDraftModel" | "prepareHistorySources" | "flushAgentTyping" | "applyAgentDraft">;
   editorWorkspace: Parameters<typeof agentStructuralActions>[0];
@@ -90,9 +88,6 @@ export interface AgentCommandPorts {
   finishedWork: Pick<ReturnType<typeof createFinishedElsewhere>, "add" | "agent">;
   parkedSteps: Pick<ReturnType<typeof createParkedSteps>, "park">;
   repositoryIndex: Pick<RepositoryIndex, "find">;
-  mediaController: ReturnType<typeof createMediaController>;
-  mediaPorts: MediaControllerPorts;
-  blockMoves: Pick<ReturnType<typeof createBlockMoves>, "move">;
   /** The block moves of work finishing elsewhere are made with this. A port: imported here, the module and its
    * neighbours left the startup chunk for a chunk of their own (one more request before the first paint). */
   createBlockMoves: typeof createBlockMoves;
@@ -103,7 +98,6 @@ export interface AgentCommandPorts {
     pagesController: Pick<PagesAndFiles["pagesController"], "renderTree">;
     filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh">;
   };
-  api: ReturnType<typeof createGitHubReads>["api"];
   readonly info: SessionInfo;
   readonly componentTools: Pick<ComponentTools, "makeFromAgent" | "typingTemplate"> | undefined;
   /** The component tools once they have loaded for the preview shown (src/workspace-mount.ts); undefined without one or once their load failed. Never rejects. */
@@ -111,26 +105,34 @@ export interface AgentCommandPorts {
   readonly pageStructure: { refreshMeta(): void } | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect" | "picture"> | undefined;
   loadAgentSite: () => Promise<typeof import("./agent-site")>;
-  draftScope: () => DraftScope | undefined;
-  shownScope: () => WorkspaceScope | undefined;
-  restoreFile: ReturnType<typeof createWorkspaceBoot>["restoreFile"];
-  openNewDraft: (draft: SavedDraft) => Promise<void>;
-  nativeComponentLoaderPlan: (path: string, nextPageText: string, r: Reads, check?: () => Promise<void>) => Promise<PreparedComponentLoader | string | undefined>;
-  writeNativePageMeta: (path: string, field: PageMetaField, value: string, group?: boolean) => Promise<string | undefined>;
-  nativeSectionChoices: () => { tag: string }[];
-  componentPorts: BackgroundSitePorts["components"];
-  refreshNativeRoutes: () => void;
-  updateCurrentPageLabel: () => void;
-  updateAgentContext: () => void;
+  // The shared host modules (src/host-modules.ts) and the hosts handed over whole, as much of each as the commands use.
+  session: Pick<Session, "begin" | "current" | "visits" | "draftScope" | "shownScope">;
+  repo: Pick<Repo, "api">;
+  view: Pick<View, "restoreFile" | "openNewDraft" | "updateCurrentPageLabel" | "updateAgentContext">;
+  /** The page builder (src/page-builder-host.ts): its block moves, component plans, page meta writes, sections and routes. */
+  pageBuilder: {
+    blockMoves: Pick<ReturnType<typeof createBlockMoves>, "move">;
+    nativeComponentLoaderPlan: (path: string, nextPageText: string, r: Reads, check?: () => Promise<void>) => Promise<PreparedComponentLoader | string | undefined>;
+    writeNativePageMeta: (path: string, field: PageMetaField, value: string, group?: boolean) => Promise<string | undefined>;
+    nativeSectionChoices: () => { tag: string }[];
+    componentPorts: BackgroundSitePorts["components"];
+    refreshNativeRoutes: () => void;
+  };
+  /** The media host (src/controllers/media-host.ts): its controller and the ports it was made with. */
+  media: { mediaController: ReturnType<typeof createMediaController>; mediaPorts: MediaControllerPorts };
   /** The agent changes this tab keeps (src/agent-changes.ts), loaded with the first agent command; a test may pass its own. */
   loadChanges?: () => Promise<typeof import("./agent-changes")>;
 }
 
 /** An agent's commands, applied through the editor's own actions; `acting` while one runs (src/guarded-edit/commit.ts). */
 export function createAgentCommands(ports: AgentCommandPorts) {
-  const { appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
-    mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, restoreFile, openNewDraft,
-    nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext } = ports;
+  const { appStore, runtime, session, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
+    agentPresence, pagesAndFiles, loadAgentSite, view, pageBuilder, media } = ports;
+  const { draftScope, shownScope } = session;
+  const { api } = ports.repo;
+  const { restoreFile, openNewDraft, updateCurrentPageLabel, updateAgentContext } = view;
+  const { blockMoves, nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes } = pageBuilder;
+  const { mediaController, mediaPorts } = media;
   const { pagesController, filesTreeController, loadPagesActions, loadFileOps, pagePorts, filePorts, branchText, pathNow, treeState, branchPathProblem,
     afterFileChanges } = pagesAndFiles;
   // Waits for a home page's resync, refusing when the user opened another
@@ -138,7 +140,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   // was checked against the one it started on.
   async function awaitNativeResync() {
     if (!pagesAndFiles.nativeResyncDone) return;
-    const at = workspaceSession.begin();
+    const at = session.begin();
     await pagesAndFiles.nativeResyncDone;
     if (at.changed() === "scope")
       throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
@@ -169,7 +171,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       if (!atomic && !runtime.site && !runtime.engaged && create) {
         const scope = draftScope(), repo = appStore.repository.value, snap = appStore.snapshot.value;
         if (!scope || !repo || !snap) return "Open a repository first.";
-        const at = workspaceSession.begin(), store = draftStore(), editor = editorModule;
+        const at = session.begin(), store = draftStore(), editor = editorModule;
         // Snapshot/draft presence stays authoritative before native activation starts.
         const hasHome = () => {
           const home = store.get(scope, NATIVE_HOME_PAGE);
@@ -220,7 +222,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
       return outcome.message;
     },
     async open(path) {
-      if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, workspaceSession.begin(), { linkDefaultStyle: false });
+      if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, session.begin(), { linkDefaultStyle: false });
       return appStore.openFile.value === path;
     },
     async createPage(request) {
@@ -301,12 +303,12 @@ export function createAgentCommands(ports: AgentCommandPorts) {
     const read = agentCommandFiles.get(command), login = ports.info.user?.login, landed = read && login ? { account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch } : undefined, unchanged = retryProof(command, draftStore(), landed);
     // Ticket 34: a page or file command read there runs in its background site, the editor's own ports pinned to it; run on show again only while `unchanged` holds.
     const away: AgentAwayPorts = { landed: scope => finishedWork.add(scope, "agent", { id: command.id }), site: { pages: pagePorts(), files: filePorts(), components: componentPorts, actions: makeAgentSiteActions,
-      store: draftStore, forget: (scope, path) => editorModule.forgetDraftModel(scope, path), visits: scope => workspaceSession.visits(githubScope(scope)), prepareSources: edits => editorModule.prepareHistorySources(edits, true), park: step => parkedSteps.park(step), factories } };
+      store: draftStore, forget: (scope, path) => editorModule.forgetDraftModel(scope, path), visits: scope => session.visits(githubScope(scope)), prepareSources: edits => editorModule.prepareHistorySources(edits, true), park: step => parkedSteps.park(step), factories } };
     const elsewhere = finishedWork.agent(landed, command, (scope, path) => draftStore().get(scope, path), () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path), away));
     const finished = await elsewhere(); if (finished) return finished;
     // Left and shown again before its step was kept, it runs on show again, on a new stamp (editorOrElsewhere).
     const onShow = async (): ReturnType<typeof applySiteCommand> => {
-      const scope = draftScope(), { at, left } = holdWorkspace(workspaceSession), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
+      const scope = draftScope(), { at, left } = holdWorkspace(session), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
       if (!current() || !appStore.snapshot.value || !sameBranch({ repoId: command.repoId ?? scope?.repoId, repo: command.repoId === undefined ? scope?.repo : undefined, branch: command.branch },
         { ...scope, branch: appStore.snapshot.value.branch })) throw new Error("The editor changed repository or branch.");
       if (!atomicAgentCommand(command)) {
@@ -391,7 +393,7 @@ export function createAgentCommands(ports: AgentCommandPorts) {
   }
   // A reload of the branch an agent wrote: the drafts it took over settle, and the page open is read again (src/agent-transport.ts).
   async function reload(snapshot: Parameters<typeof import("./agent-transport").reloadTakeover>[0]) {
-    const scope = draftScope(), open = appStore.openFile.value, at = workspaceSession.begin();
+    const scope = draftScope(), open = appStore.openFile.value, at = session.begin();
     if (scope) await (await import("./agent-transport")).reloadTakeover(snapshot, { open, key: path => draftKey(scope, path),
       keys: () => draftStore().list(scope).map(draft => draftKey(scope, draft.path)), settle: keys => draftStore().settleAgent(keys),
       draft: path => draftStore().get(scope, path), mounted: path => at.holds() && path === appStore.openFile.value ? editorModule?.getMountedSource(path) : undefined,
