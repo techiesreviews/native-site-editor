@@ -51,16 +51,20 @@ Your changes appear in my editor as unsaved drafts; I review them and save them 
 export const HELPER_PACKAGE = "@techiesreviews/editor-helper@0.2.0";
 /**
  * Where the helper reads its token (TOOLS-270; `defaultTokenFile` in helper/src/token.ts): a file only the user can
- * read, so no start command holds the token and it never reaches a command line, shell history or a service's settings.
+ * read, so no start command holds the token and it never reaches the helper's command line, shell history or a
+ * service's settings.
  */
 export const HELPER_TOKEN_FILE = "~/.config/editor-helper/token";
 /**
- * Saves the token in the helper's file, readable by the user alone. `printf` is a shell builtin, so the token is in no
- * process list; the token is `ase_` and hex, safe inside single quotes.
+ * Saves the token in the helper's file, readable by the user alone (a file left from before is removed first, since
+ * umask only sets the mode of a new one). `printf` is a shell builtin, so the token is in the agent's shell command
+ * line only for the instant the save runs; the token is `ase_` and hex, safe inside single quotes.
  */
 export function helperTokenSave(token: string) {
-  return `(umask 077 && mkdir -p ~/.config/editor-helper && printf '%s\\n' '${token}' > ${HELPER_TOKEN_FILE})`;
+  return `(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ${HELPER_TOKEN_FILE} && printf '%s\\n' '${token}' > ${HELPER_TOKEN_FILE})`;
 }
+/** The same save by hand, the token pasted into `cat`, so it reaches no command line or shell history. */
+export const HELPER_TOKEN_SAVE_BY_HAND = `(umask 077 && mkdir -p ~/.config/editor-helper && rm -f ${HELPER_TOKEN_FILE} && cat > ${HELPER_TOKEN_FILE})`;
 /** The command that starts the helper on this connection: it waits for pins and starts Claude Code for each (its default; `--agent` names another). */
 export function helperCommand(url: string) {
   return `npx -y ${HELPER_PACKAGE} ${url}`;
@@ -92,7 +96,7 @@ Server: ${code(url)}
 
 Authorization: ${code(`Bearer ${token}`)}
 
-**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.** Keep the token in memory; never save it (the helper's token file below excepted) or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
+**Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files (the helper's token file below excepted), or restart yourself.** Keep the token in memory; never save it (the helper's token file below excepted) or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
 
 Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}. Give curl a timeout of at least 40 seconds.
 
@@ -106,5 +110,5 @@ A change to the part I am typing in answers waiting and lands once I leave that 
 
 Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).
 
-If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of every command line: first save it there with ${code(helperTokenSave(token))}, then start the helper with ${code(helperCommand(url))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper apart from it: on Linux run ${code(helperDetached(url).systemd)} (stop it with ${code("systemctl --user stop editor-helper")}), elsewhere ${code(helperDetached(url).nohup)}. Check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me (it holds no token). For each pin the helper starts Claude Code, until Disconnect MCP.`;
+If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of every command line: first save it there with ${code(helperTokenSave(token))}, then start the helper with ${code(helperCommand(url))} (it needs Node 24 or later). A background job of this conversation ends with it, so start the helper apart from it: on Linux run ${code(helperDetached(url).systemd)} (stop it with ${code("systemctl --user stop editor-helper")}), elsewhere ${code(helperDetached(url).nohup)}. Check a few seconds later that it still runs, then stop the watchdog and tell me how you started it and how to stop it. If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me (it holds no token). If you cannot save the token file either, also tell me to run ${code(HELPER_TOKEN_SAVE_BY_HAND)} there first, paste the token from the Authorization line of the prompt I gave you, then press Enter and Ctrl+D. For each pin the helper starts Claude Code, until Disconnect MCP.`;
 }
