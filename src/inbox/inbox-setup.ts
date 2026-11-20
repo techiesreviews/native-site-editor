@@ -22,7 +22,8 @@ export function createInboxSetup(setup: InboxPorts["setup"], panel: { hide(): vo
     input.value = typed ?? setup.siteName() ?? "";
     if (refused) input.setAttribute("aria-invalid", "true");
     input.addEventListener("input", () => { typed = input.value; input.removeAttribute("aria-invalid"); });
-    const save = node("button", "button primary inbox__act", saving ? "Saving…" : "Save name");
+    // The form's submit does the saving, so the click itself does nothing.
+    const save = button(saving ? "Saving…" : "Save name", () => undefined, "button primary inbox__act");
     save.type = "submit";
     save.dataset.act = "save";
     if (saving) { save.setAttribute("aria-disabled", "true"); save.setAttribute("aria-busy", "true"); }

@@ -62,14 +62,14 @@
   flex: none;
   width: 22px;
   height: 22px;
+  border: 1px solid var(--control-line);
   border-radius: 50%;
-  box-shadow: inset 0 0 0 1px var(--control-line);
   font-size: var(--type-badge);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.wizard__step[aria-current="step"] .wizard__badge { background: var(--primary); color: var(--on-primary); box-shadow: none; }
-.wizard__step.is-done .wizard__badge { background: var(--success-fg); color: var(--surface); box-shadow: none; }
+.wizard__step[aria-current="step"] .wizard__badge { border-color: transparent; background: var(--primary); color: var(--on-primary); }
+.wizard__step.is-done .wizard__badge { border-color: transparent; background: var(--success-fg); color: var(--surface); }
 
 /* The card */
 .wizard__panel {
@@ -77,9 +77,10 @@
   gap: 20px;
   min-width: 0;
   padding: 24px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-dialog);
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  box-shadow: var(--shadow);
 }
 .wizard__title { margin: 0; font-size: var(--type-heading); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
 .wizard__title:focus { outline: none; }
@@ -90,8 +91,10 @@
 .wizard-foot:empty { display: none; }
 .wizard-push { gap: 8px; margin-inline-start: auto; min-width: 184px; }
 /* Quiet: no surface until hovered; open (aria-expanded) shows as current. */
-.wizard-quiet { --btn-background: transparent; --btn-hover-background: var(--hover); --btn-text-color: var(--text); }
-.wizard-quiet[aria-expanded="true"] { --btn-background: var(--current); }
+@layer components {
+  .wizard-quiet.button { --btn-background: transparent; --btn-hover-background: var(--hover); --btn-text-color: var(--text); }
+  .wizard-quiet.button[aria-expanded="true"] { --btn-background: var(--current); }
+}
 
 .wizard-text { margin: 0; font-size: var(--type-base); line-height: 1.6; }
 .wizard-hint { margin: 0; font-size: var(--type-small); line-height: 1.5; color: var(--muted); }
@@ -107,20 +110,21 @@
   display: grid;
   gap: 8px;
   padding: 8px;
+  border: 1px solid var(--control-line);
   border-radius: var(--radius-panel);
-  box-shadow: inset 0 0 0 1px var(--control-line);
   cursor: pointer;
-  transition: background-color var(--dur-hover) ease-out, box-shadow var(--dur-hover) ease-out;
+  transition: background-color var(--dur-hover) ease-out, border-color var(--dur-hover) ease-out;
 }
 /* Above the art, so a click anywhere on the tile lands on its radio. */
 .wizard-tile input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 .wizard-tile:hover { background: var(--hover); }
-.wizard-tile:has(:checked) { background: var(--current); box-shadow: inset 0 0 0 2px var(--primary); }
+/* Chosen: the edge turns the action colour and a second line inside it makes it 2px. */
+.wizard-tile:has(:checked) { border-color: var(--primary); outline: 1px solid var(--primary); outline-offset: -2px; background: var(--current); }
 .wizard-tile:has(:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
 .wizard-tile__label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px; padding-inline: 4px; font-weight: 600; }
 .wizard-tile__label .icon { color: var(--primary); opacity: 0; transition: opacity var(--dur-hover) ease-out; }
 .wizard-tile:has(:checked) .wizard-tile__label .icon { opacity: 1; }
-.wizard-tile__art { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); box-shadow: 0 0 0 1px var(--line); }
+.wizard-tile__art { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); outline: 1px solid var(--line); }
 .wizard-tile__art i { position: absolute; display: block; border-radius: var(--radius-small); background: var(--control-line); }
 .wizard-tile__art--starter .a { inset: 8% 6% auto 6%; height: 8%; }
 .wizard-tile__art--starter .b { inset: 24% 6% auto 6%; height: 26%; background: var(--primary); opacity: 0.55; }
@@ -153,7 +157,7 @@
   border: 2px solid currentColor;
   border-top-color: transparent;
   border-radius: 50%;
-  animation: wizard-spin 0.9s linear infinite;
+  animation: wizard-spin calc(var(--dur-fly) * 1.5) linear infinite;
 }
 @keyframes wizard-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
@@ -172,12 +176,12 @@
 .wizard-repos__none .button { text-decoration: none; }
 
 /* Your site is ready */
-.wizard__panel--celebrate { justify-items: center; text-align: center; animation: celebrate-in 0.4s ease-out both; }
+.wizard__panel--celebrate { justify-items: center; text-align: center; animation: celebrate-in var(--dur-sheet) ease-out both; }
 .wizard__panel--celebrate .wizard__content { justify-items: center; width: 100%; gap: 16px; }
 .wizard-ready__where { margin: -12px 0 0; color: var(--muted); }
 .wizard-ready__link { color: inherit; }
 .wizard-ready__open { width: min(100%, 280px); min-height: var(--size-touch); font-size: var(--type-title); }
-.wizard-preview { --preview-scale: 0.28; position: relative; width: min(100%, 360px); aspect-ratio: 16 / 10; overflow: hidden; border-radius: var(--radius-panel); background: var(--surface-subtle); box-shadow: 0 0 0 1px var(--line), var(--shadow-small); }
+.wizard-preview { --preview-scale: 0.28; position: relative; width: min(100%, 360px); aspect-ratio: 16 / 10; overflow: hidden; border-radius: var(--radius-panel); background: var(--surface-subtle); outline: 1px solid var(--line); box-shadow: var(--shadow-small); }
 .wizard-preview__card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; }
 .wizard-preview__card .brand-mark { width: var(--size-control); height: var(--size-control); margin-bottom: 4px; border-radius: var(--radius); font-size: var(--type-title); }
 .wizard-preview__title { font-size: var(--type-title); font-weight: 600; }
@@ -185,7 +189,7 @@
 @keyframes celebrate-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes celebrate-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .wizard__panel--celebrate { animation: celebrate-fade 0.4s ease-out both; }
+  .wizard__panel--celebrate { animation: celebrate-fade var(--dur-sheet) ease-out both; }
 }
 
 @media (max-width: 760px) {
