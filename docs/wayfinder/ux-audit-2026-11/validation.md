@@ -101,3 +101,18 @@ RESULT: ok prototype-regressions 46/46
 RESULT: fail prototype-regressions 46/47
 RESULT: ok prototype-regressions 47/47
 ```
+
+## Context fidelity and inline paste
+
+The full-scope main review after rebase (`20261120T022827Z`) found four P2 context defects. Logo editing now uses the visible brand, Contact's Text slot renders its own instance value, and insertion resolves to a rendered page-owned container or sibling rather than adding invisible component children. Single-paragraph/inline paste now inserts within the existing paragraph; multiple blocks and lists retain their structure. The tree captions follow the actual page heading and edited paragraph. Client approvals and heading/link/image values are separate for Home and About, matching the declared page scope.
+
+The strengthened checks first failed 46/52; the paragraph-caption check then failed 50/52. A blank-content check was adjusted to treat Chromium's empty `<p><br></p>` as visually blank, rather than requiring an empty `innerText` string. The final 52/52 checks cover visible insertion, slot editing, page permissions and values, short paste/caret in Today/Plain/Keep structure, matching tree text, and Undo back to an empty paragraph.
+
+The two Playwright scripts are manual-only: neither `npm test` nor CI invokes them. The CI browser job tests the editor; the 88-state prototype matrix and these regression checks were run separately with one owned browser, as recorded here. Index resolution and generator byte stability were checked with the manual commands in the handover; they are not claimed as committed CI tests.
+
+```text
+RESULT: fail prototype-regressions 46/52
+RESULT: fail prototype-regressions 50/52
+RESULT: fail prototype-regressions 51/52
+RESULT: ok prototype-regressions 52/52
+```
