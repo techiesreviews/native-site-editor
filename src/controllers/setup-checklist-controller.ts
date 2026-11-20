@@ -95,5 +95,5 @@ export function createSetupChecklistController(ports: SetupChecklistPorts) {
   }
   /** The name Name your site's form starts with: the site's own, or the one its repository gives it. */
   const siteName = () => { const site = ports.site(); return site?.siteName || site?.defaultName; };
-  return { items: items as ReadonlySignal<readonly SetupRow[]>, refresh, start, noteAgent, saveName, siteName, connectAgent, dispose };
+  return { items: items as ReadonlySignal<readonly SetupRow[]>, refresh, start, noteAgent, saveName, siteName, connectAgent, scope: () => ports.scope(), dispose };
 }

@@ -65,7 +65,7 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
         login, connected: connection === "installed", step, memory: kept,
         connectUrl: "/auth/install", ...ports.actions,
         remember: change => { if (mount === mounts) ports.writeMemory(change); },
-        finish: repo => { if (mount === mounts) ports.actions.finish(repo); },
+        finish: (repo, made) => { if (mount === mounts) ports.actions.finish(repo, made); },
         exit: () => { if (mount === mounts) close(); },
       });
       ports.append(wizard.root);

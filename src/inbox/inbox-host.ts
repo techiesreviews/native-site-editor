@@ -63,6 +63,8 @@ export interface InboxPorts {
     saveName(name: string): Promise<string | undefined>;
     /** Opens the project menu with Connect to MCP lit. */
     connectAgent(): Promise<void>;
+    /** The site setup is shown for: the name form starts afresh when it changes. */
+    scope(): string;
   };
 }
 

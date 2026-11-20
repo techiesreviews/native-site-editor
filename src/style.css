@@ -658,7 +658,7 @@ dd {
 .welcome-page h1 {
   margin: var(--space-m) 0 calc(var(--space-l) + var(--space-3xs));
   font-size: clamp(var(--type-heading), 4.4vw, calc(var(--type-heading) * 2));
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.15;
 }

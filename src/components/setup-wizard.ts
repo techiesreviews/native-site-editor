@@ -87,8 +87,8 @@ export interface SetupWizardOptions {
   listRepositories?: () => Promise<WizardRepo[]>;
   /** GitHub's page where the account chooses which repositories the editor may open; null when unknown. */
   accessUrl?: string | null;
-  /** The last step, or a site the account has: open the editor on that repository. */
-  finish: (repo: WizardRepo) => void;
+  /** The last step, or a site the account has: open the editor on that repository. Only a site the wizard made (`made`) gets setup steps. */
+  finish: (repo: WizardRepo, made: boolean) => void;
   /** Leave the wizard (to the welcome page). */
   exit: () => void;
 }
@@ -290,7 +290,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
             const item = node("li", "wizard-repos__item");
             const mark = node("span", "wizard-repos__mark", repo.name.charAt(0).toUpperCase());
             mark.setAttribute("aria-hidden", "true");
-            const open = button("Open", () => options.finish(repo), "button secondary");
+            const open = button("Open", () => options.finish(repo, false), "button secondary");
             open.setAttribute("aria-label", `Open ${repo.fullName}`);
             item.append(mark, node("b", "wizard-repos__name", repo.fullName), open);
             return item;
@@ -532,7 +532,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
     const where = `github.com/${repo.fullName}`;
     const address = node("p", "wizard-ready__where");
     address.append(external(where, `https://${where}`, "wizard-ready__link"));
-    const open = button("Open the editor", () => options.finish(repo), "button primary wizard-ready__open");
+    const open = button("Open the editor", () => options.finish(repo, true), "button primary wizard-ready__open");
     content.append(address);
     if (repo.partial) content.append(node("p", "wizard-hint", "Only part of your starting point was saved; the editor offers to finish adding it."));
     content.append(open);
