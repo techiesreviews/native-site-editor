@@ -34,7 +34,7 @@ The initial browser runs caught a malformed style-source step and keyboard navig
 
 ## Review fixes proved in the browser
 
-The first round-two Opus review (`20261120T004957Z`) found three P2 issues and smaller defects. `review-regressions.mjs` first failed all nine defect cases, then passed 9/9 after fixes. Three additional context checks first failed (9/12), then passed after preserving hero/component duplication and protecting component slots from structural operations. The final 13-case run also confirms that media save retains focus inside its modal.
+The first round-two Opus review (`20261120T004957Z`) found three P2 issues and smaller defects. `review-regressions.mjs` first failed all nine defect cases, then passed 9/9 after fixes. Three additional context checks first failed (9/12), then passed after preserving hero/component duplication and protecting component slots from structural operations. The extended 26-case run also confirms media-save focus, deselection by click and Space, Cancel/Escape return focus, matching navigation slots, stable footer content, compatible paste destinations, phone hit targets and every remaining browser gap named by the reviewer.
 
 The fixed cases cover shared-save focus, root/slot action availability, anchored Shift-arrow selection, sequential anchor suffixes, typing Undo after a rich paste, required client headings, blank-brand save protection, toolbar focus and preserving an open link-address draft. Copy/link state also changes the control’s glyph, and the media Back/Undo paste controls use the appropriate arrows. Media mock-up controls retain focus when their modal contents redraw.
 
@@ -44,9 +44,15 @@ RESULT: ok prototype-regressions 9/9
 RESULT: fail prototype-regressions 9/12
 RESULT: ok prototype-regressions 12/12
 RESULT: ok prototype-regressions 13/13
+RESULT: fail prototype-regressions 21/25
+RESULT: ok prototype-regressions 25/25
+RESULT: fail prototype-regressions 25/26
+RESULT: ok prototype-regressions 26/26
 RESULT: ok unit none affected
 RESULT: ok ux nothing visible touched
 RESULT: skip second look (gpt-6.1-sol not used: docs-only change)
 ```
 
 The 88-state / 44-keyboard-flow matrix passed again after these implementation fixes. Lint, standalone TypeScript checking of the shell test, JavaScript parsing and the skill guard also passed. The next Opus review checks the final diff and closes or retains the prior finding IDs; its result and the open-PR/CI results are in the PR handover.
+
+The second round-two review (`20261120T010036Z`) identified additive-selection toggling and Remove cancellation focus. Both now have browser regressions and are fixed. The selected tree row scrolls into view within its own panel on phones; the document stays in place. Phone slot hit areas grow around the original slim pill, and walkthrough buttons retain 44 px height.
