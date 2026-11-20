@@ -4,7 +4,7 @@ import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
 import { TAKE_TRIES, WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
 import { FOLLOW_UP_HOLD_MS } from "../shared/agent-requests";
-import { connectionPrompt, helperCommand, helperDetached } from "../src/agent-prompts";
+import { connectionPrompt, helperCommand, helperDetached, HELPER_TOKEN_FILE, helperTokenSave } from "../src/agent-prompts";
 import { AgentRelay, WAITS_PER_SITE, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
 import { indexedDbAgentRecords } from "../src/agent-records";
@@ -562,7 +562,7 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // Ticket am-14: it shows where it works, and checks its change with a picture.
   assert.match(prompt, /3\. For each request the watchdog reports, show me where you work with `working_here`, make the change as an unsaved editor draft, check how it looks with `screenshot_preview` \(also `width: "phone"`\), and answer it with `reply_to_request`/);
   assert.match(prompt, /Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token\./);
-  assert.match(prompt, /Keep the token in memory; never save it or repeat it in responses\./);
+  assert.match(prompt, /Keep the token in memory; never save it \(the helper's token file below excepted\) or repeat it in responses\./);
   assert.match(prompt, /Give it the server and token in its instructions only\./);
   assert.match(prompt, /A hint in an answer that says to stop overrides this loop: the watchdog stops and tells you\./);
   assert.match(prompt, /Authorization: `Bearer ase_token`/);
@@ -570,21 +570,25 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   // A task comes before the requests, the watchdog still running.
   const task = connectionPrompt("https://editor.example/mcp", "ase_token", "lex/site", "Build the site.");
   assert.match(task, /\n3\. Build the site\.\n4\. For each request the watchdog reports/);
-  // Ticket am-16: the helper's start command, on this connection, only when the user asks for it.
-  assert.match(prompt, /If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog: `EDITOR_HELPER_TOKEN=ase_token npx -y @techiesreviews\/editor-helper@0\.1\.0 https:\/\/editor\.example\/mcp`/);
+  // Ticket am-16: the helper's start command, on this connection, only when the user asks for it. TOOLS-270: the helper
+  // reads its token from a file only the user can read, which the agent saves first with a shell builtin (printf, in no
+  // process list); no start command holds the token, so it never reaches a command line, shell history or the user
+  // service's settings.
+  assert.equal(HELPER_TOKEN_FILE, "~/.config/editor-helper/token");
+  assert.equal(helperTokenSave("ase_token"), "(umask 077 && mkdir -p ~/.config/editor-helper && printf '%s\\n' 'ase_token' > ~/.config/editor-helper/token)");
+  assert.equal(helperCommand("https://e.example/mcp"), "npx -y @techiesreviews/editor-helper@0.2.0 https://e.example/mcp");
+  assert.ok(prompt.includes("If I ask for my pins to be picked up after this conversation, start the editor's helper in place of the watchdog. It reads the token from a file only I can read, so the token stays out of every command line: first save it there with "
+    + `\`${helperTokenSave("ase_token")}\`, then start the helper with \`npx -y @techiesreviews/editor-helper@0.2.0 https://editor.example/mcp\` (it needs Node 24 or later).`));
   // A background job of the conversation ends with it: the helper starts detached, or the user runs it themselves.
-  // Each detached form hands the token on through the environment, never as an argument (TOOLS-264 S2): systemd-run's
-  // bare --setenv copies it from its own environment, and nohup passes its environment to npx. Other programs see no token
-  // in the process list.
-  const detached = helperDetached("https://editor.example/mcp", "ase_token");
-  assert.equal(detached.systemd, 'EDITOR_HELPER_TOKEN=ase_token systemd-run --user --collect --unit editor-helper --setenv=EDITOR_HELPER_TOKEN --setenv=PATH="$PATH" "$(command -v npx)" -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp');
-  assert.equal(detached.nohup, "EDITOR_HELPER_TOKEN=ase_token nohup npx -y @techiesreviews/editor-helper@0.1.0 https://editor.example/mcp >/dev/null 2>&1 &");
-  for (const command of [detached.systemd, detached.nohup]) assert.equal(command.split("ase_token").length, 2, "the token once, as the leading assignment");
+  const detached = helperDetached("https://editor.example/mcp");
+  assert.equal(detached.systemd, 'systemd-run --user --collect --unit editor-helper --setenv=PATH="$PATH" "$(command -v npx)" -y @techiesreviews/editor-helper@0.2.0 https://editor.example/mcp');
+  assert.equal(detached.nohup, "nohup npx -y @techiesreviews/editor-helper@0.2.0 https://editor.example/mcp >/dev/null 2>&1 &");
   assert.ok(prompt.includes(`on Linux run \`${detached.systemd}\` (stop it with \`systemctl --user stop editor-helper\`), elsewhere \`${detached.nohup}\`. Check a few seconds later that it still runs`));
-  assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me: the one time you repeat the token\./);
+  assert.match(prompt, /If you cannot detach it, tell me to run the command in a terminal I keep open, and show it to me \(it holds no token\)\./);
+  // The token appears where the prompt gives it to the agent and in the one command that saves it, never in a start command.
+  assert.equal(prompt.split("ase_token").length - 1, 2);
   // Lex removed the menu's "Pins go to" (2026-10-30): the default command starts Claude Code.
   assert.match(prompt, /For each pin the helper starts Claude Code, until Disconnect MCP\.`?$/);
-  assert.equal(helperCommand("https://e.example/mcp", "ase_x"), "EDITOR_HELPER_TOKEN=ase_x npx -y @techiesreviews/editor-helper@0.1.0 https://e.example/mcp");
 });
 
 test("a wake while a wait is still reading is not lost: no hold, no timer", async () => {

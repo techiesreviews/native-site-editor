@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { AGENT_COMMANDS } from "../helper/src/agents.ts";
-import { HELPER_PACKAGE, helperDetached } from "../src/agent-prompts.ts";
+import { HELPER_PACKAGE, HELPER_TOKEN_FILE, helperDetached } from "../src/agent-prompts.ts";
 
 const readme = readFileSync(new URL("../helper/README.md", import.meta.url), "utf8");
 
@@ -19,8 +19,14 @@ test("the README names every agent package the helper installs unasked, at its p
 });
 
 test("the README's start commands are the ones the editor copies", () => {
-  const { systemd, nohup } = helperDetached("<url>", "<token>");
+  const { systemd, nohup } = helperDetached("<url>");
   assert.ok(readme.includes(`\`${systemd}\``), systemd);
   assert.ok(readme.includes(`\`${nohup}\``), nohup);
   assert.ok(readme.includes(HELPER_PACKAGE));
+});
+
+test("the README says where the token file is, how to save it outside shell history, and no command holds a token (TOOLS-270)", () => {
+  assert.ok(readme.includes(`\`${HELPER_TOKEN_FILE}\``));
+  assert.ok(readme.includes(`\`(umask 077 && mkdir -p ~/.config/editor-helper && cat > ${HELPER_TOKEN_FILE})\``));
+  assert.doesNotMatch(readme, /EDITOR_HELPER_TOKEN=|<token>/);
 });

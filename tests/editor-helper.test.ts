@@ -1,10 +1,10 @@
 // The helper (helper/, ticket am-16) against the real Worker in Miniflare and a receiving tab, with a fake ACP
 // agent in place of Claude Code: a pin starts one agent, its question comes back to the pin, its change lands,
 // a tool outside the allowed list is asked on the pin, and Disconnect MCP ends the helper.
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -18,8 +18,9 @@ import {
   AGENT_COMMANDS, AGENT_FLAGS, ALLOWED_TOOLS, approvalQuestion, approves, commandName, editorTool, HELPER_AGENT, LOCKED_DOWN, notLockedDown, PIN_AGENTS, refuses, sessionMeta, toolAllowed,
 } from "../helper/src/agents";
 import { answerTo, HELPER_VERSION, runHelper, type AgentProcess } from "../helper/src/helper";
-import { HELPER_PACKAGE } from "../src/agent-prompts";
-import { launchAgent, TOKEN_VARIABLE } from "../helper/src/launch";
+import { HELPER_PACKAGE, HELPER_TOKEN_FILE } from "../src/agent-prompts";
+import { launchAgent } from "../helper/src/launch";
+import { defaultTokenFile } from "../helper/src/token";
 import { files, origin, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness";
 import { receivingTab } from "./support/receiving-tab";
 
@@ -85,7 +86,7 @@ test("only the editor's MCP tools run unasked: no shell, files, web or the helpe
   assert.equal(commandName(["npx", "-y"]), "Custom agent");
 });
 
-test("an agent program runs over its own stdin and stdout, without the helper's token in its environment", async () => {
+test("an agent program runs over its own stdin and stdout", async () => {
   // A one-line ACP agent: it asks before a shell command and an editor tool, and reports the answers.
   const script = `
     const lines = require("node:readline").createInterface({ input: process.stdin });
@@ -93,7 +94,7 @@ test("an agent program runs over its own stdin and stdout, without the helper's 
     const asked = new Map(); let prompt;
     lines.on("line", line => {
       const message = JSON.parse(line);
-      if (message.method === "initialize") send({ id: message.id, result: { protocolVersion: 1, token: process.env.${TOKEN_VARIABLE} ?? null } });
+      if (message.method === "initialize") send({ id: message.id, result: { protocolVersion: 1 } });
       else if (message.method === "session/prompt") {
         prompt = message.id;
         for (const [id, toolName, kind] of [["a", "Bash", "execute"], ["b", "mcp__native-site-editor__get_site", "other"]])
@@ -104,13 +105,12 @@ test("an agent program runs over its own stdin and stdout, without the helper's 
         if (asked.size === 2) send({ id: prompt, result: { stopReason: "end_turn", outcomes: Object.fromEntries(asked) } });
       } else if (message.method) send({ id: message.id, error: { code: -32601, message: "no" } });
     });`;
-  process.env[TOKEN_VARIABLE] = "ase_secret";
   let agent: AgentProcess | undefined;
   try {
     agent = launchAgent([process.execPath, "-e", script]);
     const permissions: PermissionRequest[] = [];
     const acp = acpConnection(agent, { permission: async asked => { permissions.push(asked); return choose(asked.options, toolAllowed(asked.toolCall) ? "allow" : "reject"); } });
-    assert.deepEqual(await acp.request("initialize", { protocolVersion: 1 }), { protocolVersion: 1, token: null });
+    assert.deepEqual(await acp.request("initialize", { protocolVersion: 1 }), { protocolVersion: 1 });
     const turn = await acp.request<{ outcomes: Record<string, unknown> }>("session/prompt", { sessionId: "s", prompt: [] });
     assert.deepEqual(turn.outcomes, { a: { outcome: "selected", optionId: "no" }, b: { outcome: "selected", optionId: "yes" } });
     assert.equal(permissions.length, 2);
@@ -118,7 +118,6 @@ test("an agent program runs over its own stdin and stdout, without the helper's 
     await acp.closed;
     await assert.rejects(acp.request("session/prompt", {}), /The agent stopped/);
   } finally {
-    delete process.env[TOKEN_VARIABLE];
     agent?.stop();
   }
   // A program that ends at once (or never starts) refuses the request; writing to it raises no uncaught EPIPE.
@@ -686,6 +685,42 @@ test("an agent still starting when the helper ends sends nothing more and leaves
   } finally { quit.abort(); await worker.dispose(); }
 });
 
+/** A token file only its owner can read, in a new folder, as the copied prompt saves it. */
+function tokenFile(token: string, mode = 0o600) {
+  const folder = mkdtempSync(join(tmpdir(), "editor-helper-token-"));
+  const file = join(folder, "token");
+  writeFileSync(file, `${token}\n`, { mode });
+  chmodSync(file, mode);
+  return { folder, file };
+}
+
+test("the helper reads its token from the file the copied prompt saves, which only its owner may read (TOOLS-270)", async () => {
+  // The helper's own default is the path the copied prompt saves to.
+  assert.equal(defaultTokenFile(), HELPER_TOKEN_FILE.replace("~", homedir()));
+  const home = mkdtempSync(join(tmpdir(), "editor-helper-home-"));
+  try {
+    // No file: one line naming where it goes. The old environment variable is no longer read.
+    const missing = await cli(["--max-agents", "1"], { HOME: home, EDITOR_HELPER_TOKEN: "ase_old" }).exited;
+    assert.equal(missing.code, 1);
+    assert.equal(missing.err.trim(), `No token in ${join(home, ".config", "editor-helper", "token")}: choose Connect to MCP in the editor, whose copied prompt saves it there.`);
+    // A file other users can read is refused, like ssh refuses a key others can read.
+    const open = tokenFile("ase_fake_open", 0o644);
+    try {
+      const refused = await cli(["--token-file", open.file], { HOME: home }).exited;
+      assert.equal(refused.code, 1);
+      assert.equal(refused.err.trim(), `${open.file} can be read by other users: run chmod 600 ${open.file}`);
+      assert.doesNotMatch(refused.err, /ase_fake_open/, "the token is never printed");
+    } finally { rmSync(open.folder, { recursive: true, force: true }); }
+    // An empty file is no token either.
+    const empty = tokenFile("   ");
+    try {
+      const run = await cli(["--token-file", empty.file], { HOME: home }).exited;
+      assert.equal(run.code, 1);
+      assert.equal(run.err.trim(), `No token in ${empty.file}: choose Connect to MCP in the editor, whose copied prompt saves it there.`);
+    } finally { rmSync(empty.folder, { recursive: true, force: true }); }
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
 /** The start command, run as a user runs it. */
 function cli(args: string[], env: Record<string, string> = {}) {
   const child = spawn(process.execPath, [fileURLToPath(new URL("../helper/src/cli.ts", import.meta.url)), ...args],
@@ -698,7 +733,8 @@ function cli(args: string[], env: Record<string, string> = {}) {
 }
 
 test("the start command refuses bad options in one line, and a closed terminal answers unfinished pins before it ends", async () => {
-  const token = { EDITOR_HELPER_TOKEN: "ase_x" };
+  const fake = tokenFile("ase_x");
+  const token = { HOME: fake.folder };
   const version = await cli(["--version"]).exited;
   assert.deepEqual([version.code, version.out.trim()], [0, HELPER_VERSION]);
   for (const [args, message] of [
@@ -708,14 +744,12 @@ test("the start command refuses bad options in one line, and a closed terminal a
     [["--max-agents", "1.5"], /--max-agents is a whole number, 1 or more\./],
     [["--max-agents", "lots"], /--max-agents is a whole number, 1 or more\./],
   ] as const) {
-    const run = await cli([...args], token).exited;
+    const run = await cli([...args, "--token-file", fake.file], token).exited;
     assert.equal(run.code, 1, args.join(" "));
     assert.match(run.err, message);
     assert.equal(run.err.trim().split("\n").length, 1, "one line");
   }
-  const missing = await cli([]).exited;
-  assert.equal(missing.code, 1);
-  assert.match(missing.err, /Set EDITOR_HELPER_TOKEN/);
+  rmSync(fake.folder, { recursive: true, force: true });
 
   // A real helper on the Worker's own address, with an agent program that keeps at work: SIGHUP (the terminal closed).
   const { worker, github } = await startWorker({ streaming: true });
@@ -734,7 +768,10 @@ createInterface({ input: process.stdin }).on("line", line => {
 });
 `);
     const address = new URL("mcp", await worker.unsafeGetDirectURL()).href;
-    const helper = cli([address, "--agent-command", `${process.execPath} ${agent}`], { EDITOR_HELPER_TOKEN: real });
+    // The real token, in the file the copied prompt saves (under this HOME); no command line or environment holds it.
+    mkdirSync(join(folder, ".config", "editor-helper"), { recursive: true });
+    writeFileSync(join(folder, ".config", "editor-helper", "token"), `${real}\n`, { mode: 0o600 });
+    const helper = cli([address, "--agent-command", `${process.execPath} ${agent}`], { HOME: folder });
     add("req-hangup", "Fix it");
     await until("the agent at work", () => pin("req-hangup").state === "seen" && /takes req-hangup/.test(helper.err()), 30_000);
     await new Promise(resolve => setTimeout(resolve, 300));
