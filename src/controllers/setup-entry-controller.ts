@@ -12,7 +12,7 @@ export interface SetupEntryPorts {
   clearMemory(): void;
   loadWizard(): Promise<{ createSetupWizard: typeof createSetupWizard }>;
   append(root: HTMLElement): void;
-  actions: Pick<SetupWizardOptions, "loadOwners" | "create" | "findRepository" | "loadPreview" | "agentPrompt" | "finish">;
+  actions: Pick<SetupWizardOptions, "loadOwners" | "create" | "findRepository" | "listRepositories" | "accessUrl" | "loadPreview" | "agentPrompt" | "finish">;
   onExit(): void;
 }
 

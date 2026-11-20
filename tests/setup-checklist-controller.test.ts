@@ -1,105 +1,108 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSetupChecklistController, type SetupChecklistPorts } from "../src/controllers/setup-checklist-controller.ts";
+import { createSetupChecklistController } from "../src/controllers/setup-checklist-controller.ts";
 import { readSetupMemory, writeSetupMemory } from "../src/setup-checklist.ts";
-import { githubScope, setupKeyOf } from "../src/workspace-session.ts";
-import type { SetupActions, SetupView } from "../src/components/setup-checklist.ts";
 
-function fixture(init: { account?: string; scope?: string; siteName?: string } = {}) {
+// Connect an agent looks for the project menu's entry to light; there is none here.
+(globalThis as { document?: unknown }).document ??= { querySelector: () => null, getElementById: () => null };
+
+function fixture(init: { account?: string; siteName?: string } = {}) {
   const data = new Map<string, string>();
   const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) };
-  let account: string | undefined = init.account ?? "lex", repo = { id: 1 }, scope = init.scope ?? "lex/1/main";
-  let state = { homePage: true, committed: true, homeUnsaved: false, siteName: init.siteName ?? "My site", defaultName: "Repository" };
+  let account: string | undefined = init.account ?? "lex", repo = { id: 1 }, scope = "lex/1/main", connected = false;
+  let site = { siteName: init.siteName ?? "My site", defaultName: "My site" };
   let saveName = async (): Promise<string | undefined> => undefined;
-  let actions!: SetupActions, request!: () => void;
-  let resolve!: (value: Awaited<ReturnType<SetupChecklistPorts["loadChecklist"]>>) => void;
-  let loads = 0, mounts = 0, closes = 0, removes = 0, opens = 0;
-  const views: SetupView[] = [];
-  const host = ({ append: () => { mounts++; } } satisfies Pick<HTMLElement, "append">) as HTMLElement;
-  const checklist = { root: { remove: () => { removes++; } } as HTMLDivElement, menuItem: {} as HTMLButtonElement, isOpen: () => opens > closes, close: () => { closes++; }, open: () => { opens++; }, update: (view: SetupView) => views.push(view), onRequest: (callback: () => void) => { request = callback; } };
-  const module = { createSetupChecklist: (options: SetupActions) => { actions = options; return checklist; } } satisfies Awaited<ReturnType<SetupChecklistPorts["loadChecklist"]>>;
+  let agentReady = async () => {};
+  let opens = 0;
+  const menu = { trigger: {} as HTMLElement, open: () => { opens++; } };
   const controller = createSetupChecklistController({
-    account: () => account, repository: () => repo, scope: () => scope, state: () => state,
-    host: () => host, menu: () => undefined, connected: () => false, ensureAgent: async () => {}, agentText: () => [], storage,
-    start: () => {}, save: () => {}, saveName: () => saveName(),
-    loadChecklist: () => { loads++; return new Promise(yes => { resolve = yes; }); },
-    loadSpotlight: async () => { throw new Error("Unexpected spotlight load"); }, onError: error => { throw error; },
+    account: () => account, repository: () => repo, scope: () => scope, site: () => site,
+    menu: () => menu, connected: () => connected, ensureAgent: () => agentReady(), storage,
+    saveName: () => saveName(), onError: error => { throw error; },
   });
-  return { delayName: () => { let done!: () => void; saveName = () => new Promise(resolve => { done = () => resolve(undefined); }); return () => done(); }, controller, storage, views, module, resolve: () => resolve(module), actions: () => actions, request: () => request(), counters: () => ({ loads, mounts, closes, removes, opens }), switchScope: () => { repo = { id: 2 }; scope = "lex/2/main"; }, logout: () => { account = undefined; }, undo: () => { state = { ...state, homeUnsaved: true }; } };
+  return {
+    controller, storage, opens: () => opens,
+    delayName: () => { let done!: () => void; saveName = () => new Promise(resolve => { done = () => resolve(undefined); }); return () => done(); },
+    delayAgent: () => { let done!: () => void; agentReady = () => new Promise(resolve => { done = resolve; }); return () => done(); },
+    refuseName: (problem: string) => { saveName = async () => problem; },
+    rename: (siteName: string) => { site = { ...site, siteName }; },
+    connect: () => { connected = true; },
+    switchScope: () => { repo = { id: 2 }; scope = "lex/2/main"; },
+    logout: () => { account = undefined; },
+  };
 }
 
-test("lazy mount is shared and disposal refuses a late load, allowing a fresh mount", async () => {
+test("a site the editor made lists Name your site and Connect an agent, and each goes once done", async () => {
   const f = fixture();
-  const first = f.controller.mount();
-  assert.equal(f.controller.mount(), first);
-  f.controller.dispose();
-  f.resolve();
-  await first;
-  assert.equal(f.counters().mounts, 0);
-  const second = f.controller.mount();
-  f.resolve();
-  await second;
-  assert.equal(f.counters().loads, 2);
-  assert.equal(f.counters().mounts, 1);
-  f.controller.dispose();
-  assert.equal(f.counters().closes, 1);
-  assert.equal(f.counters().removes, 1);
+  f.controller.refresh();
+  assert.deepEqual(f.controller.items.value, [], "a repository opened as it was lists no setup rows");
+  f.controller.start(1);
+  f.controller.refresh();
+  assert.deepEqual(f.controller.items.value, ["name", "agent"]);
+  assert.equal(await f.controller.saveName("My site"), undefined);
+  assert.equal(readSetupMemory(f.storage, "lex", 1).named, true, "the default name saved on purpose counts as named");
+  assert.deepEqual(f.controller.items.value, ["agent"]);
+  f.controller.noteAgent(true);
+  assert.deepEqual(f.controller.items.value, []);
 });
 
-test("a login differing only in capitals keeps its setup checklist: Lex sees the name lex confirmed", async () => {
-  const lexScope = { repoId: 1, branch: "main" }, scope = setupKeyOf(githubScope({ account: "Lex", ...lexScope }));
-  // The default name counts as named only once confirmed, so the tick comes from the stored memory alone.
-  const f = fixture({ account: "Lex", scope, siteName: "Repository" });
-  writeSetupMemory(f.storage, "lex", 1, { named: true });
-  const pending = f.controller.mount(); f.resolve(); await pending;
-  assert.equal(f.views.at(-1)?.progress.done.name, true);
-  assert.equal(f.views.at(-1)?.scope, setupKeyOf(githubScope({ account: "lex", ...lexScope })));
-  const fresh = fixture({ account: "Lex", scope, siteName: "Repository" }), mounted = fresh.controller.mount(); fresh.resolve(); await mounted;
-  assert.equal(fresh.views.at(-1)?.progress.done.name, false);
-});
-
-test("account changes refuse a pending mount", async () => {
-  const f = fixture(), pending = f.controller.mount();
-  f.logout(); f.resolve(); await pending;
-  assert.equal(f.counters().mounts, 0);
-});
-
-test("completion timer cannot finish another branch or an undone first save", async t => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+test("a site renamed elsewhere, or an agent connected elsewhere, takes its row away on the next refresh", () => {
   const f = fixture();
   f.controller.start(1);
-  const pending = f.controller.mount(); f.resolve(); await pending;
-  assert.equal(f.views.at(-1)?.progress.complete, true);
-  f.switchScope();
-  t.mock.timers.tick(4000);
-  assert.equal(readSetupMemory(f.storage, "lex", 1).finished, undefined);
-  assert.equal(readSetupMemory(f.storage, "lex", 2).finished, undefined);
-  f.controller.start(2); f.controller.refresh(); f.undo();
-  t.mock.timers.tick(4000);
-  assert.equal(readSetupMemory(f.storage, "lex", 2).finished, undefined);
-  f.controller.dispose();
+  f.rename("Larkspur Studio");
+  f.connect();
+  f.controller.refresh();
+  assert.deepEqual(f.controller.items.value, []);
+  assert.equal(readSetupMemory(f.storage, "lex", 1).agent, true, "the connection is remembered for this repository");
 });
 
-test("completion remembers its own repository, while disposal cancels deferred dialog opening", async t => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
-  const f = fixture(); f.controller.start(1);
-  const pending = f.controller.mount(); f.resolve(); await pending;
-  t.mock.timers.tick(4000);
-  assert.equal(readSetupMemory(f.storage, "lex", 1).finished, true);
-  f.request(); f.controller.dispose();
-  t.mock.timers.tick(0);
-  assert.equal(f.counters().opens, 0);
-  f.request(); t.mock.timers.tick(0);
-  assert.equal(f.counters().opens, 0);
+test("a refused name keeps its row and says why", async () => {
+  const f = fixture();
+  f.controller.start(1);
+  f.controller.refresh();
+  f.refuseName(".editor/config.json is not valid JSON");
+  assert.equal(await f.controller.saveName("Larkspur"), ".editor/config.json is not valid JSON");
+  assert.equal(readSetupMemory(f.storage, "lex", 1).named, undefined);
+  assert.deepEqual(f.controller.items.value, ["name", "agent"]);
 });
 
+test("a login differing only in capitals keeps its setup: Lex sees the name lex saved", () => {
+  const f = fixture({ account: "Lex" });
+  writeSetupMemory(f.storage, "lex", 1, { auto: true, named: true });
+  f.controller.refresh();
+  assert.deepEqual(f.controller.items.value, ["agent"]);
+});
 
 test("a name save completing after navigation cannot mark the new repository named", async () => {
-  const f = fixture(), pending = f.controller.mount(); f.resolve(); await pending;
+  const f = fixture();
+  f.controller.start(1); f.controller.start(2);
   const finish = f.delayName();
-  const saving = f.actions().saveName("My site");
+  const saving = f.controller.saveName("My site");
   f.switchScope(); finish(); await saving;
   assert.equal(readSetupMemory(f.storage, "lex", 1).named, undefined);
   assert.equal(readSetupMemory(f.storage, "lex", 2).named, undefined);
-  f.controller.dispose();
+});
+
+test("signing out or closing the site empties the rows", () => {
+  const f = fixture();
+  f.controller.start(1);
+  f.controller.refresh();
+  f.logout();
+  f.controller.refresh();
+  assert.deepEqual(f.controller.items.value, []);
+  const g = fixture();
+  g.controller.start(1);
+  g.controller.refresh();
+  g.controller.dispose();
+  assert.deepEqual(g.controller.items.value, []);
+});
+
+test("Connect an agent opens the project menu once the agent tools are ready, unless the site closed meanwhile", async () => {
+  const f = fixture();
+  await f.controller.connectAgent();
+  assert.equal(f.opens(), 1);
+  const ready = f.delayAgent();
+  const late = f.controller.connectAgent();
+  f.controller.dispose(); ready(); await late;
+  assert.equal(f.opens(), 1);
 });

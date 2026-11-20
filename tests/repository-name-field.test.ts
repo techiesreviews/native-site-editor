@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 
-// Get Started and the setup wizard's "Repository name" field, mounted on a small
+// The setup wizard's Create your site step and its "Repository name" field, mounted on a small
 // DOM stand-in: Node has no DOM. Stylesheet and raw SVG imports load as empty
 // modules (resolve covers older Node; load covers Node 24, where the ?raw
 // suffix can reach us already resolved). The onboarding media folder's Vite
@@ -88,18 +88,21 @@ class FakeElement extends FakeNode {
   querySelector(selector: string) { return this.all().find((el) => el.classList.contains(selector.slice(1))) ?? null; }
   querySelectorAll() { return []; }
 }
+/** The wizard re-checks GitHub when its tab is visible again. */
+const visibilityListeners: (() => void)[] = [];
 const fakeGlobals = globalThis as Record<string, unknown>;
 fakeGlobals.document = {
   activeElement: null,
   createElement: (name: string) => new FakeElement(name),
   createElementNS: (_: string, name: string) => new FakeElement(name),
   createTextNode: (text: string) => Object.assign(new FakeNode(), { data: text }),
-  addEventListener() {}, removeEventListener() {},
+  addEventListener: (type: string, listener: () => void) => { if (type === "visibilitychange") visibilityListeners.push(listener); },
+  removeEventListener: (type: string, listener: () => void) => { if (type === "visibilitychange") visibilityListeners.splice(visibilityListeners.indexOf(listener) >>> 0, 1); },
 };
 fakeGlobals.window = { addEventListener() {}, removeEventListener() {} };
 
-const { createGetStarted } = await import("../src/components/get-started.ts");
 const { createSetupWizard } = await import("../src/components/setup-wizard.ts");
+type WizardOptions = Parameters<typeof createSetupWizard>[0];
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 function fieldOf(root: FakeElement, hintId: string) {
@@ -112,60 +115,79 @@ function fieldOf(root: FakeElement, hintId: string) {
   return { hint, input, owner, type, commit, invalid };
 }
 
-test("Get Started: the name field previews the repository, flags bad names and tidies a typed name", async () => {
-  const owners = [{ login: "lex", type: "User" }, { login: "techies", type: "Organization" }];
-  const root = createGetStarted({
-    login: "lex", installUrl: null, editor: "https://editor.example", create: async () => ({ ok: true }) as never, reload: () => {},
-    loadOwners: async () => owners as never,
+function wizard(more: Partial<WizardOptions> = {}) {
+  const root = createSetupWizard({
+    login: "lex", connected: true, step: "create", connectUrl: "/auth/install",
+    loadOwners: async () => [], create: async () => ({ ok: true }) as never, findRepository: async () => undefined, agentPrompt: () => "",
+    remember: () => {}, finish: () => {}, exit: () => {}, ...more,
   }).root;
   assert.ok(root instanceof FakeElement);
-  const field = fieldOf(root, "repository-name-hint");
-  const command = () => root.all().filter((el) => el.localName === "code").map((el) => el.textContent).join(" | ");
+  const shown = (el: FakeElement | null): boolean => !el || (!el.hidden && shown(el.parentElement));
+  const buttons = () => root.all().filter((el) => el.localName === "button" && shown(el)).map((el) => el.textContent);
+  const press = (text: string) => root.all().find((el) => el.localName === "button" && el.textContent === text)!.dispatchEvent(new FakeEvent("click"));
+  const title = () => root.all().find((el) => el.localName === "h1")!.textContent;
+  return { root, buttons, press, title };
+}
 
-  // Initial state: valid default name, described by the hint, personal preview until owners load.
-  assert.equal(field.input.getAttribute("aria-describedby"), "repository-name-hint");
-  assert.equal(field.hint.className, "onboard-field__hint");
-  assert.deepEqual(field.invalid(), ["false", false]);
-  assert.match(field.hint.textContent, /^github\.com\/lex\/\S+$/);
-
-  await tick();
-  field.owner.value = "techies";
-  field.owner.dispatchEvent(new FakeEvent("change"));
-  field.type("shop");
-  assert.equal(field.hint.textContent, "Creates techies/shop");
-  assert.deepEqual(field.invalid(), ["false", false]);
-  // The agent prompt follows each keystroke.
-  assert.match(command(), /techies\/shop/);
-
-  // An empty name is not shown as an error while typing.
-  field.type("   ");
-  assert.deepEqual(field.invalid(), ["false", false]);
-  assert.equal(field.hint.textContent, "Creates techies/…");
-
-  field.type("bad/name");
-  assert.deepEqual(field.invalid(), ["true", true]);
-  assert.notEqual(field.hint.textContent, "Creates techies/bad/name");
-
-  field.type("My New Site");
-  field.commit();
-  assert.equal(field.input.value, "My-New-Site");
-  assert.deepEqual(field.invalid(), ["false", false]);
-  assert.equal(field.hint.textContent, "Creates techies/My-New-Site");
+test("setup wizard: Create your site is the name, Starter or Blank, Public or Private as tiles, and quiet ways out, without explainer lines", () => {
+  const { root, buttons, press } = wizard();
+  // No Back to step 1; the quiet choices sit beside Create site.
+  assert.deepEqual(buttons().filter((text) => text !== ""), ["Use a site you have", "Do this with an agent", "Create site"]);
+  const tiles = root.all().filter((el) => el.localName === "label" && el.classList.contains("wizard-tile"));
+  const tile = (el: FakeElement) => el.all().find((child) => child.localName === "input")!;
+  assert.deepEqual(tiles.map((el) => [tile(el).name, tile(el).value, tile(el).checked]), [
+    ["point", "starter", true], ["point", "blank", false], ["visibility", "public", true], ["visibility", "private", false],
+  ]);
+  const text = root.textContent;
+  for (const explainer of ["Free hosting needs Public.", "Pages, components and styles", "Anyone can see the files."])
+    assert.ok(!text.includes(explainer), explainer);
+  // The agent's prompt opens in place, from its quiet button.
+  const panel = root.querySelector(".wizard-agent")!;
+  assert.equal(panel.hidden, true);
+  press("Do this with an agent");
+  assert.equal(panel.hidden, false);
+  assert.equal(root.all().find((el) => el.textContent === "Do this with an agent" && el.localName === "button")!.getAttribute("aria-expanded"), "true");
 });
 
-test("Get Started: submitting an empty name flags it and returns focus to the field", () => {
+test("setup wizard: submitting an empty name flags it and returns focus to the field", () => {
   let created = 0;
-  const root = createGetStarted({
-    login: "lex", installUrl: null, editor: "https://editor.example", create: async () => { created++; return { ok: true } as never; }, reload: () => {},
-  }).root;
-  assert.ok(root instanceof FakeElement);
-  const field = fieldOf(root, "repository-name-hint");
+  const { root } = wizard({ create: async () => { created++; return { ok: true } as never; } });
+  const field = fieldOf(root, "wizard-name-hint");
   field.type("");
   root.all().find((el) => el.localName === "form")!.dispatchEvent(new FakeEvent("submit"));
   assert.equal(created, 0);
   assert.deepEqual(field.invalid(), ["true", true]);
   assert.equal(field.hint.textContent, "Enter a name for the repository.");
   assert.equal((globalThis as any).document.activeElement, field.input);
+});
+
+test("setup wizard: Use a site you have lists the repositories the editor can reach and opens one; with none, it links to GitHub's access page", async () => {
+  let listed: { id: number; name: string; fullName: string; private: boolean; defaultBranch: string; owner: string; committed: boolean }[] = [];
+  const finished: unknown[] = [];
+  const { root, buttons, press, title } = wizard({
+    accessUrl: "https://github.com/apps/native-site-editor/installations/new",
+    listRepositories: async () => listed,
+    finish: (repo) => void finished.push(repo),
+  });
+  press("Use a site you have");
+  assert.equal(title(), "Use a site you have");
+  await tick();
+  const access = root.all().find((el) => el.localName === "a" && el.textContent === "Choose repositories on GitHub")!;
+  assert.equal(access.href, "https://github.com/apps/native-site-editor/installations/new");
+  assert.ok(buttons().includes("Start a new site"));
+
+  // Access given on GitHub: back on the tab, the list is read again.
+  listed = [{ id: 7, name: "bakery", fullName: "lex/bakery", private: false, defaultBranch: "main", owner: "lex", committed: true }];
+  (globalThis as any).document.visibilityState = "visible";
+  for (const listener of visibilityListeners) listener();
+  await tick();
+  const row = root.all().find((el) => el.localName === "li" && el.textContent.includes("lex/bakery"))!;
+  assert.ok(row);
+  row.all().find((el) => el.localName === "button" && el.textContent === "Open")!.dispatchEvent(new FakeEvent("click"));
+  assert.deepEqual(finished, [listed[0]]);
+
+  press("Start a new site");
+  assert.equal(title(), "Create your site");
 });
 
 test("setup wizard: the name field remembers what is typed, normalises on change and previews the owner", async () => {
@@ -201,9 +223,9 @@ test("setup wizard: the name field remembers what is typed, normalises on change
   assert.equal(field.hint.textContent, "github.com/techies/My-New-Site");
   assert.deepEqual(field.invalid(), ["false", false]);
 
-  // The tidied name is the one the wizard keeps: back to Connect and on again, the step is rebuilt with it.
+  // The tidied name is the one the wizard keeps: to Use a site you have and back, the step is rebuilt with it.
   const press = (text: string) => root.all().find((el) => el.localName === "button" && el.textContent === text)!.dispatchEvent(new FakeEvent("click"));
-  press("Back");
-  press("Next");
+  press("Use a site you have");
+  press("Start a new site");
   assert.equal(fieldOf(root, "wizard-name-hint").input.value, "My-New-Site");
 });

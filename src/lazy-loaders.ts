@@ -1,5 +1,5 @@
 // The modules the editor loads on first use: the confirm dialog, History, the
-// media picker and its workspace, setup's actions and panels, the spotlight,
+// media picker and its workspace, setup's actions and panels,
 // the agent menu, the Site, Page and Navigation settings and the agent's site.
 // The host (src/main.ts) keeps what they are made with, and hands it in as
 // live ports; each module stays lazy (CODING_STANDARDS "Lazy stays lazy").
@@ -58,21 +58,12 @@ export function createLazyLoaders(ports: LazyLoadersPorts) {
     const { createSetupActions } = await import("./setup-actions");
     return createSetupActions(ports.setupActions());
   });
-  const loadChecklist = lazyModule(async () => (await Promise.all([import("./components/setup-checklist"), loadSetupActions()]))[0]);
   // The prompt for a coding agent that sets the site up (src/agent-prompts.ts),
   // loaded with the wizard and the start panel that offer it.
   let agentPrompts: typeof import("./agent-prompts") | undefined;
   const loadAgentPrompts = lazyModule(async () => agentPrompts = await import("./agent-prompts"));
   const loadWizard = lazyModule(async () => (await Promise.all([import("./components/setup-wizard"), loadAgentPrompts(), loadSetupActions()]))[0]);
-  const loadGetStarted = lazyModule(async () => (await Promise.all([import("./components/get-started"), loadSetupActions()]))[0]);
   const loadStartSite = lazyModule(async () => (await Promise.all([import("./components/start-site"), loadSetupActions()]))[0]);
-  // The agent copy is read only beside the spotlight that shows it.
-  let onboardingCopy: typeof import("./onboarding-copy") | undefined;
-  const loadSpotlight = lazyModule(async () => {
-    const [copy, spotlight] = await Promise.all([import("./onboarding-copy"), import("./components/spotlight")]);
-    onboardingCopy = copy;
-    return spotlight;
-  });
   const loadAgentMenu = lazyModule(async () => {
     const [menu, records] = await Promise.all([import("./components/agent-menu"), import("./agent-records")]);
     return { createAgentMenu: (options: Parameters<typeof menu.createAgentMenu>[0]) => menu.createAgentMenu({ ...options, records: records.indexedDbAgentRecords() }) };
@@ -97,8 +88,8 @@ export function createLazyLoaders(ports: LazyLoadersPorts) {
   const loadAgentSite = lazyModule(() => import("./agent-site"));
 
   return {
-    loadConfirmDialog, loadHistory, loadMediaWorkspace, loadMedia, loadSetupActions, loadChecklist, loadAgentPrompts, loadWizard, loadGetStarted,
-    loadStartSite, loadSpotlight, loadAgentMenu, loadSiteSettings, loadAgentSite,
-    get agentPrompts() { return agentPrompts; }, get onboardingCopy() { return onboardingCopy; },
+    loadConfirmDialog, loadHistory, loadMediaWorkspace, loadMedia, loadSetupActions, loadAgentPrompts, loadWizard,
+    loadStartSite, loadAgentMenu, loadSiteSettings, loadAgentSite,
+    get agentPrompts() { return agentPrompts; },
   };
 }

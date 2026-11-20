@@ -206,7 +206,7 @@ function setup() {
       filesTreeController: { refresh: say("filesTree.refresh") },
     },
     setup: {
-      setupController: { mount: async () => { calls.push("setupController.mount"); }, dispose: say("setupController.dispose") } satisfies WorkspaceMountPorts["setup"]["setupController"],
+      setupController: { dispose: say("setupController.dispose") } satisfies WorkspaceMountPorts["setup"]["setupController"],
       setupEntry: { remove: say("setupEntry.remove") },
       startSitePanel: () => new Promise<HTMLElement>((resolve) => { state.startSite = resolve; }),
     },
@@ -534,7 +534,7 @@ test("a finished-elsewhere note, the repository menu opening and Site settings r
   assert.ok(last("menu").calls.includes("close"));
   assert.ok(last("dropdown").calls.includes("open"));
   assert.equal(focused, byId("explorer-toggle"));
-  // The menu's panel opening loads the agent connection and the Setup checklist; closing it does not.
+  // The menu's panel opening loads the agent connection; closing it does not.
   const panel = byId("repository-actions");
   panel.dispatch("toggle");
   panel.open = true;
@@ -542,7 +542,7 @@ test("a finished-elsewhere note, the repository menu opening and Site settings r
   // Site settings is the project menu's row (mock-up 05 v2): it opens the settings.
   (last("menu").options as { onSiteSettings(): void }).onSiteSettings();
   await flush();
-  assert.deepEqual(calls.filter((call) => /^(agent\.ensure|setupController\.mount|siteSettings)$/.test(call)), ["agent.ensure", "setupController.mount", "siteSettings"]);
+  assert.deepEqual(calls.filter((call) => /^(agent\.ensure|siteSettings)$/.test(call)), ["agent.ensure", "siteSettings"]);
 });
 
 test("closeWorkspace closes what is open and clears the host's state through its setters", () => {

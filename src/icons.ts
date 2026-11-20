@@ -27,6 +27,7 @@ import fileDashed from "@phosphor-icons/core/regular/file-dashed.svg?raw";
 import folder from "@phosphor-icons/core/regular/folder.svg?raw";
 import folderOpen from "@phosphor-icons/core/regular/folder-open.svg?raw";
 import gear from "@phosphor-icons/core/regular/gear.svg?raw";
+import githubLogo from "@phosphor-icons/core/regular/github-logo.svg?raw";
 import house from "@phosphor-icons/core/regular/house.svg?raw";
 import imageSquare from "@phosphor-icons/core/regular/image-square.svg?raw";
 import link from "@phosphor-icons/core/regular/link.svg?raw";
@@ -66,6 +67,7 @@ const icons = {
   "file-dashed": fileDashed,
   folder,
   "folder-open": folderOpen,
+  "github-logo": githubLogo,
   house,
   "image-square": imageSquare,
   link,

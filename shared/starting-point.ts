@@ -14,7 +14,7 @@ export type StartingPoint = "starter" | "blank";
 /** The public template the Starter site comes from. */
 export const STARTER_TEMPLATE = { owner: "techiesreviews", name: "native-site-editor-starter", branch: "main" } as const;
 
-/** The repository name the Get started form suggests. */
+/** The repository name the setup wizard suggests. */
 export const DEFAULT_REPOSITORY_NAME = "my-site";
 
 /** Why `name` cannot be a GitHub repository name, or nothing. */

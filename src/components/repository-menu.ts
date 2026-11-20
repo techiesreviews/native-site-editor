@@ -466,9 +466,9 @@ export function createRepositoryMenu(options: {
     setQuestions,
     setNotes,
     close: dropdown.close,
-    /** Opens the menu (the Connect an agent spotlight's "Show me"). */
+    /** Opens the menu (the Inbox's Connect an agent). */
     open: dropdown.open,
-    /** The tile at the top left that opens the menu: what a spotlight points at. */
+    /** The tile at the top left that opens the menu. */
     trigger,
     destroy() {
       for (const row of shares) row.destroy();

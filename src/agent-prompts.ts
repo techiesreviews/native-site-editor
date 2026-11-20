@@ -18,7 +18,7 @@ export function buildSitePrompt(about?: string) {
 }
 
 /**
- * What to paste into an agent before there is a repository (Get started):
+ * What to paste into an agent before there is a repository (the setup wizard):
  * create one (with the GitHub CLI when the agent has it), have the user give
  * the editor access, connect over MCP with OAuth, and build the site.
  */
@@ -33,8 +33,8 @@ export function setupPrompt(options: { editor: string; installUrl?: string | nul
     ? `1. The repository is ${options.repository}, and it is open in the editor at ${options.editor}. Keep that tab open.`
     : `1. Create the repository ${options.name} ${options.owner ? `in my GitHub organisation ${options.owner}` : "on my GitHub account"}. If you have the GitHub CLI, run
    ${createCommand(options)}
-   Otherwise ask me to create it on the editor's Get started screen.
-2. Ask me to give the editor access to it${options.installUrl ? ` at ${options.installUrl} (choose the repository there)` : " (Get started, Use a repository you have)"}, then to open it in the editor at ${options.editor} and keep that tab open.`;
+   Otherwise ask me to create it in the editor's setup (Create your site).
+2. Ask me to give the editor access to it${options.installUrl ? ` at ${options.installUrl} (choose the repository there)` : " (the editor's setup, Use a site you have)"}, then to open it in the editor at ${options.editor} and keep that tab open.`;
   const n = options.repository ? 2 : 3;
   return `Help me start a website with Native Site Editor (${options.editor}). The site is a GitHub repository whose files are the site: plain HTML, CSS and browser JavaScript, no build.
 

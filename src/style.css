@@ -551,7 +551,7 @@ dd {
     gap: var(--space-4xs);
     padding-inline: var(--space-4xs) var(--space-3xs);
   }
-  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, #inbox-button, .setup-pill),
+  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, #inbox-button),
   #repository-menu::after,
   .workspace :is(.block-rail, .canvas-bar:not(.canvas-bar--component)) {
     display: none;
@@ -626,38 +626,92 @@ dd {
 #app.login-page {
   min-height: 100dvh;
   display: grid;
-  place-items: center;
-  padding: 32px 20px;
   background: var(--background);
 }
-.login-card {
-  width: min(100%, 360px);
-  padding: 24px;
-  background: var(--panel-surface);
-  border: 0;
-  border-radius: var(--radius-dialog);
-  box-shadow: var(--shadow);
-}
-.login-brand {
-  margin-bottom: 16px;
-  justify-content: center;
-}
-.login-brand .brand-mark {
-  width: var(--size-control);
-  height: var(--size-control);
-  border-radius: var(--radius);
-  font-size: var(--type-title);
-}
-.login-card h1 {
-  font-size: var(--type-title);
-  font-weight: 600;
-  letter-spacing: normal;
-  line-height: 1.3;
+/* The welcome page: "Where does your site live?" with one card per place (GitHub
+   for now). The same page signed out (the login page) and for a signed-in
+   account with nothing to open yet (in the workspace content). */
+.welcome-page {
+  min-block-size: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 32px 16px max(48px, env(safe-area-inset-bottom));
   text-align: center;
-  margin: 0 0 16px;
+  background:
+    radial-gradient(60% 50% at 15% 0%, var(--current), transparent 70%),
+    radial-gradient(55% 55% at 90% 10%, var(--surface-subtle), transparent 70%);
+}
+.welcome-page__hello {
+  display: inline-flex;
+  align-items: center;
+  block-size: 28px;
+  margin: 0;
+  padding-inline: 12px;
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--primary);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.welcome-page h1 {
+  margin: 16px 0 28px;
+  font-size: clamp(26px, 4.4vw, 40px);
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.welcome-page__choices {
+  display: grid;
+  gap: 24px;
+  inline-size: min(100%, 408px);
+  text-align: start;
+}
+.welcome-page__choice {
+  display: grid;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+}
+.welcome-page__picture {
+  aspect-ratio: 384 / 206;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  pointer-events: none;
+  user-select: none;
+}
+.welcome-page__picture img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  scale: 1.4;
+}
+.welcome-page__body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 8px 6px;
+}
+.welcome-page h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.welcome-page .login-notice {
+  inline-size: min(100%, 408px);
+  text-align: start;
 }
 .login-button {
   width: 100%;
+  --btn-min-block-size: var(--size-touch);
+  --btn-font-size: var(--type-title);
 }
 .login-state {
   color: var(--muted);
@@ -798,9 +852,9 @@ dd {
   min-height: 80px;
   overflow: auto;
 }
-@media (max-width: 650px) {
-  .login-card {
-    padding: 20px;
+@media (max-width: 680px) {
+  .welcome-page__picture {
+    aspect-ratio: 384 / 150;
   }
 }
 

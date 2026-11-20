@@ -107,3 +107,15 @@ for (const files of [["x/a.html"], ["x/a.html", "x/deep/b.html"]]) test(`starter
     assert.deepEqual([...drafts.keys()], ["index.html"]);
   } finally { appStore.dispose(); }
 });
+
+test("Use a site you have lists the repositories afresh, as the wizard shows them", async () => {
+  let fresh: boolean | undefined;
+  const repository = { id: 7, name: "bakery", full_name: "lex/bakery", private: true, default_branch: "", owner: { login: "lex", type: "User" } };
+  // Only the boot listing is used by wizardRepositories.
+  const ports = { boot: { fetchList: async (refresh: boolean) => { fresh = refresh; return [repository]; } } } satisfies { boot: Pick<Parameters<typeof createSetupActions>[0]["boot"], "fetchList"> };
+  const module = await bundled;
+  assert.deepEqual(await module.createSetupActions(ports).wizardRepositories(), [
+    { id: 7, name: "bakery", fullName: "lex/bakery", private: true, defaultBranch: "main", owner: "lex", committed: true },
+  ]);
+  assert.equal(fresh, true);
+});

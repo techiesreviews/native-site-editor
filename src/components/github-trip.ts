@@ -6,7 +6,7 @@ import "./github-trip.css";
 // What GitHub shows on the trip that installs the editor and signs the user
 // in: real screenshots with captions, in a row of two cards on wide screens
 // and stacked on narrow ones, each opening larger in a lightbox. Used by the
-// sign-in screen's "What happens next?" and the wizard's Connect GitHub step.
+// wizard's Connect GitHub step.
 // When github-install.mp4 is in src/onboarding-media/ the recording replaces
 // the install screenshot (VIDEO_REPLACES_SCREENSHOT decides which one).
 
@@ -127,10 +127,11 @@ function recordingFigure() {
 }
 
 /** The numbered screenshots with their captions, and the line that says it is one trip. */
-export function createGithubTrip(options: { note: string }) {
+export function createGithubTrip(options: { note?: string } = {}) {
   const root = node("div", "trip");
   const cards = node("ol", "trip__cards");
   GITHUB_SCREENSHOTS.forEach((shot, index) => cards.append(screenshotCard(shot, index + 1)));
-  root.append(cards, node("p", "trip__note", options.note));
+  root.append(cards);
+  if (options.note) root.append(node("p", "trip__note", options.note));
   return root;
 }

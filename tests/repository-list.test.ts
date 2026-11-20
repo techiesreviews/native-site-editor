@@ -68,7 +68,7 @@ type Options = { user?: { login: string }; dismissed?: boolean; recover?: boolea
 function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Promise<Repository[]> = async () => listed, options: Options = {}) {
   const session = createWorkspaceSession(), local = store();
   const shown = { content: [] as (FakeElement | string)[], files: [] as (FakeElement | string)[] };
-  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0, remembered: 0, hints: [] as ("install" | "create" | undefined)[] };
+  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, welcomed: 0, opened: 0, remembered: 0, hints: [] as ("install" | "create" | undefined)[] };
   const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [], started: number[] = [], warmed: (WarmCopy | undefined)[] = [];
   const menu: { listed?: Repository[]; message?: string } = {};
   const content = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
@@ -112,7 +112,7 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     setCurrentPage: () => {},
     chooseProject: () => {},
     removeFinishStarter: () => {},
-    showGetStarted: async () => { calls.gotStarted++; },
+    showWelcome: () => { calls.welcomed++; },
     knownRepositories: () => undefined,
     rememberRepositories: () => { calls.remembered++; },
   } satisfies RepositoryListPorts & Record<string, unknown>;
@@ -244,10 +244,10 @@ test("a listing before the session has a user offers the choice of a project", a
   }
 });
 
-test("no repositories, with setup dismissed, shows Get started", async () => {
+test("no repositories, with setup dismissed, shows the welcome page", async () => {
   const { list, calls } = fixture([], undefined, { dismissed: true });
   await list.loadRepositories();
-  assert.equal(calls.gotStarted, 1);
+  assert.equal(calls.welcomed, 1);
   assert.equal(calls.opened, 0);
 });
 
@@ -255,7 +255,7 @@ test("no repositories for a new user opens the Setup wizard", async () => {
   const { list, calls, shown } = fixture([], undefined, { dismissed: false });
   await list.loadRepositories();
   assert.equal(calls.opened, 1);
-  assert.equal(calls.gotStarted, 0);
+  assert.equal(calls.welcomed, 0);
   assert.equal((shown.content[0] as FakeElement).textContent, "Create your first site to get started.");
 });
 

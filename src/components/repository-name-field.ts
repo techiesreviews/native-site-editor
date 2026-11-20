@@ -2,7 +2,7 @@ import { node } from "../ui/dom";
 import { repositoryNameProblem, suggestedRepositoryName } from "../../shared/starting-point";
 
 /**
- * The "Repository name" field shared by Get Started and the setup wizard: a
+ * The setup wizard's "Repository name" field: a
  * native text input with a described-by hint that shows GitHub's objection to
  * the name, or the caller's preview of where the repository will live.
  */

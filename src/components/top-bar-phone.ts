@@ -112,12 +112,6 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   const rail = () => find(".block-rail");
   const devices = () => [...app.querySelectorAll<HTMLButtonElement>(".canvas-bar:not([hidden]) .canvas-device")];
   const history = () => find<HTMLButtonElement>("#history-button:not(:disabled)");
-  const setupPill = () => find<HTMLButtonElement>(".setup-checklist:not([hidden]) .setup-pill");
-  // The pill says "Setup 2/5", or "Set up" once done: the row says "2 of 5" or "Done".
-  const setupProgress = () => {
-    const steps = /(\d+)\/(\d+)/.exec(setupPill()?.textContent ?? "");
-    return steps ? `${steps[1]} of ${steps[2]}` : "Done";
-  };
 
   // Closes the sheet, then works the control (whose own menu or panel may open once the page is in reach again).
   const handOver = (run: () => void) => () => {
@@ -173,7 +167,6 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
   }
 
   const rows: Record<MenuRow, () => HTMLElement> = {
-    setup: () => rowButton("list-checks", "Set up your site", handOver(() => setupPill()?.click()), setupProgress()),
     pages: () => rowButton("file", "Pages", handOver(() => find<HTMLButtonElement>("#explorer-toggle")?.click()), find("#current-page")?.textContent ?? ""),
     blocks: () => rowButton("plus", "Add a block", () => draw("blocks")),
     structure: () => rowButton("treeStructure", "Page structure", handOver(() => openSheet())),
@@ -223,7 +216,6 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     }
     const strip = handle();
     const shown = menuRows({
-      setup: Boolean(setupPill()),
       blocks: Boolean(rail() && !rail()!.hidden),
       sheet: Boolean(strip && getComputedStyle(strip).display !== "none"),
       devices: devices().length > 0,
@@ -252,7 +244,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
       return;
     }
     const panel = event.target as HTMLElement;
-    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "setup-checklist-panel", "inbox"].includes(panel.id)) return;
+    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "inbox"].includes(panel.id)) return;
     queueMicrotask(() => {
       if ((document.activeElement === document.body || !document.activeElement) && getComputedStyle(trigger).display !== "none") trigger.focus();
     });

@@ -5,8 +5,8 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Repositories owned by organisations, against the fake GitHub's `org`
 // controls (see the top of server.ts): the repository menu groups by owner and
-// opens an organisation's repository, which is edited and saved; Get started's
-// Owner picker creates in the organisation, and a refusal falls back to GitHub's
+// opens an organisation's repository, which is edited and saved; the Setup
+// wizard's Owner picker creates in the organisation, and a refusal falls back to GitHub's
 // New repository page for that organisation. The access boundary is checked
 // through the API: a repository that is not in the listing is still refused.
 
@@ -38,14 +38,14 @@ async function openOrgSite(page: Page, baseURL: string | undefined) {
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 }
 
-async function openGetStarted(page: Page, baseURL: string | undefined) {
+/** An account with no repository: the Setup wizard opens on Create your site. */
+async function openCreateSite(page: Page, baseURL: string | undefined) {
   await control(page, baseURL, { org: true, repositories: "none" });
   await page.goto(`${baseURL}/`);
   await page.reload();
-  // The Setup wizard replaces Get started for an account with no repository; leaving it shows Get started.
-  await page.getByRole("button", { name: "Leave setup" }).click({ timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
+const ready = (page: Page) => expect(page.getByRole("heading", { name: "Your site is ready" })).toBeVisible({ timeout: 30_000 });
 
 test("the menu groups repositories by owner, the personal account first, and opens an organisation's repository to edit and save it", async ({ page, baseURL }) => {
   await openOrgSite(page, baseURL);
@@ -108,30 +108,32 @@ test("a repository outside the listing is refused, an organisation's inside it i
   expect((await read("demo-org/org-site")).status()).toBe(403);
 });
 
-test("Get started's Owner picker creates the repository in the organisation", async ({ page, baseURL }) => {
-  await openGetStarted(page, baseURL);
+test("the wizard's Owner picker creates the repository in the organisation", async ({ page, baseURL }) => {
+  await openCreateSite(page, baseURL);
   const owner = page.getByLabel("Owner");
   await expect(owner).toBeVisible();
   await expect(owner.locator("option")).toHaveText(["native-demo-user", "demo-org (organisation)"]);
   await owner.selectOption("demo-org");
-  await expect(page.locator("#repository-name-hint")).toHaveText("Creates demo-org/my-site");
   await page.getByLabel("Repository name").fill("team-site");
+  await expect(page.locator("#wizard-name-hint")).toHaveText("github.com/demo-org/team-site");
   await page.getByRole("radio", { name: "Blank page" }).check();
-  await page.getByRole("button", { name: "Create repository" }).click();
-  await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Create site" }).click();
+  await ready(page);
   const done = await state(page, baseURL);
   expect(done.orgCreated.map((repo: { name: string }) => repo.name)).toEqual(["team-site"]);
   expect(done.created).toEqual([]);
+  await page.getByRole("button", { name: "Open the editor" }).click();
+  await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
   await page.locator(".repository-menu__trigger").click();
   await expect(page.locator('.repository-menu__repo[aria-current="true"] .repository-menu__repo-owner')).toContainText("demo-org");
 });
 
 test("the personal account stays the default owner", async ({ page, baseURL }) => {
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await expect(page.getByLabel("Owner")).toHaveValue("native-demo-user");
   await page.getByLabel("Repository name").fill("mine");
-  await page.getByRole("button", { name: "Create repository" }).click();
-  await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Create site" }).click();
+  await ready(page);
   const done = await state(page, baseURL);
   expect(done.created.map((repo: { name: string }) => repo.name)).toEqual(["mine"]);
   expect(done.orgCreated).toEqual([]);
@@ -139,40 +141,40 @@ test("the personal account stays the default owner", async ({ page, baseURL }) =
 
 test("an organisation that forbids members from creating repositories falls back to GitHub's page for that organisation", async ({ page, baseURL }) => {
   await control(page, baseURL, { orgCreate: "forbidden" });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Owner").selectOption("demo-org");
   await page.getByLabel("Repository name").fill("team-site");
-  await page.getByRole("button", { name: "Create repository" }).click();
-  await expect(page.locator(".get-started__create .onboard-message")).toContainText("organisation owner may need to", { timeout: 30_000 });
+  await page.getByRole("button", { name: "Create site" }).click();
+  await expect(page.locator(".wizard-form .onboard-message").first()).toContainText("organisation owner may need to", { timeout: 30_000 });
   const link = page.locator(".onboard-fallback").getByRole("link", { name: /Create team-site on GitHub/ });
   const url = new URL((await link.getAttribute("href"))!);
   expect(url.origin + url.pathname).toBe("https://github.com/new");
   expect(url.searchParams.get("owner")).toBe("demo-org");
   expect(url.searchParams.get("name")).toBe("team-site");
-  await expect(page.locator(".onboard-fallback").getByRole("link", { name: /Give the editor access to it/ })).toBeVisible();
+  await expect(page.locator(".onboard-fallback")).toContainText("Give the editor access to it");
 });
 
 test("a name already taken in the organisation is said so and nothing is opened", async ({ page, baseURL }) => {
   await control(page, baseURL, { orgCreate: "taken" });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Owner").selectOption("demo-org");
   await page.getByLabel("Repository name").fill("team-site");
-  await page.getByRole("button", { name: "Create repository" }).click();
-  await expect(page.locator(".get-started__create .onboard-message")).toContainText("demo-org may already have a repository", { timeout: 30_000 });
-  await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible();
+  await page.getByRole("button", { name: "Create site" }).click();
+  await expect(page.locator(".wizard-form .onboard-message").first()).toContainText("demo-org may already have a repository", { timeout: 30_000 });
+  await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible();
 });
 
 test("when the editor is installed only on an organisation, it is the owner and Create goes there", async ({ page, baseURL }) => {
   await control(page, baseURL, { installed: false });
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   const owner = page.getByLabel("Owner");
   await expect(owner).toBeVisible();
   await expect(owner.locator("option")).toHaveText(["demo-org (organisation)"]);
   await expect(owner).toBeDisabled();
-  await expect(page.locator("#repository-name-hint")).toHaveText("Creates demo-org/my-site");
   await page.getByLabel("Repository name").fill("team-site");
-  await page.getByRole("button", { name: "Create repository" }).click();
-  await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#wizard-name-hint")).toHaveText("github.com/demo-org/team-site");
+  await page.getByRole("button", { name: "Create site" }).click();
+  await ready(page);
   const done = await state(page, baseURL);
   expect(done.orgCreated.map((repo: { name: string }) => repo.name)).toEqual(["team-site"]);
   expect(done.created).toEqual([]);
@@ -180,10 +182,10 @@ test("when the editor is installed only on an organisation, it is the owner and 
 
 test("the copied agent prompt names the selected organisation, in its instructions and its command", async ({ page, baseURL, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await openGetStarted(page, baseURL);
+  await openCreateSite(page, baseURL);
   await page.getByLabel("Owner").selectOption("demo-org");
   await page.getByLabel("Repository name").fill("team-site");
-  await expect(page.locator(".onboard-agent code")).toHaveText("gh repo create demo-org/team-site --public");
+  await page.getByRole("button", { name: "Do this with an agent" }).click();
   await page.getByRole("button", { name: "Copy agent prompt" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create demo-org/team-site --public");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());

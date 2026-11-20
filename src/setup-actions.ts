@@ -1,5 +1,4 @@
-import type { CreateChoice, CreateOutcome } from "./components/get-started";
-import type { WizardCreateOutcome } from "./components/setup-wizard";
+import type { CreateChoice, WizardCreateOutcome } from "./components/setup-wizard";
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
@@ -189,6 +188,11 @@ export function createSetupActions(ports: SetupPorts) {
     };
   }
 
+  /** "Use a site you have": the repositories the editor can open, listed afresh (access may have just been given on GitHub). */
+  async function wizardRepositories(): Promise<WizardRepo[]> {
+    return (await ports.boot.fetchList(true)).map((repository) => wizardRepository(repository, true));
+  }
+
   /** The repository the user was told to make on GitHub (or retried the name of), looked up afresh; its starting point waits for it to open. */
   async function findWizardRepository(choice: CreateChoice): Promise<WizardRepo | undefined> {
     const owner = (choice.owner ?? ports.info.user?.login ?? "").toLowerCase();
@@ -201,42 +205,6 @@ export function createSetupActions(ports: SetupPorts) {
     // Empty, it gets the starting point when it opens; one with files keeps them.
     ports.rememberStartingPoint(repository.owner.login, repository.name, choice.point);
     return wizardRepository(repository, false);
-  }
-
-
-  async function createSite(choice: CreateChoice): Promise<CreateOutcome> {
-    let response: Response;
-    try {
-      response = await fetch("/api/repositories", {
-        method: "POST",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: choice.name, ...(choice.owner ? { owner: choice.owner } : {}), private: choice.private, description: "A website edited with Native Site Editor" }),
-      });
-    } catch {
-      return { ok: false, message: "GitHub could not be reached. Try again." };
-    }
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 403 || response.status === 404) {
-      ports.rememberStartingPoint(choice.owner, choice.name, choice.point);
-      return { ok: false, fallback: true, message: data.error || "The editor cannot create repositories on your account yet." };
-    }
-    if (!response.ok) return { ok: false, message: data.error || "The repository could not be created. Try again." };
-    const repo = data as Repository;
-    ports.waitingForRepositories = false;
-    ports.repositories = [...ports.repositories.filter((known) => known.id !== repo.id), repo];
-    ports.rememberRepositories(ports.repositories);
-    ports.repositoryOptions();
-    ports.repositorySelect.disabled = false;
-    ports.repositorySelect.value = String(repo.id);
-    ports.repositoryMenu?.setRepositories(ports.repositories);
-    await ports.chooseRepository();
-    if (ports.appStore.repository.value?.id === repo.id) {
-      const problem = await writeStartingPoint(choice.point);
-      if (problem) ports.errorMessage(new Error(problem));
-    }
-    return { ok: true };
   }
 
 
@@ -402,5 +370,5 @@ export function createSetupActions(ports: SetupPorts) {
     if (problems.length) ports.errorMessage(new Error(problems.join(" ")));
     return undefined;
   }
-  return { createSiteInWizard, findWizardRepository, wizardPreview, createSite, writeSiteSettings, writeStartingPoint };
+  return { createSiteInWizard, findWizardRepository, wizardRepositories, wizardPreview, writeSiteSettings, writeStartingPoint };
 }

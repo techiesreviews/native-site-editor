@@ -1115,7 +1115,7 @@ async function route(
   }
   if (path.startsWith("/api/")) {
     const github = sessionGitHub(user, env, fetcher);
-    // Get started: a new, empty repository on the signed-in account.
+    // The setup wizard's Create site: a new repository on the signed-in account.
     if (path === "/api/repositories" && request.method === "POST") {
       const data = await requestJson(request, bodyLimit(request));
       const point = data?.startingPoint === "starter" || data?.startingPoint === "blank" ? data.startingPoint : undefined;

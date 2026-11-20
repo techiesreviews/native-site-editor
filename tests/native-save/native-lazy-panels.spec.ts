@@ -229,7 +229,7 @@ test("editor boot leaves optional panels unloaded and the first palette key open
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  for (const name of ["command-palette", "commit-history", "media-picker", "get-started", "start-site", "setup-wizard", "setup-checklist", "spotlight", "agent-menu", "agent-pins"])
+  for (const name of ["command-palette", "commit-history", "media-picker", "start-site", "setup-wizard", "agent-menu", "agent-pins"])
     expect(feature(name), `${name} loads only when used`).toBe(false);
   await page.locator("#explorer-toggle").focus();
   await page.keyboard.press("ControlOrMeta+K");

@@ -8,7 +8,6 @@ export const topBarMarkup = () => `    <header class="topbar">
       <div id="repository-menu"></div>
       <button id="explorer-toggle" title="Pages & files" class="explorer-toggle" aria-controls="explorer"><span id="current-page">Select a page</span> ${iconMarkup("caret-down", 12, "icon--after")}</button>
       <div class="topbar-actions">
-        <div id="setup-checklist"></div>
         <div id="change-status"></div>
         <div id="editor-toolbar-host" class="editor-toolbar-host"></div>
         <button type="button" id="inbox-button" class="icon-button inbox-button" popovertarget="inbox" aria-label="Inbox" title="Inbox">${iconMarkup("tray", 17)}</button>

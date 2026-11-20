@@ -22,11 +22,7 @@ const stubModules: Record<string, string> = {
   "src/setup-actions.ts": loaded("setup-actions", `export const createSetupActions = ${made("setup-actions")};`),
   "src/native-settings.ts": loaded("native-settings", `export const createNativeSettings = ${made("native-settings")};`),
   "src/agent-prompts.ts": loaded("agent-prompts", 'export const setupPrompt = () => "prompt";'),
-  "src/onboarding-copy.ts": loaded("onboarding-copy", 'export const AGENT_EXPLAINER = ["copy"];'),
-  "src/components/spotlight.ts": loaded("spotlight", "export const spotlight = 1;"),
   "src/components/setup-wizard.ts": loaded("setup-wizard", "export const wizard = 1;"),
-  "src/components/setup-checklist.ts": loaded("setup-checklist", "export const checklist = 1;"),
-  "src/components/get-started.ts": loaded("get-started", "export const getStarted = 1;"),
   "src/components/start-site.ts": loaded("start-site", "export const startSite = 1;"),
   "src/components/confirm-dialog.ts": loaded("confirm-dialog", "export const confirmDialog = 1;"),
   "src/components/commit-history.ts": loaded("commit-history", "export const commitHistory = 1;"),
@@ -79,8 +75,8 @@ function setup() {
 test("setup's actions are made once, with their ports read when they first load, and the panels wait for them", async () => {
   const { loaders, late } = setup();
   assert.equal(late.setupPorts, 0);
-  const [checklist, wizard] = await Promise.all([loaders.loadChecklist(), loaders.loadWizard()]);
-  assert.deepEqual([checklist, wizard].map((module) => Object.keys(module)), [["checklist"], ["wizard"]]);
+  const [startSite, wizard] = await Promise.all([loaders.loadStartSite(), loaders.loadWizard()]);
+  assert.deepEqual([startSite, wizard].map((module) => Object.keys(module)), [["startSite"], ["wizard"]]);
   assert.equal(late.setupPorts, 1);
   assert.deepEqual(stubs.made, [["setup-actions", { marker: "setup" }]]);
   // The wizard brought the agent prompt with it.
@@ -88,21 +84,15 @@ test("setup's actions are made once, with their ports read when they first load,
   assert.equal(loaders.agentPrompts?.setupPrompt(choice), "prompt");
 });
 
-test("Get started and Start your site load with setup's actions; the dialogs, History and the agent's site on their own", async () => {
+test("Start your site loads with setup's actions; the dialogs, History and the agent's site on their own", async () => {
   const { loaders, late } = setup();
-  const [getStarted, startSite] = await Promise.all([loaders.loadGetStarted(), loaders.loadStartSite()]);
-  assert.deepEqual([getStarted, startSite].map((module) => Object.keys(module)), [["getStarted"], ["startSite"]]);
+  const startSite = await loaders.loadStartSite();
+  assert.deepEqual(Object.keys(startSite), ["startSite"]);
   assert.equal(late.setupPorts, 1);
   assert.deepEqual(stubs.made.map(([name]) => name), ["setup-actions"]);
   const [dialog, history, site] = await Promise.all([loaders.loadConfirmDialog(), loaders.loadHistory(), loaders.loadAgentSite()]);
   assert.deepEqual([dialog, history, site].map((module) => Object.keys(module)), [["confirmDialog"], ["commitHistory"], ["agentSite"]]);
   assert.equal(late.setupPorts, 1);
-});
-
-test("the agent copy is there once the spotlight has loaded", async () => {
-  const { loaders } = setup();
-  await loaders.loadSpotlight();
-  assert.deepEqual(loaders.onboardingCopy?.AGENT_EXPLAINER, ["copy"]);
 });
 
 test("the settings load after Pages' actions, with the guarded edits held then, and restore through a stamp of the load they were opened in", async () => {

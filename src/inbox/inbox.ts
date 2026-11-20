@@ -5,8 +5,9 @@
 // tools-253-inbox-next): each row's actions sit on a strip under it (Fix with AI, a wave-off named for what it means,
 // a heading's one-press fix); Fix with AI shows the agent's suggestion in the row to change and accept; Fix all with
 // AI over the list asks for every row at once, and Accept all writes them; a shared part's row, Accept button and
-// spot say how many pages it changes.
+// spot say how many pages it changes. TOOLS-188: a site the editor made lists its setup rows first (inbox-setup.ts).
 import "./inbox.css";
+import { effect, untracked } from "@preact/signals-core";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { icon } from "../icons";
 import { elementIcon } from "../components/element-icons";
@@ -20,6 +21,7 @@ import type { InboxPorts } from "./inbox-host";
 import { markDecorative } from "./decorative";
 import { createInboxAgent } from "./inbox-agent";
 import { goTo } from "./inbox-go";
+import { createInboxSetup } from "./inbox-setup";
 import { createInboxFixes, fixEdits, type FixState, type InboxFix } from "./inbox-fixes";
 import { componentPages, componentTags, forgetPages, pictureVerdict, siteFile, siteItems, type InboxPart } from "./site-items";
 import { watchReplies } from "../agent-replies";
@@ -100,6 +102,7 @@ export function createInboxList(ports: InboxPorts) {
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, dots];
   const panel = () => document.getElementById("inbox");
   const redraw = () => { const open = panel(); if (open?.matches(":popover-open")) draw(open); };
+  const setup = createInboxSetup(ports.setup, { hide: () => panel()?.hidePopover(), redraw, error: error => ports.error(error) });
 
   /** Writes fixes as one Undo step, each only over the text its row was found in (src/guarded-edit.ts). */
   async function write(list: readonly InboxFix[]) {
@@ -148,7 +151,7 @@ export function createInboxList(ports: InboxPorts) {
   let shownKeys: string | undefined, shownChecked = false, shownSession: typeof session, dotRules = "";
   function show(next: readonly InboxItem[]) {
     // A row's spot (`at`) and the page text it was found in are part of it: drawn rows act on the items they hold.
-    const keys = next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}\n${item.shared?.pages.join(" ") ?? ""}`).join("\n\n");
+    const keys = [setup.keys(), ...next.map(item => `${item.key}\n${item.where}\n${item.wave ?? ""}\n${item.at ?? ""}\n${item.shared?.pages.join(" ") ?? ""}`)].join("\n\n");
     // Rows drawn on another session (a reload with the same items) act on it no more: they are drawn again.
     // Another site, branch or load: the suggestions and refusals shown belong to the one before.
     if (session !== shownSession) { fixes.clear(); refusals.clear(); }
@@ -161,8 +164,8 @@ export function createInboxList(ports: InboxPorts) {
     shownSession = session;
     shownKeys = keys;
     shownChecked = checked;
-    const root = document.documentElement;
-    if (root.hasAttribute("data-inbox-waiting") !== items.length > 0) root.toggleAttribute("data-inbox-waiting", items.length > 0);
+    const root = document.documentElement, waiting = items.length > 0 || ports.setup.items.peek().length > 0;
+    if (root.hasAttribute("data-inbox-waiting") !== waiting) root.toggleAttribute("data-inbox-waiting", waiting);
     const any = (attribute: string, values: (string | undefined)[]) =>
       [...new Set(values.filter((value): value is string => Boolean(value)))].map(value => `[${attribute}="${CSS.escape(value)}"]`).join(",");
     // A shared part's item waits on every page that shows the part.
@@ -172,6 +175,8 @@ export function createInboxList(ports: InboxPorts) {
     const open = panel();
     if (open?.matches(":popover-open")) draw(open);
   }
+  // Setup rows coming or going show at once: the dot and an open panel follow them.
+  effect(() => { void ports.setup.items.value; untracked(() => show(items)); });
 
   /** Checks the site again (the host waits for a pause in the changes). */
   function check(again = false) {
@@ -378,14 +383,16 @@ export function createInboxList(ports: InboxPorts) {
     const keep = () => { if (active) title.focus(); };
     // Nothing found yet before the pages are read (or a picture's verdict is known): busy, rather than an "All done"
     // not yet known.
-    if (!checked && !items.length) {
+    // Setup rows come first, and wait for no check.
+    const setupRows = setup.rows();
+    if (!checked && !items.length && !setupRows.length) {
       const busy = node("p", "inbox__empty", "Checking pages…");
       busy.setAttribute("aria-busy", "true");
       into.replaceChildren(title, busy);
       keep();
       return;
     }
-    if (!items.length) {
+    if (!items.length && !setupRows.length) {
       const done = node("p", "inbox__empty");
       done.append(icon("check", 16), "All done");
       into.replaceChildren(title, done);
@@ -393,6 +400,7 @@ export function createInboxList(ports: InboxPorts) {
       return;
     }
     const list = node("ul", "inbox__list"), found = session;
+    list.append(...setupRows);
     for (const item of items) {
       const row = node("li", "inbox__row"), state = fixes.state(item.key);
       row.dataset.key = item.key;
