@@ -1,5 +1,9 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>Prototype · Select and move elements together · Today / After</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1" name="viewport">
+<meta content="light dark" name="color-scheme"><title>Prototype · Select and move elements together · Today / After</title>
 <!-- Planning prototype only. Inline, offline, fake data; no application source changes.
  Shell, theme tokens and catalogue parts adapted from atomic-catalogue/prototypes/51-page-structure.html
  and 59-command-palette.html. Baseline: November audit at f2dfe9d27. -->
@@ -137,7 +141,7 @@ input:user-invalid { box-shadow: inset 0 -2px var(--danger-fg); }
 .code { font: var(--type-small)/1.7 var(--font-mono); background: var(--surface-subtle); padding: var(--space-m); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
 [popover], dialog { border: 0; color: var(--text); background: var(--surface); border-radius: var(--radius-panel); box-shadow: var(--shadow); padding: var(--space-s); inline-size: min(24rem, calc(100vw - var(--space-l))); max-block-size: calc(100dvh - var(--space-l)); overflow: auto; }
 [popover] { margin: 0; inset: auto; }
-@supports (position-area: block-end) { [popover] { position-area: block-end span-inline-end; position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline; margin-block-start: var(--space-xs); } }
+@supports (position-area: block-end) { [popover] { position-area: block-end span-inline-end; position-try-fallbacks: flip-inline, flip-block, flip-inline flip-block; margin-block-start: var(--space-xs); } }
 [popover] h2, dialog h2 { margin-block-end: var(--space-s); }
 .p-menu-item { display: flex; align-items: center; gap: var(--space-xs); inline-size: 100%; min-block-size: var(--size-control); text-align: start; border: 0; background: transparent; padding: var(--space-xs); border-radius: var(--radius); }
 .p-menu-item span:last-child { margin-inline-start: auto; color: var(--muted); }
