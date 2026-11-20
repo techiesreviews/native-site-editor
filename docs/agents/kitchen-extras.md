@@ -59,7 +59,7 @@ This editor's own facts for the shared rulebook ([`docs/kitchen.md` in the kit r
   `scripts/agents/kit release-check && wrangler deploy --config wrangler.techies.jsonc`: a changed or
   untracked file, or a HEAD that is not exactly `origin/main`, stops it before wrangler runs. In an
   emergency a lead runs `scripts/agents/kit release-check --waive "<reason>"` and then
-  `wrangler deploy --config wrangler.techies.jsonc` by hand. `npm run deploy:preview` runs no check.
+  `npx wrangler deploy --config wrangler.techies.jsonc` by hand. `npm run deploy:preview` runs no check.
 
 ## The starter
 
