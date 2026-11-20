@@ -22,8 +22,8 @@ export interface Notices {
   announce(text: string): void;
 }
 
-/** Which load is open: its stamps, the next load and the shown drafts' scope (src/workspace-session.ts). */
-export interface Session extends Pick<WorkspaceSession, "begin" | "current"> {
+/** Which load is open: its stamps, the next load, the shown drafts' scope and how often a scope was opened (src/workspace-session.ts). */
+export interface Session extends Pick<WorkspaceSession, "begin" | "current" | "visits"> {
   /** Starts the next load of `scope` and returns its stamp; every stamp before it stops holding. */
   nextLoad(scope?: WorkspaceScope): SessionStamp;
   currentLoad(): number;

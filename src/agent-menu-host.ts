@@ -14,7 +14,8 @@ import type { createNativePreview } from "./components/native-preview";
 import type { createAgentMenu } from "./components/agent-menu";
 import type { createPageStructureController } from "./controllers/page-structure-controller";
 import type { MediaPin } from "./controllers/media-controller";
-import { draftStore, type DraftScope } from "./drafts";
+import { draftStore } from "./drafts";
+import type { Session } from "./host-modules";
 import type { GuardedEdits } from "./guarded-edit";
 import { withSiteIndexed, type SiteIndexGate } from "./native-boot";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
@@ -32,28 +33,29 @@ export interface AgentMenuPorts {
   guardedEdits: Pick<GuardedEdits, "stamp">;
   cleanSources: Pick<CleanSourceCache, "get">;
   setupController: Pick<ReturnType<typeof createSetupHost>["setupController"], "noteAgent">;
-  pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "renderEditBar">;
-  mediaPorts: { pin?(): MediaPin | undefined };
-  workspace: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
-  nativeTextIndexGate: SiteIndexGate;
   /** An agent's question shows on its request's element; get_site tells who works on what; the menu lists and stops them. */
   agentPresence: Pick<ReturnType<typeof createAgentPresence>, "questions" | "onPin" | "colour" | "atWork" | "agents" | "stop" | "stopped" | "heard" | "listen">;
   /** Host state, read at call time. */
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "route" | "setRequests" | "showRequest"> | undefined;
-  api: AgentReadFiles["api"];
-  readFile: AgentReadFiles["read"];
-  readFiles: AgentReadFiles["batch"];
   loadAgentSite: AgentSiteHostPorts["load"];
-  draftScope: () => DraftScope | undefined;
-  nativeRouteInfo: (route: string, site: NonNullable<ReturnType<typeof createNativeSiteRuntime>["site"]>) => { title?: string; description?: string };
-  pathNow: (path: string) => string | undefined;
+  // The shared host modules (src/host-modules.ts) and the hosts handed over whole, as much of each as the menu reads.
+  session: Pick<Session, "draftScope">;
+  repo: { api: AgentReadFiles["api"]; readFile: AgentReadFiles["read"]; readFiles: AgentReadFiles["batch"] };
+  preview: { nativeRouteInfo: (route: string, site: NonNullable<ReturnType<typeof createNativeSiteRuntime>["site"]>) => { title?: string; description?: string } };
+  textIndex: { nativeTextIndexGate: SiteIndexGate };
+  /** The workspace screen's parts (src/workspace-mount.ts). */
+  panels: Pick<ReturnType<typeof createWorkspaceMount>, "activeFileContext" | "repositoryMenu">;
+  pageBuilder: { pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "renderEditBar"> };
+  media: { mediaPorts: { pin?(): MediaPin | undefined } };
+  pagesAndFiles: { pathNow: (path: string) => string | undefined };
 }
 
 /** The menu's options for each mount (src/controllers/agent-controller.ts), its commands run by `agentCommands`. */
 export function agentMenuOptions(ports: AgentMenuPorts, agentCommands: Pick<ReturnType<typeof createAgentCommands>, "apply" | "reload">) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
-  const { appStore, runtime, guardedEdits, cleanSources, setupController, pageStructureController, mediaPorts, workspace,
-    nativeTextIndexGate, agentPresence, api, readFile, readFiles, loadAgentSite, draftScope, nativeRouteInfo, pathNow } = ports;
+  const { appStore, runtime, guardedEdits, cleanSources, setupController, agentPresence, loadAgentSite, panels: workspace } = ports;
+  const { draftScope } = ports.session, { api, readFile, readFiles } = ports.repo, { nativeRouteInfo } = ports.preview;
+  const { nativeTextIndexGate } = ports.textIndex, { pageStructureController } = ports.pageBuilder, { mediaPorts } = ports.media, { pathNow } = ports.pagesAndFiles;
 
   // The pins of the requests last told, each named as the agent presence names it; told again when an agent acting
   // or stopped names one anew (ticket am-45), so the name shows without waiting for a request to change.

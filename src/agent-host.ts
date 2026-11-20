@@ -6,6 +6,7 @@
 
 import type { AgentPath, AgentPathPorts } from "./agent-path";
 import { createAgentController, type AgentMenuMount, type AgentMenuPort } from "./controllers/agent-controller";
+import type { Notices } from "./host-modules";
 import { lazyModule } from "./lazy-module";
 import type { AgentWho } from "../shared/agent";
 
@@ -14,7 +15,8 @@ type MenuOptions = ReturnType<AgentPath["menu"]> & AgentMenuMount;
 export interface AgentHostPorts extends AgentPathPorts {
   /** The agent menu's chunk (src/lazy-loaders.ts). */
   loadAgentMenu: () => Promise<{ createAgentMenu: (options: MenuOptions) => AgentMenuPort<HTMLElement> }>;
-  errorMessage: (error: unknown) => void;
+  /** What the editor says (src/host-modules.ts): a failed menu load shows as an error. */
+  notices: Pick<Notices, "errorMessage">;
   /** The command path's chunk; a test may pass its own. */
   loadPath?: () => Promise<typeof import("./agent-path")>;
 }
@@ -35,7 +37,7 @@ export function createAgentHost(ports: AgentHostPorts) {
       const [{ createAgentMenu }, made] = await Promise.all([ports.loadAgentMenu(), loadPath()]);
       return { createAgentMenu: (mount: AgentMenuMount) => createAgentMenu({ ...made.menu(), ...mount }) };
     },
-    onError: ports.errorMessage,
+    onError: error => ports.notices.errorMessage(error),
   });
 
   /** The agent's commands as the editor reads them: the path's once it has loaded; before, nothing acts and nothing
@@ -43,12 +45,12 @@ export function createAgentHost(ports: AgentHostPorts) {
   const agentCommands = {
     acting: () => path?.commands.acting() ?? false,
     undo: (ids: readonly string[], grant: string | undefined) => {
-      const scope = ports.draftScope();
+      const scope = ports.session.draftScope();
       return loadPath().then(made => made.commands.undo(ids, grant, scope));
     },
     undoable: (ids: readonly string[] | undefined, grant: string | undefined) => path?.commands.undoable(ids, grant),
     undoLatest: (who: AgentWho, page: string, change: string) => {
-      const scope = ports.draftScope();
+      const scope = ports.session.draftScope();
       return loadPath().then(made => made.commands.undoLatest(who, page, change, scope));
     },
     latestUndoable: (who: AgentWho, page: string) => path?.commands.latestUndoable(who, page),
