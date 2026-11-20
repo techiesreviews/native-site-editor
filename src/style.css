@@ -636,7 +636,7 @@ dd {
   display: grid;
   align-content: center;
   justify-items: center;
-  padding: 32px 16px max(48px, env(safe-area-inset-bottom));
+  padding: calc(var(--space-l) + var(--space-xs)) var(--space-m) max(calc(var(--space-l) * 2), env(safe-area-inset-bottom));
   text-align: center;
   background:
     radial-gradient(60% 50% at 15% 0%, var(--current), transparent 70%),
@@ -647,33 +647,34 @@ dd {
   align-items: center;
   block-size: 28px;
   margin: 0;
-  padding-inline: 12px;
+  padding-inline: var(--space-s);
+  border: 1px solid var(--line);
   border-radius: var(--radius-full);
   background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
   color: var(--primary);
   font-size: var(--type-small);
   font-weight: 600;
 }
 .welcome-page h1 {
-  margin: 16px 0 28px;
-  font-size: clamp(26px, 4.4vw, 40px);
+  margin: var(--space-m) 0 calc(var(--space-l) + var(--space-3xs));
+  font-size: clamp(var(--type-heading), 4.4vw, calc(var(--type-heading) * 2));
   font-weight: 750;
   letter-spacing: -0.03em;
   line-height: 1.15;
 }
 .welcome-page__choices {
   display: grid;
-  gap: 24px;
+  gap: var(--space-l);
   inline-size: min(100%, 408px);
   text-align: start;
 }
 .welcome-page__choice {
   display: grid;
-  padding: 12px;
-  border-radius: 18px;
+  padding: var(--space-s);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  box-shadow: var(--shadow);
 }
 .welcome-page__picture {
   aspect-ratio: 384 / 206;
@@ -692,15 +693,15 @@ dd {
 }
 .welcome-page__body {
   display: grid;
-  gap: 14px;
-  padding: 16px 8px 6px;
+  gap: var(--space-s);
+  padding: var(--space-m) var(--space-xs) var(--space-2xs);
 }
 .welcome-page h2 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-xs);
   margin: 0;
-  font-size: 18px;
+  font-size: var(--type-heading);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -710,8 +711,12 @@ dd {
 }
 .login-button {
   width: 100%;
-  --btn-min-block-size: var(--size-touch);
-  --btn-font-size: var(--type-title);
+}
+@layer components {
+  .login-button.button {
+    --btn-min-block-size: var(--size-touch);
+    --btn-font-size: var(--type-title);
+  }
 }
 .login-state {
   color: var(--muted);

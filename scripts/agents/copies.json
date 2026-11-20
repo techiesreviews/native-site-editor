@@ -1,6 +1,6 @@
 {
   "about": "Home-made look-alikes of the editor's parts per file (kinds in scripts/agents/copies.mjs). They may only go down: node scripts/agents/copies.mjs check. A lead raises them with update --waive.",
-  "totals": { "buttons": 51, "dialogs": 15, "buttonLooks": 26, "badgeLooks": 14, "dialogLooks": 13 },
+  "totals": { "buttons": 50, "dialogs": 15, "buttonLooks": 26, "badgeLooks": 13, "dialogLooks": 12 },
   "files": {
     "src/components/agent-menu.css": { "badgeLooks": 1 },
     "src/components/agent-menu.ts": { "buttons": 1 },
