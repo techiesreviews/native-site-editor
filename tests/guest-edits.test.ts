@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolveObjectURL } from "node:buffer";
 import test from "node:test";
 import { createGuestEdits, guestLinkPlan, guestSourcePaths, guestUploadFolder, sameGuestElement, type GuestEditsPorts } from "../src/guest-edits";
 import type { Outcome, PlanResult, Reads, Stamp } from "../src/guarded-edit";
@@ -69,6 +70,7 @@ const square = { shape: "square" as const, focus: { x: 20, y: 30 }, cut: { turn:
 function fake(over: Partial<GuestEditsPorts> = {}, current = page) {
   const calls: unknown[] = [];
   const proofs: unknown[] = [];
+  const thumbnailed: string[] = [];
   const ports: GuestEditsPorts = {
     site: () => ({ routes: { "/": "index.html", "/menu/": "menu.html", "/404/": "404.html" } }),
     source: path => ({ "index.html": current } as Record<string, string>)[path],
@@ -79,21 +81,24 @@ function fake(over: Partial<GuestEditsPorts> = {}, current = page) {
     },
     routeTitle: route => (route === "/" ? "Home" : undefined),
     pictures: () => ["images/bread.jpg", "images/cake.png"],
-    picture: async path => `data:${path}`,
+    pictureReader: async () => async path => new Blob([path], { type: "image/png" }),
     image: async (target, change, proof) => { calls.push(["image", target, change]); proofs.push(proof); return true; },
-    thumbnail: async url => `small:${url}`,
+    thumbnail: async url => { thumbnailed.push(url); return `small:${await resolveObjectURL(url)?.text()}`; },
     locate,
     ...over,
   };
-  return { edits: createGuestEdits(ports), calls, proofs };
+  return { edits: createGuestEdits(ports), calls, proofs, thumbnailed };
 }
 
 test("guests are offered the site's pages and pictures, and small copies only of the site's pictures", async () => {
-  const { edits } = fake();
+  const { edits, thumbnailed } = fake();
   const context = edits.context("index.html");
   assert.deepEqual(context.pictures, ["images/bread.jpg", "images/cake.png"]);
   assert.deepEqual(context.links.slice(0, 2), [{ label: "Home (/)", value: "/" }, { label: "/menu/", value: "/menu/" }]);
-  assert.deepEqual(await edits.pictures(["images/cake.png", "secret/notes.png"]), { "images/cake.png": "small:data:images/cake.png" });
+  // Read through Media's own reader (never the page's pictures, which the mirror sends guests), and let go once small.
+  assert.deepEqual(await edits.pictures(["images/cake.png", "secret/notes.png"]), { "images/cake.png": "small:images/cake.png" });
+  assert.equal(thumbnailed.length, 1);
+  assert.equal(resolveObjectURL(thumbnailed[0]!), undefined);
   assert.deepEqual(Object.keys(edits.sources("index.html")), ["index.html", "components/card.html"]);
 });
 

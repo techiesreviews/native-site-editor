@@ -26,8 +26,8 @@ export interface GuestEditsPorts {
   routeTitle(route: string): string | undefined;
   /** The site's pictures (branch and drafts). */
   pictures(): string[];
-  /** A picture's bytes as an address (the image popup's own reader). */
-  picture(path: string): Promise<string | undefined>;
+  /** A reader of pictures' bytes (Media's own) that leaves the page's pictures as they are, so the mirror sends guests none of them. */
+  pictureReader(): Promise<(path: string) => Promise<Blob>>;
   /** The image popup's write with no window: a focus and crop, another picture, or an upload saved with its place.
    * `proof`: the load and page the change was checked against; anything newer refuses. */
   image(target: { path: string; node: number[] }, change: ImagePopupApply, proof: { stamp: Stamp; source: string }): Promise<boolean>;
@@ -109,11 +109,16 @@ export function createGuestEdits(ports: GuestEditsPorts): GuestEditHandlers {
       }));
     },
     async pictures(paths) {
-      const known = new Set(ports.pictures()), found: Record<string, string> = {};
-      for (const path of paths.filter(path => known.has(path))) {
-        const url = await ports.picture(path).catch(() => undefined);
-        const small = url && await thumbnail(url).catch(() => undefined);
-        if (small) found[path] = small;
+      const known = new Set(ports.pictures()), found: Record<string, string> = {}, wanted = paths.filter(path => known.has(path));
+      const read = wanted.length ? await ports.pictureReader().catch(() => undefined) : undefined;
+      for (const path of read ? wanted : []) {
+        const blob = await read!(path).catch(() => undefined), url = blob && URL.createObjectURL(blob);
+        try {
+          const small = url && await thumbnail(url).catch(() => undefined);
+          if (small) found[path] = small;
+        } finally {
+          if (url) URL.revokeObjectURL(url);
+        }
       }
       return found;
     },
@@ -137,7 +142,7 @@ export function workspaceGuestEdits({ runtime, guardedEdits, preview, media }: P
   return createGuestEdits({
     site: () => runtime.site, source: path => runtime.source(path), sources: () => runtime.sources(), edits: guardedEdits,
     routeTitle: route => preview.nativeRouteInfo(route).title, pictures: () => media.nativeImagePaths(),
-    picture: async path => await media.mediaPorts.imagePopup?.picture(path),
+    pictureReader: async () => { const context = await media.mediaController.workspaceContext(); return path => context.blob(path); },
     image: (target, change, proof) => media.mediaController.guestImage(target, change, proof),
   });
 }

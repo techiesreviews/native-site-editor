@@ -31,7 +31,7 @@ import type { createBootController } from "./controllers/boot-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import type { createCommandPaletteController } from "./controllers/command-palette-controller";
 import type { createLinkedStylesController } from "./controllers/linked-styles-controller";
-import type { createMediaController, MediaControllerPorts } from "./controllers/media-controller";
+import type { createMediaController } from "./controllers/media-controller";
 import type { createPageStructureController } from "./controllers/page-structure-controller";
 import type { PreviewSelectionController } from "./controllers/preview-selection-controller";
 import { draftKey, type DraftScope } from "./drafts";
@@ -135,9 +135,9 @@ export interface WorkspaceMountPorts {
   view: Pick<View, "fileGeneration" | "setCurrentPage">;
   preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind" | "nativeRouteInfo">;
   textIndex: Pick<TextIndex, "noteNativePainted">;
-  /** Media's host (src/controllers/media-host.ts); its pictures and image popup also serve session guests' edit bars (TOOLS-185). */
-  media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage" | "guestImage">;
-    mediaPorts: Pick<MediaControllerPorts, "imagePopup">; nativeImagePaths(): string[] };
+  /** Media's host (src/controllers/media-host.ts); its pictures, reader and image popup also serve session guests' edit bars (TOOLS-185). */
+  media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage" | "guestImage" | "workspaceContext">;
+    nativeImagePaths(): string[] };
   pageBuilder: WorkspaceBuilderPorts;
   app: HTMLElement;
   element: <T extends HTMLElement>(id: string) => T;
