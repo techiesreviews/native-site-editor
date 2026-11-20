@@ -22,11 +22,6 @@ interface Selected extends Target { tag: string; link: string | undefined; rect:
 
 /** Photos only: a drawing (SVG) can carry a script (src/guest-changes.ts). */
 const ACCEPT = [...new Set(Object.values(guestPhotoTypes))].join(",");
-/** How long a change waits for Lex's tab to write it, counted from the last part of its upload his tab said arrived
- * (TOOLS-385): a slow upload that keeps arriving is waited for. */
-const ANSWER_MS = 60_000;
-/** How long a change waits for its first part to arrive: the time for one 512 KiB part (src/live-wire.ts) at about 3 KB/s. */
-const FIRST_PART_MS = 180_000;
 const SOURCES_MS = 10_000;
 const MEASURE_MS = 8_000;
 const WANT_MS = 15_000;
@@ -100,10 +95,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let refusedLater: string | undefined;
   let linkRefused: string | undefined;
 
-  // Every change is patient (one queued behind an upload waits as its parts arrive); only an upload, which travels in
-  // parts, gives its first part longer.
-  const write = async (change: GuestChange, on = selectedSeen) => (await asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: on }),
-    ANSWER_MS, change.kind === "upload" ? FIRST_PART_MS : ANSWER_MS)) === true;
+  // How long each change waits is the asks' (src/guest-asks.ts): a slow upload that keeps arriving is waited for.
+  const write = (change: GuestChange, on = selectedSeen) => asks.change(change, on);
   const sources = () => asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), SOURCES_MS);
   /** The selected element still is `target`, on the page Lex shows. */
   const still = (target: Target) => !closed && key(selected) === key(target) && context?.path === target.path;
