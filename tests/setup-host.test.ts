@@ -6,6 +6,7 @@ import { signal } from "@preact/signals-core";
 import type { SetupWizardOptions } from "../src/components/setup-wizard.ts";
 import type { createStartSite } from "../src/components/start-site.ts";
 import type { SetupHostPorts } from "../src/setup-host.ts";
+import { readSetupMemory } from "../src/setup-checklist.ts";
 import { createWorkspaceSession } from "../src/workspace-session.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 import { NATIVE_CONFIG_PATH } from "../shared/native-project.ts";
@@ -353,16 +354,14 @@ test("the wizard's last step opens the repository it made, even before GitHub li
 });
 
 test("a site picked from Use a site you have opens without setup steps; a site the wizard made gets them", async () => {
-  const key = `native-site-editor:setup:${JSON.stringify(["lex", 5])}`;
   for (const made of [false, true]) {
-    localStorage.removeItem(key);
     const f = fixture();
     await f.setup.setupEntry.open();
     f.listed([repository(5, "bakery")]);
     f.wizards[0].finish({ id: 5, name: "bakery", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0], made);
     await flush();
     assert.equal(replaced.at(-1), "#repo=5&branch=main");
-    assert.equal(localStorage.getItem(key) !== null, made, `made: ${made}`);
+    assert.equal(readSetupMemory(localStorage, "lex", 5).auto === true, made, `made: ${made}`);
   }
 });
 
