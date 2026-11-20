@@ -202,7 +202,9 @@ export async function startSharing(ports: SharePorts) {
   // A message counts only from a guest's own socket, as the relay names it: never from someone claiming their id.
   // A guest stays known while the relay holds their socket, though shown gone: their heartbeats wait behind a slow
   // upload, and the upload still counts (TOOLS-385).
-  const guestOf = (sender: Sender) => sender.access === "guest" ? guests.find((guest) => guest.peer === sender.peer) ?? known.get(sender.peer) : undefined;
+  const guestOf = (sender: Sender) => sender.access === "guest"
+    ? guests.find((guest) => guest.peer === sender.peer) ?? known.get(sender.peer)
+    : undefined;
   const written = (message: Extract<GuestMessage, { t: "edit" }>, sender: Sender) => {
     const from = guestOf(sender);
     if (!from || !message.edit || typeof message.seq !== "number" || typeof message.session !== "number") return;

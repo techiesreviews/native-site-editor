@@ -361,12 +361,12 @@ test("Lex's tab tells a guest each part of their upload that arrived, so their w
   (await session.started).stop();
 });
 
-test("a guest whose presence is queued behind their upload still counts while their socket is open (TOOLS-385)", async () => {
+for (const order of ["presence first", "members first"]) test(`a guest whose presence is queued behind their upload still counts while their socket is open, ${order} (TOOLS-385)`, async () => {
   const room = heard();
   const session = await fakeSession({ ...rendering(), guestTextEdit: async () => true, refresh() {}, ...guestEdits({ change: async () => true }) }, () => true, { send: room.send });
   await session.started;
-  anna(session);
-  session.options.onMembers!(new Map([["p1", "guest"], ["p2", "editor"]]));
+  const members = () => session.options.onMembers!(new Map([["p1", "guest"], ["p2", "editor"]]));
+  if (order === "presence first") { anna(session); members(); } else { members(); anna(session); }
   await settle();
   // Anna's heartbeats wait behind her upload: her tab shows her gone, yet the relay still holds her socket.
   session.options.onPeers!(new Map([["p2", { access: "editor", state: { name: "Sam", guest: "d".repeat(32) } }]]));
