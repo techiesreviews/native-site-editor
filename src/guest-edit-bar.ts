@@ -100,8 +100,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let refusedLater: string | undefined;
   let linkRefused: string | undefined;
 
-  const write = async (change: GuestChange, on = selectedSeen) =>
-    (await asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: on }), ANSWER_MS, FIRST_PART_MS)) === true;
+  // Every change is patient (one queued behind an upload waits as its parts arrive); only an upload, which travels in
+  // parts, gives its first part longer.
+  const write = async (change: GuestChange, on = selectedSeen) => (await asks.ask<boolean>((ask) => ({ t: "change", change, ask, seen: on }),
+    ANSWER_MS, change.kind === "upload" ? FIRST_PART_MS : ANSWER_MS)) === true;
   const sources = () => asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), SOURCES_MS);
   /** The selected element still is `target`, on the page Lex shows. */
   const still = (target: Target) => !closed && key(selected) === key(target) && context?.path === target.path;

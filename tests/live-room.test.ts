@@ -1142,6 +1142,7 @@ test("Miniflare: a synced session's routes mint signed tokens, keep made-up ones
     // Only a guest is routed: the sharing tab's own address, or an editor's identity at the relay, is refused with it.
     assert.equal((await worker.dispatchFetch(`${shareUrl(session, host)}&routed=1`, { headers: { Upgrade: "websocket", Origin: origin, Cookie: anna.cookie } })).status, 400);
     const namespace = await worker.getDurableObjectNamespace("SESSIONS");
+    // Any instance will do: the identity is checked before the instance is used for anything.
     const store = namespace.get(namespace.idFromName("routed-identity"));
     const joinAs = (identity: Record<string, unknown>) =>
       store.fetch("https://session.internal/live/join", { headers: { Upgrade: "websocket", [LiveRooms.identityHeader]: JSON.stringify({ room: "a".repeat(64), ...identity }) } });
