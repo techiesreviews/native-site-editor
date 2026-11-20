@@ -8,8 +8,19 @@ import type { SetupRow } from "../setup-checklist";
 import type { InboxPorts } from "./inbox-host";
 
 export function createInboxSetup(setup: InboxPorts["setup"], panel: { hide(): void; redraw(): void; error(error: unknown): void }) {
-  // The name form: open or not, what was typed (kept across redraws), saving, and why a save was refused.
+  // The name form: open or not, what was typed (kept across redraws), saving, and why a save was refused. It belongs
+  // to the site it was drawn for (`site`); another site starts it afresh (`visit` counts them), and a save that ends
+  // after the switch changes nothing.
   let open = false, saving = false, typed: string | undefined, refused: string | undefined;
+  let site: string | undefined, visit = 0;
+
+  function follow() {
+    const now = setup.scope();
+    if (now === site) return;
+    site = now;
+    visit++;
+    open = false; saving = false; typed = undefined; refused = undefined;
+  }
 
   function nameForm() {
     const form = node("form", "inbox__form");
@@ -35,13 +46,15 @@ export function createInboxSetup(setup: InboxPorts["setup"], panel: { hide(): vo
       saving = true;
       refused = undefined;
       panel.redraw();
+      const asked = visit;
       void setup.saveName(name).then(problem => {
+        if (asked !== visit) return;
         saving = false;
         refused = problem;
         // Saved: the row goes with the next refresh of setup; the form closes with it.
         if (!problem) { open = false; typed = undefined; }
         panel.redraw();
-      }, error => { saving = false; panel.redraw(); panel.error(error); });
+      }, error => { if (asked !== visit) return; saving = false; panel.redraw(); panel.error(error); });
     });
     const field = node("div", "inbox__name");
     field.append(label, input);
@@ -79,6 +92,7 @@ export function createInboxSetup(setup: InboxPorts["setup"], panel: { hide(): vo
   return {
     /** The setup rows still open, first in the Inbox's list. */
     rows(): HTMLLIElement[] {
+      follow();
       return setup.items.value.map(id => {
         const row = rows[id]();
         row.dataset.key = `setup:${id}`;

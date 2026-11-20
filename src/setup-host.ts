@@ -230,7 +230,7 @@ export function createSetupHost(ports: SetupHostPorts) {
       loadPreview: wizardPreview,
       // Loaded with the wizard (loadWizard).
       agentPrompt: (choice, about) => ports.agentPrompts?.setupPrompt({ editor: location.origin, installUrl: ports.info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }) ?? "",
-      finish: repo => void finishWizard(repo),
+      finish: (repo, made) => void finishWizard(repo, made),
     },
     onExit: () => showWelcome(),
   });
@@ -283,10 +283,10 @@ export function createSetupHost(ports: SetupHostPorts) {
     ports.app.insertBefore(banner, document.querySelector(".workspace"));
   }
 
-  /** The last step: the editor opens on the new repository, and the Setup checklist takes over. */
-  async function finishWizard(repo: WizardRepo) {
+  /** The editor opens on the repository; one the wizard made gets its setup steps in the Inbox, one the account had does not. */
+  async function finishWizard(repo: WizardRepo, made: boolean) {
     setupEntry.complete();
-    setupController.start(repo.id);
+    if (made) setupController.start(repo.id);
     history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
     // GitHub may not list a repository it has just made yet: the one made here is added.
     const listed = await ports.boot.fetchList(true).catch(() => ports.repositories);

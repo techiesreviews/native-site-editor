@@ -333,7 +333,7 @@ test("the wizard's last step opens the repository it made when GitHub's list can
   f.setup.wizardCreated = made;
   f.repositories([repository(1)]);
   f.fetchWith(async () => { throw new Error("offline"); });
-  f.wizards[0].finish({ id: 5, name: "new-site", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0]);
+  f.wizards[0].finish({ id: 5, name: "new-site", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0], true);
   await flush();
   assert.deepEqual(f.loads, [[repository(1), made]]);
 });
@@ -345,11 +345,25 @@ test("the wizard's last step opens the repository it made, even before GitHub li
   const made = repository(5, "new-site");
   f.setup.wizardCreated = made;
   f.listed([repository(1)]);
-  f.wizards[0].finish({ id: 5, name: "new-site", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0]);
+  f.wizards[0].finish({ id: 5, name: "new-site", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0], true);
   await flush();
   assert.deepEqual(replaced, ["#repo=5&branch=main"]);
   assert.deepEqual(f.loads, [[repository(1), made]]);
   assert.equal(f.setup.setupEntry.dismissed(), true);
+});
+
+test("a site picked from Use a site you have opens without setup steps; a site the wizard made gets them", async () => {
+  const key = `native-site-editor:setup:${JSON.stringify(["lex", 5])}`;
+  for (const made of [false, true]) {
+    localStorage.removeItem(key);
+    const f = fixture();
+    await f.setup.setupEntry.open();
+    f.listed([repository(5, "bakery")]);
+    f.wizards[0].finish({ id: 5, name: "bakery", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0], made);
+    await flush();
+    assert.equal(replaced.at(-1), "#repo=5&branch=main");
+    assert.equal(localStorage.getItem(key) !== null, made, `made: ${made}`);
+  }
 });
 
 test("a starting point write is refused when the repository changed while the actions loaded", async () => {

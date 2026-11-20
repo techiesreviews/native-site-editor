@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSetupChecklistController } from "../src/controllers/setup-checklist-controller.ts";
 import { readSetupMemory, writeSetupMemory } from "../src/setup-checklist.ts";
+import { forEachAwait } from "./support/await-race.ts";
 
 // Connect an agent looks for the project menu's entry to light; there is none here.
 (globalThis as { document?: unknown }).document ??= { querySelector: () => null, getElementById: () => null };
@@ -105,4 +106,31 @@ test("Connect an agent opens the project menu once the agent tools are ready, un
   const late = f.controller.connectAgent();
   f.controller.dispose(); ready(); await late;
   assert.equal(f.opens(), 1);
+});
+
+test("a switch to another site while Connect an agent or Save name waits opens no menu and marks no site named", async () => {
+  const awaits = await forEachAwait(race => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) };
+    const site = { repo: { id: 1 }, scope: "lex/1/main", menu: { trigger: {} as HTMLElement, open: () => { opened.push(site.scope); } } };
+    const opened: string[] = [];
+    const controller = createSetupChecklistController({
+      account: () => "lex", repository: () => site.repo, scope: () => site.scope, site: () => ({ siteName: "My site", defaultName: "My site" }),
+      menu: () => site.menu, connected: () => false, storage, onError: error => { throw error; },
+      ensureAgent: race.port("ensureAgent", async () => {}),
+      saveName: race.port("saveName", async (_name: string) => undefined),
+    });
+    controller.start(1); controller.start(2);
+    const done = Promise.all([controller.connectAgent(), controller.saveName("My site")]);
+    return { site, storage, opened, done };
+  }, run => {
+    run.site.repo = { id: 2 };
+    run.site.scope = "lex/2/main";
+    run.site.menu = { ...run.site.menu, open: () => { run.opened.push("lex/2/main"); } };
+  }, run => {
+    assert.deepEqual(run.opened, []);
+    assert.equal(readSetupMemory(run.storage, "lex", 1).named, undefined);
+    assert.equal(readSetupMemory(run.storage, "lex", 2).named, undefined);
+  });
+  assert.equal(awaits, 2);
 });
