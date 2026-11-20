@@ -56,3 +56,10 @@ RESULT: skip second look (gpt-6.1-sol not used: docs-only change)
 The 88-state / 44-keyboard-flow matrix passed again after these implementation fixes. Lint, standalone TypeScript checking of the shell test, JavaScript parsing and the skill guard also passed. The next Opus review checks the final diff and closes or retains the prior finding IDs; its result and the open-PR/CI results are in the PR handover.
 
 The second round-two review (`20261120T010036Z`) identified additive-selection toggling and Remove cancellation focus. Both now have browser regressions and are fixed. The selected tree row scrolls into view within its own panel on phones; the document stays in place. Phone slot hit areas grow around the original slim pill, and walkthrough buttons retain 44 px height.
+
+The final round-two review (`20261120T011657Z`) found that rerendering reset the phone tree scroll and Space deselection moved focus. Focus is now tracked independently from selection, the tree restores its scroll before revealing a row, and the Menu slot matches adjacent navigation padding. Added browser checks first failed 25/28 and now pass 28/28; the short-viewport popup check also proves it exercised the constraint fallback before reopening.
+
+```text
+RESULT: fail prototype-regressions 25/28
+RESULT: ok prototype-regressions 28/28
+```
