@@ -38,12 +38,12 @@ const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const fake = (element: HTMLElement) => element as unknown as FakeElement;
 
 function fixture() {
-  let site = "lex/bakery/main", answer!: (problem: string | undefined) => void;
+  let site = "lex/bakery/main", answer!: (problem: string | undefined) => void, fail!: (error: Error) => void;
   const errors: unknown[] = [];
   const setup = {
     items: signal<readonly SetupRow[]>(["name"]),
     siteName: () => site.split("/")[1],
-    saveName: () => new Promise<string | undefined>(resolve => { answer = resolve; }),
+    saveName: () => new Promise<string | undefined>((resolve, reject) => { answer = resolve; fail = reject; }),
     connectAgent: async () => {},
     scope: () => site,
   };
@@ -55,6 +55,7 @@ function fixture() {
     errors, redraw,
     switchTo(next: string) { site = next; },
     answer: (problem: string | undefined) => answer(problem),
+    fail: (error: Error) => fail(error),
     toggle: () => find(element => element.dataset.act === "go")!.listeners.get("click")!(),
     input: () => find(element => element.dataset.act === "name"),
     save: () => find(element => element.dataset.act === "save"),
@@ -80,6 +81,7 @@ test("a refused name keeps the form open with what was typed, Save name ready ag
   assert.deepEqual(f.errors, []);
 });
 
+// Saving waits once (on saveName), so the switch is made by hand at that one await rather than through forEachAwait.
 test("on another site the form starts closed and empty, and a save that ends after the switch changes nothing", async () => {
   const f = fixture();
   f.redraw();
@@ -97,4 +99,18 @@ test("on another site the form starts closed and empty, and a save that ends aft
   assert.equal(f.input()!.value, "florist");
   assert.equal(f.save()!.textContent, "Save name");
   assert.equal(f.refused(), undefined);
+});
+
+test("a save that fails after a switch to another site shows no error there and leaves its form closed", async () => {
+  const f = fixture();
+  f.redraw();
+  f.toggle();
+  f.submit();
+  f.switchTo("lex/florist/main");
+  f.redraw();
+  f.fail(new Error("GitHub did not answer."));
+  await flush();
+  f.redraw();
+  assert.deepEqual(f.errors, []);
+  assert.equal(f.input(), undefined);
 });

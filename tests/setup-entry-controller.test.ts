@@ -14,6 +14,7 @@ function fixture() {
   const loads: ReturnType<typeof deferred<Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>>>[] = [];
   const connection = deferred<Connection>();
   const options: SetupWizardOptions[] = [];
+  const finished: [number, boolean][] = [];
   const module = { createSetupWizard: (value: SetupWizardOptions) => { options.push(value); return { root: {} as HTMLDivElement, focus: () => { focuses++; }, destroy: () => { destroys++; } }; } } satisfies Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>;
   const controller = createSetupEntryController({
     login: () => login, ownerSetupUrl: () => owner, repositoryCount: () => count,
@@ -21,9 +22,9 @@ function fixture() {
     writeMemory: change => { writes++; return { step: "connect", ...change, at: 0 }; }, clearMemory: () => { clears++; },
     loadWizard: () => { const load = deferred<Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>>(); loads.push(load); return load.promise; },
     append: () => { mounts++; }, onExit: () => { exits++; },
-    actions: { loadOwners: async () => [], create: async () => ({ ok: false, message: "Unused" }), findRepository: async () => undefined, agentPrompt: () => "", finish: () => {} },
+    actions: { loadOwners: async () => [], create: async () => ({ ok: false, message: "Unused" }), findRepository: async () => undefined, agentPrompt: () => "", finish: (repo, made) => { finished.push([repo.id, made]); } },
   });
-  return { controller, options, loads, connection, load: (index = 0) => loads[index].resolve(module), counters: () => ({ mounts, focuses, destroys, writes, clears, exits }), login: (value: string | undefined) => { login = value; }, repositories: () => { count = 1; }, noHint: () => { hint = undefined; }, owner: (value: string) => { owner = value; } };
+  return { controller, options, finished, loads, connection, load: (index = 0) => loads[index].resolve(module), counters: () => ({ mounts, focuses, destroys, writes, clears, exits }), login: (value: string | undefined) => { login = value; }, repositories: () => { count = 1; }, noHint: () => { hint = undefined; }, owner: (value: string) => { owner = value; } };
 }
 
 test("same account restart shares loading and mounts/focuses exactly once", async () => {
@@ -33,6 +34,16 @@ test("same account restart shares loading and mounts/focuses exactly once", asyn
   assert.equal(f.loads.length, 1);
   assert.equal(f.counters().mounts, 1); assert.equal(f.counters().focuses, 1);
   f.controller.remove(); assert.equal(f.counters().destroys, 1);
+});
+
+test("the wizard's finish reaches the editor with whether the wizard made the site", async () => {
+  const f = fixture(), pending = f.controller.open();
+  f.load(); await pending;
+  const repo = { id: 5, name: "bakery", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0];
+  f.options[0].finish(repo, false);
+  f.options[0].finish(repo, true);
+  assert.deepEqual(f.finished, [[5, false], [5, true]]);
+  f.controller.remove();
 });
 
 test("removal invalidates late mounting without clearing a newer pending load", async () => {
