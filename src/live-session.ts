@@ -27,10 +27,7 @@ import { b64u, sessionWire } from "./live-wire";
 // The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
 export { importSessionKey, randomId, sessionWire } from "./live-wire";
 import type { GuestContext, GuestEditHandlers, GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
-import { GUEST_REASON_CHARS, guestPicturePath, readGuestChange, type GuestChange, type GuestPageChange } from "./guest-changes";
-
-/** Why a guest's change was not written when Lex's editor shows another page than the one it was made on. */
-const GUEST_OTHER_PAGE = "Lex's editor is on another page now.";
+import { GUEST_OTHER_PAGE, GUEST_REASON_CHARS, guestPicturePath, guestReason, readGuestChange, type GuestChange, type GuestPageChange } from "./guest-changes";
 import type { PageTextCaret } from "./components/page-caret-port";
 import type { SessionCaret } from "./live-session-carets";
 
@@ -253,7 +250,7 @@ export async function startSharing(ports: SharePorts) {
       if (ports.preview()?.guestShown?.()?.path !== change.path) { answer(false, GUEST_OTHER_PAGE); return; }
       const written = await loadEdits()
         .then((loaded) => !ended && ports.holds() && loaded ? loaded.change(held, seen.source) : undefined)
-        .catch((error: unknown) => error instanceof Error && error.message ? error.message : undefined);
+        .catch((error: unknown) => guestReason(error));
       answer(written === true, typeof written === "string" ? written : undefined);
     });
   };

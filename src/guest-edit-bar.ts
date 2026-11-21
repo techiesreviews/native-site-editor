@@ -13,7 +13,8 @@ import type { ImagePopupHost } from "./page-builder/image-popup";
 import type { MediaPickerHost } from "./page-builder/media-picker";
 import type { TextSizeScale } from "./native-text-size";
 import { createGuestAsks } from "./guest-asks";
-import { GUEST_NOT_KEPT, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange, type GuestHeadingLevel } from "./guest-changes";
+import { GUEST_NOT_KEPT, GUEST_OTHER_PAGE, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange, type GuestHeadingLevel } from "./guest-changes";
+import { blobOfDataUrl } from "./native-assets";
 import { nativeKindLabel } from "./native-structure";
 import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
 import { GUEST_PICTURES_MAX, type GuestMessage, type HostMessage } from "./live-session";
@@ -29,6 +30,8 @@ const NOT_A_PHOTO = "Only a photo can be added here.";
 const SOURCES_MS = 10_000;
 const MEASURE_MS = 8_000;
 const WANT_MS = 15_000;
+// Text being typed re-renders the page often: its size and bold are read again once renders pause this long.
+const REREAD_MS = 1_200;
 const LEVELS: GuestHeadingLevel[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
 
 const key = (target: Target | undefined) => target ? `${target.path}#${target.node.join(".")}` : "";
@@ -40,16 +43,6 @@ function base64(file: File) {
     reader.onerror = () => reject(reader.error ?? new Error("The file could not be read."));
     reader.readAsDataURL(file);
   });
-}
-
-/** A picture sent as a data: address, as bytes: the page may not fetch data: or blob: addresses (public/_headers). */
-function dataBlob(url: string) {
-  const comma = url.indexOf(","), head = url.slice(0, comma);
-  if (!url.startsWith("data:") || comma < 0) return undefined;
-  const type = /^data:([^;,]*)/.exec(head)?.[1] ?? "";
-  const body = url.slice(comma + 1);
-  const text = head.endsWith(";base64") ? atob(body) : decodeURIComponent(body);
-  return new Blob([Uint8Array.from(text, (char) => char.charCodeAt(0))], { type });
 }
 
 /** The text sizes Lex's tab sent, as far as they are well formed (a message is never trusted as typed). */
@@ -122,16 +115,28 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
   let text: { key: string; size?: string; bold?: boolean } | undefined;
   let reading = 0;
+  let reread: ReturnType<typeof setTimeout> | undefined;
+  // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and
+  // takes no other until Lex's tab answers.
+  let sending: string | undefined;
+  // A refusal is read out too: the bar's warning is one more button in the toolbar.
+  const status = document.createElement("p");
+  status.className = "sr-only";
+  status.setAttribute("role", "status");
+  canvas.append(status);
 
   // How long each change waits is the asks' (src/guest-asks.ts): a slow upload that keeps arriving is waited for.
   const write = (change: GuestChange, on = selectedSeen) => asks.change(change, on);
   const sources = () => asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), SOURCES_MS);
   /** The selected element still is `target`, on the page Lex shows. */
   const still = (target: Target) => !closed && key(selected) === key(target) && context?.path === target.path;
+  /** Why a change for `target` can no longer be sent: Lex's editor shows another page, or the selection moved. */
+  const stale = (target: Target) => context?.path !== target.path ? GUEST_OTHER_PAGE : still(target) ? undefined : GUEST_NOT_KEPT;
   /** A change's answer for `target`: why it was not written shows on the bar; a written one clears the last refusal. */
   const answered = (target: Target, reason: string | undefined) => {
     if (closed || key(selected) !== key(target) || reason === refused) return;
     refused = reason;
+    status.textContent = reason ?? "";
     render();
   };
 
@@ -152,7 +157,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     return new Promise<string | undefined>((resolve) => {
       const list = waiting.get(path) ?? new Set();
       waiting.set(path, list);
-      const done = (url: string | undefined) => { clearTimeout(timer); list.delete(done); resolve(url); };
+      const done = (url: string | undefined) => {
+        clearTimeout(timer);
+        list.delete(done);
+        if (!list.size && waiting.get(path) === list) waiting.delete(path);
+        resolve(url);
+      };
       const timer = setTimeout(() => done(undefined), WANT_MS);
       list.add(done);
       want([path]);
@@ -166,6 +176,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     // Lex's tab keeps the render the upload names while its bytes travel.
     send({ t: "hold", seen: on });
     const data = await base64(file);
+    if (closed) return undefined;
+    if (context?.path !== target.path) return GUEST_OTHER_PAGE;
     return await write({ kind: "upload", ...target, name: file.name, type: file.type, data }, on);
   }
 
@@ -175,8 +187,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   const library: MediaPickerHost = {
     load: async () => ({ key: "guest", collections: [], items: (context?.pictures ?? []).map((path) => ({ path })), metadata: {}, usage: {} }),
     blob: async (path) => {
+      // A picture sent as a data: address, as bytes: the page may not fetch data: or blob: addresses (public/_headers).
       const held = options.picture(path), url = held?.startsWith("data:") ? held : await thumbnail(path);
-      const blob = url && dataBlob(url);
+      const blob = url && blobOfDataUrl(url);
       if (!blob) throw new Error("That picture could not be shown.");
       return blob;
     },
@@ -200,13 +213,15 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       onPick: async (image, cancelled, held) => {
         // The change names the render the choice was made on.
         const on = selectedSeen, file = held?.chosen?.()?.request.file;
-        if (!still(target)) throw new Error(GUEST_NOT_KEPT);
+        const check = () => { const why = stale(target); if (why) throw new Error(why); };
+        check();
         if (!file) {
           // The picture already there is no change.
           const now = await sources().then((files) => files && pictureAt(files, target)).catch(() => undefined);
           if (now === image.path) return;
         }
         if (cancelled()) return;
+        check();
         const reason = file ? await upload(target, file, on) : await write({ kind: "picture", ...target, file: image.path }, on);
         if (reason) throw new Error(reason);
         answered(target, undefined);
@@ -292,7 +307,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       sources().catch(() => undefined), import("./native-text-size"), import("./whole-wrapper"),
     ]);
     const found = await elementAt(files, target);
-    if (ticket !== reading || !still(target)) return;
+    // A change on its way shows on the bar until it is answered, and the sources are read again then.
+    if (ticket !== reading || !still(target) || sending === key(target)) return;
     const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
     if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
     text = {
@@ -306,7 +322,20 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
   function textControls(at: Selected): EditBarControl[] {
     const controls: EditBarControl[] = [];
-    const change = (next: GuestChange) => { void write(next).then((reason) => answered(at, reason)); };
+    // One change at a time: the bar shows it at once, and Lex's sources are read again once it is answered.
+    const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
+      if (sending === key(at)) { render(); return; }
+      sending = key(at);
+      if (shown && text?.key === key(at)) {
+        text = { ...text, ...shown };
+        render();
+      }
+      void write(next).then((reason) => {
+        if (sending === key(at)) sending = undefined;
+        answered(at, reason);
+        if (still(at)) void readText(selected!);
+      });
+    };
     if (/^h[1-6]$/.test(at.tag)) controls.push({
       kind: "select", label: "Heading level",
       options: LEVELS.map((level) => ({ label: level.toUpperCase(), value: level })),
@@ -317,12 +346,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (state?.size !== undefined && scale) {
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, onChange: (size) => change({ kind: "size", ...at, size }) });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
     }
     if (state?.bold !== undefined) controls.push({
       kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold,
       className: "edit-bar__format edit-bar__format--strong",
-      onPress: () => change({ kind: "bold", ...at, on: !state.bold }),
+      onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
     });
     return controls;
   }
@@ -359,26 +388,32 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (here && at.tag !== "img") controls.push(...textControls(at));
     // Why the last change was not written, on the bar itself (a link says it on its address); pressing it hides it.
     if (refused && at.tag !== "a") controls.push({
-      kind: "button", label: refused, title: refused, className: "edit-bar__warning",
-      onPress: () => { refused = undefined; render(); },
+      kind: "button", label: refused, ariaLabel: `${refused} (dismiss)`, title: refused, className: "edit-bar__warning",
+      onPress: () => { refused = undefined; status.textContent = ""; render(); },
     });
     bar.show({ kind: nativeKindLabel(at.tag), controls }, at.rect);
   }
 
   function select(next: Selected | undefined) {
-    if (key(next) !== key(selected)) {
+    const moved = key(next) !== key(selected);
+    if (moved) {
       // What was open on the last selection is kept first (the popup's crop, a typed address), then the bar moves.
       popup?.cancel();
       bar.hide();
       draft = undefined;
       refused = undefined;
+      status.textContent = "";
       text = undefined;
     }
     // The runtime reports the selection again after each render it draws: its node is that render's.
     selected = next;
     selectedSeen = seen;
     render();
-    if (next && next.tag !== "img" && context?.path === next.path) void readText(next);
+    clearTimeout(reread);
+    if (!next || next.tag === "img" || context?.path !== next.path) return;
+    // A new selection is read at once; the same one, re-reported after a render, once renders pause (typing).
+    if (moved) void readText(next);
+    else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
   }
 
   const stops = [
@@ -436,6 +471,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     },
     close() {
       closed = true;
+      clearTimeout(reread);
+      // Tiles still waiting for a small copy get none.
+      for (const list of [...waiting.values()]) for (const done of [...list]) done(undefined);
+      status.remove();
       stops.forEach((stop) => stop());
       popup?.cancel();
       asks.close();
