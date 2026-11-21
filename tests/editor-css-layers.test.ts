@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
 import { PARTS, isPart } from "../src/catalogue/parts.ts";
@@ -79,13 +79,20 @@ test("each component's look comes from its --<name>-* defaults, each one used", 
   assert.deepEqual([...secondary.matchAll(/([\w-]+)\s*:/g)].map((match) => match[1]).filter((name) => !name.startsWith("--btn-")), []);
 });
 
-test("the two screen copies of the Button's plain disabled look are gone, and .text-link lives in text-button.css", () => {
+test("the two screen copies of the Button's plain disabled look are gone, .text-link lives in text-button.css, and hover stays mouse-only", () => {
   assert.doesNotMatch(withoutComments(read("src/page-builder/media-picker.css")), /\.media-library\s+:is\(\.primary,\s*\.secondary,\s*\.button\):is\(:disabled,\s*\[aria-disabled="true"\]\)/);
   assert.doesNotMatch(withoutComments(read("src/catalogue/board.css")), /\.cat-tweak__actions\s+\.button\[aria-disabled="true"\]/);
+  assert.match(withoutComments(read("src/inbox/inbox.css")), /\.inbox__done\.button\[aria-disabled="true"\]\s*\{\s*--btn-disabled-text-color:\s*var\(--success-fg\);\s*\}/);
   const style = withoutComments(read("src/style.css"));
   assert.doesNotMatch(style, /(?:^|})\s*\.text-link(?::(?:hover|active))?\s*\{/m, "no standalone .text-link look left in src/style.css");
   const textButton = withoutComments(read("src/ui/text-button/text-button.css"));
   assert.match(textButton, /\.text-link\s*\{[^}]*color:\s*var\(--text-btn-text-color,\s*var\(--link\)\);/);
+  for (const { path } of COMPONENTS) {
+    const css = withoutComments(read(path));
+    // Every :hover in a component file sits inside @media (hover: hover) and (pointer: fine), never bare.
+    const withoutMouseMedia = css.replace(/@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, "");
+    assert.doesNotMatch(withoutMouseMedia, /:hover\b/, `${path}: :hover sits inside @media (hover: hover) and (pointer: fine)`);
+  }
 });
 
 test("no other editor stylesheet holds the Button's own rules", () => {
@@ -122,22 +129,28 @@ test("the editor's bare element rules sit on the elements layer, below every com
   assert.doesNotMatch(outside, /(?:^|})\s*(?:button|a)(?:,\s*(?:a|select))*\s*\{[^}]*(?:font|color): inherit/m, "no unlayered copy left");
 });
 
-test("the editor loads every component file through parts.css; the board loads each as a style of its own", () => {
+test("the editor loads used component files through parts.css; the board loads each as a style of its own", () => {
   // Through src/ui/parts.css, which loads the parts' files in one line of src/main.ts (its line ceiling).
   assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\.css";$/m);
+  assert.match(read("src/live-guest.ts"), /^import "\.\/ui\/inline-field\/inline-field\.css";$/m, "guest edit bar gets Inline field");
   const partsCss = withoutComments(read("src/ui/parts.css"));
   const styleCss = withoutComments(read("src/style.css"));
   const catalogueMain = withoutComments(read("src/catalogue/main.ts"));
+  const bootComponents = new Set(["button", "icon-button", "text-button", "inline-field"]);
   for (const { id, path } of COMPONENTS) {
     const rel = path.replace(/^src\/ui\//, "./");
-    assert.match(partsCss, new RegExp(`^@import "${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}";$`, "m"), `parts.css imports ${path}`);
+    if (bootComponents.has(id)) {
+      assert.match(partsCss, new RegExp(`^@import "${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}";$`, "m"), `parts.css imports ${path}`);
+    } else {
+      assert.doesNotMatch(partsCss, new RegExp(`/${id}\\.css`), `unused-at-boot ${id}.css stays out of parts.css until its swap slice`);
+    }
     // Not through style.css or the part's own TS module: the board adds each itself, so a live cell can leave it out.
     assert.doesNotMatch(styleCss, new RegExp(`/${id}\\.css`), `style.css does not import ${id}.css`);
     assert.doesNotMatch(catalogueMain, new RegExp(`/${id}\\.css`), `catalogue/main.ts does not plain-import ${id}.css`);
     const tsPath = `src/ui/${id}/${id}.ts`;
-    try {
+    if (existsSync(join(repo, tsPath))) {
       assert.doesNotMatch(withoutComments(read(tsPath)), new RegExp(`import\\s+["']\\./${id}\\.css["']`), `${tsPath} does not import ${id}.css`);
-    } catch { /* styles-only parts (button, inline-field) have no matching ts file */ }
+    }
   }
   assert.match(catalogueMain, /^loadComponentStyles\(\);$/m);
 });

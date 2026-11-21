@@ -1,12 +1,8 @@
 /* The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). Each file sets
-   the layers' order and keeps its look on the components layer; the design board loads them on its own
-   (src/catalogue/component-css.ts), so a live cell can leave a part's file out. */
+   the layers' order and keeps its look on the components layer; the design board loads every part's file on its own
+   (src/catalogue/component-css.ts), so a live cell can leave a part's file out. Only parts used by editor screens
+   load here at boot; Badge, Keyboard key, Spinner, Progress bar and Section heading join as their swap slices land. */
 @import "./button/button.css";
 @import "./icon-button/icon-button.css";
 @import "./text-button/text-button.css";
-@import "./badge/badge.css";
-@import "./key/key.css";
-@import "./spinner/spinner.css";
-@import "./progress/progress.css";
-@import "./section-heading/section-heading.css";
 @import "./inline-field/inline-field.css";

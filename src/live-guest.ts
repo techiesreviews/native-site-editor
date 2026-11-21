@@ -10,6 +10,7 @@
 // guests do not move to other pages themselves.
 
 import "./theme.css";
+import "./ui/inline-field/inline-field.css";
 import "./components/person-chip.css";
 import "./live-guest.css";
 import { runtimeDoc } from "./components/preview-frame-doc";

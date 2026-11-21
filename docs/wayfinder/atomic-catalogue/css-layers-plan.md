@@ -76,8 +76,9 @@ Rules that matter for every slice:
    plain disabled look are gone: `src/page-builder/media-picker.css` and the board's
    `.cat-tweak__actions .button[aria-disabled="true"]`.
 3. **The atoms that already have a file** (done). Badge, Keyboard key, Spinner, Progress bar, Section heading and
-   Inline field onto `components`, their defaults exposed as `--<name>-*` hooks; loaded via `src/ui/parts.css` and
-   shown on the board with their CSS files.
+   Inline field onto `components`, their defaults exposed as `--<name>-*` hooks; shown on the board with their CSS
+   files. Inline field loads in `src/ui/parts.css` at boot (and in `src/live-guest.ts` for the guest edit bar); the
+   other five join `src/ui/parts.css` when their swap slices bring them into editor screens, keeping boot flat.
 4. **Tokens** (open). `src/theme.css` (and the generator's output) on `@layer tokens`.
 5. **Elements** (open). The rest of the bare element rules onto `elements`; what is left of `src/utilities.css` (the
    reset) folded in.
