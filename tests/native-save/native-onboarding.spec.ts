@@ -126,7 +126,11 @@ test("the welcome page has the slim top bar: No projects yet, whose menu adds a 
     const menu = page.getByRole("dialog", { name: "Projects" });
     await expect(menu).toBeVisible();
     await expect(menu.getByText("Add project")).toBeVisible();
-    await expect(menu.getByRole("link", { name: "On GitHub" })).toHaveAttribute("href", "/auth/login");
+    const item = menu.getByRole("link", { name: "On GitHub" });
+    await expect(item).toHaveAttribute("href", "/auth/login");
+    // The GitHub mark starts the row, beside its words.
+    const row = (await item.boundingBox())!, mark = (await item.locator("svg").boundingBox())!;
+    expect(mark.x - row.x).toBeLessThanOrEqual(12);
     const at = (await menu.boundingBox())!;
     expect(at.x).toBeGreaterThanOrEqual(0);
     expect(at.x + at.width).toBeLessThanOrEqual(width);

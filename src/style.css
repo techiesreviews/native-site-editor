@@ -706,6 +706,9 @@ dd {
 .welcome-bar__item:hover {
   background: var(--hover);
 }
+.welcome-bar__item .icon {
+  margin-inline: 0;
+}
 @media (max-width: 650px), (pointer: coarse) {
   .welcome-bar__projects,
   .welcome-bar__item {
