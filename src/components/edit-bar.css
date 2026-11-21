@@ -151,7 +151,9 @@
 .edit-bar__button:hover {
   background: var(--hover);
 }
-.edit-bar__button:disabled {
+.edit-bar__button:disabled,
+.edit-bar__button[aria-disabled="true"],
+.edit-bar__select[aria-disabled="true"] {
   opacity: 0.5;
   background: transparent;
 }

@@ -78,14 +78,17 @@ export function guestLinkPlan(path: string, node: number[], href: string, seen: 
   };
 }
 
-/** The element at `node` of `path` that `fits`, with its close tag, when it is still the one the guest saw on `seen`;
- * else why not, naming it as `what`. */
+/** The element at `node` of `path` that `fits`, with its close tag, when it is still the one the guest saw on `seen`
+ * (its whole source unchanged, so two lines with the same start tag that swapped places are told apart); else why
+ * not, naming it as `what`. */
 function seenElement(r: Reads, path: string, node: number[], seen: string, locate: Locate, what: string, fits: (name: string) => boolean):
   { refuse: string } | { source: string; tag: ElementRange["tag"]; close: NonNullable<ElementRange["close"]> } {
   const source = r.source(path);
   const range = source === undefined ? undefined : locate(source, node);
   if (source === undefined || !range?.close || !fits(range.tag.name)) return { refuse: `The ${what} could not be found in the source.` };
-  if (!sameGuestElement(seen, source, node, range.tag.name, locate)) return { refuse: MOVED(what) };
+  const before = locate(seen, node);
+  if (!sameGuestElement(seen, source, node, range.tag.name, locate) || !before?.close
+    || seen.slice(before.tag.start, before.close.end) !== source.slice(range.tag.start, range.close.end)) return { refuse: MOVED(what) };
   return { source, tag: range.tag, close: range.close };
 }
 

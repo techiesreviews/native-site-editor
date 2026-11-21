@@ -40,6 +40,8 @@ export type EditBarControl =
       ariaLabel?: string;
       title?: string;
       disabled?: boolean;
+      // Takes nothing while a change is on its way, kept focusable (aria-disabled): a guest's bar (TOOLS-185).
+      waiting?: boolean;
       // A toggle, reflected as aria-pressed.
       pressed?: boolean;
       // Drawn before the label (the Media button).
@@ -126,6 +128,8 @@ export interface SelectControl {
   caption?: boolean;
   // Where it applies, after it ("wide screens only").
   note?: string;
+  // As a button's `waiting`.
+  waiting?: boolean;
   onChange: (value: string) => void;
 }
 export interface CheckboxControl {
@@ -919,6 +923,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     select.title = name;
     for (const option of control.options) select.append(new Option(option.label, option.value));
     select.value = control.value;
+    if (control.waiting) select.setAttribute("aria-disabled", "true");
     select.addEventListener("change", () => {
       if (select.value !== control.value) control.onChange(select.value);
     });
@@ -1108,6 +1113,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         if (control.title) item.title = control.title;
         if (control.pressed !== undefined) item.setAttribute("aria-pressed", String(control.pressed));
         item.disabled = Boolean(control.disabled);
+        if (control.waiting) item.setAttribute("aria-disabled", "true");
         target.append(item);
       } else if (control.kind === "menu") {
         const item = button(control.label, () => {
