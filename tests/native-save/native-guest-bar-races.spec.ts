@@ -76,6 +76,7 @@ test("a guest can use a thumbnail arriving after 15 seconds without reopening th
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.some(message => message.t === "want"))).toBe(true);
   await page.clock.runFor(15_001);
   expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want" && message.paths.includes("images/slow.png")).length)).toBe(2);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want" && message.paths.includes("images/missing.png")).length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.picture());
   await expect(tile.locator("img")).toHaveAttribute("src", /^blob:/);
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
@@ -119,6 +120,7 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await page.clock.runFor(1_201);
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.select("p", true));
+  await expect(bold).toHaveAttribute("aria-disabled", "true");
   await page.evaluate(text => window.guestBarRace.answer(text), source("<strong>Old bold</strong>"));
   // The old answer must not flash Bold on during the next read's debounce.
   await expect(bold).toHaveAttribute("aria-pressed", "false");
@@ -126,5 +128,10 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
   await page.evaluate(text => window.guestBarRace.answer(text), source("<strong>Current bold</strong>"));
   await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+  await bold.click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({
+    t: "change", seen: 2, change: { kind: "bold", on: false },
+  });
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
