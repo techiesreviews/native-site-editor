@@ -1,6 +1,7 @@
 import { waitForConnection } from "./mcp-prompt";
 import { discardAllChanges, publishButton, showPublish } from "./publish";
 import { expect, test, type Page } from "@playwright/test";
+import { sampleContrast, type Pixel } from "./tone-contrast";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // New-user flows in the real editor UI, against the fake GitHub's onboarding
@@ -105,6 +106,30 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
   await expect(page.getByText(/New to GitHub\?/)).toHaveCount(0);
   await expect(page.getByText("What happens next?")).toHaveCount(0);
   await expect(page.locator(".login-card details")).toHaveCount(0);
+});
+
+test("the welcome pill's words are readable in light and dark", async ({ page, baseURL }) => {
+  // TOOLS-188 new-user test: in dark mode the pill's blue words sat on a near-black pill (20b-phone-welcome-dark).
+  await signedOutSession(page);
+  await page.goto(`${baseURL}/`);
+  const pill = page.getByText("Welcome to Native Site Editor");
+  await expect(pill).toBeVisible();
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const colours = await pill.evaluate(element => {
+      const style = getComputedStyle(element);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      return [style.color, style.backgroundColor].map(colour => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 1, 1);
+        return { colour, rgba: Array.from(context.getImageData(0, 0, 1, 1).data).map(channel => channel / 255) };
+      });
+    });
+    expect(sampleContrast({ foreground: colours[0] as Pixel, backgrounds: [colours[1] as Pixel] }).ratio, `${scheme} pill contrast`).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test("a valid session skips the sign-in screen: the editor opens with no button", async ({ page, baseURL }) => {
