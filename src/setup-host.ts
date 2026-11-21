@@ -219,7 +219,13 @@ export function createSetupHost(ports: SetupHostPorts) {
     writeMemory: change => writeWizard(localStorage, change),
     clearMemory: () => clearWizard(localStorage),
     loadWizard: () => ports.loadWizard(),
-    append: root => document.body.append(root),
+    append: root => {
+      document.body.append(root);
+      // The editor behind the full-screen wizard takes no clicks, keys or screen-reader focus until it goes.
+      const behind = [...(document.body.children as HTMLCollectionOf<HTMLElement>)].filter(element => element !== root && !element.inert);
+      for (const element of behind) element.inert = true;
+      return () => { for (const element of behind) element.inert = false; };
+    },
     actions: {
       loadOwners: () => ports.api<OwnerInstallation[]>("owners"),
       create: createSiteInWizard,
