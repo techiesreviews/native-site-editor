@@ -2,7 +2,9 @@ import type { CreateChoice, WizardCreateOutcome } from "./components/setup-wizar
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
-import { nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix } from "../shared/native-project";
+import { nativeComponentCssPath, nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix, resolveNativeProject } from "../shared/native-project";
+import { startTags } from "../shared/html-source";
+import { expandComponents } from "./page-builder/thumbnail-doc";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { assetType } from "../shared/asset-types";
 import { fileInTheWay, foldersAbove } from "../shared/site-rules";
@@ -125,7 +127,28 @@ export function createSetupActions(ports: SetupPorts) {
       const home = (await ports.readFiles(repo.fullName, [homeSha]))[homeSha];
       if (typeof home !== "string") return undefined;
       const body = nativePageBody(home);
-      if (/<[a-z][a-z\d]*-[a-z\d-]*[\s/>]/i.test(home.slice(body.start, body.end))) return undefined;
+      // Components (the Starter's header, hero and cards): their templates and styles, then the ones they use, round by round.
+      const resolved = resolveNativeProject(byPath.keys());
+      const site = resolved.ok ? resolved.site : { routes: {}, components: {} };
+      const isComponent = (tag: string) => Object.hasOwn(site.components, tag);
+      // A custom element that is not one of the site's components is drawn by a script: no preview.
+      if (startTags(home.slice(body.start, body.end)).some((tag) => tag.name.includes("-") && !isComponent(tag.name))) return undefined;
+      const sources: Record<string, string> = {};
+      const componentStyles: Record<string, string> = {};
+      let using = [home.slice(body.start, body.end)];
+      for (let round = 0; round < 12 && using.length; round++) {
+        const tags = [...new Set(using.flatMap((source) => startTags(source).map((tag) => tag.name)))].filter((tag) => isComponent(tag) && !(site.components[tag] in sources));
+        const paths: string[] = [];
+        for (const tag of tags) {
+          const css = nativeComponentCssPath(site.components[tag]);
+          if (byPath.has(css)) componentStyles[tag] = css;
+          paths.push(site.components[tag], ...(byPath.has(css) ? [css] : []));
+        }
+        const contents = paths.length ? await ports.readFiles(repo.fullName, paths.map((path) => byPath.get(path)!)) : {};
+        for (const path of paths) sources[path] = contents[byPath.get(path)!] ?? "";
+        using = tags.map((tag) => sources[site.components[tag]]);
+      }
+      const templates = Object.values(site.components).filter((path) => path in sources).map((path) => sources[path]);
       // Stylesheets: the linked ones, then every file they import, round by round.
       const sheets: Record<string, string> = {};
       const linked = nativePageStylesheets(home, "index.html");
@@ -150,10 +173,11 @@ export function createSetupActions(ports: SetupPorts) {
           if (path) wanted.add(path);
           return undefined;
         });
-      for (const match of home.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) {
-        const path = imagePath("index.html", match[1]);
-        if (path) wanted.add(path);
-      }
+      for (const source of [home, ...templates])
+        for (const match of source.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+          const path = imagePath("index.html", match[1]);
+          if (path) wanted.add(path);
+        }
       const images = new Map<string, string>();
       for (const path of [...wanted].slice(0, 12)) {
         images.set(path, await dataUrlOf(await ports.readBlob(repo.fullName, byPath.get(path)!, path), assetType(path)!));
@@ -164,14 +188,17 @@ export function createSetupActions(ports: SetupPorts) {
           return path ? images.get(path) : undefined;
         }))
         .join("\n");
-      let html = home.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+      // Each component as a declarative shadow root, as the site's loader draws it (src/page-builder/thumbnail-doc.ts).
+      const inputs = { site, sources, componentStyles, assets: Object.fromEntries(images), route: "/" };
+      let html = expandComponents(home, inputs, [css]).replace(/<script\b[\s\S]*?<\/script>/gi, "");
       for (const tag of home.match(/<link\b[^>]*>/gi) ?? []) if (/rel\s*=\s*["']?stylesheet/i.test(tag)) html = html.replace(tag, "");
       html = html.replace(/(<img\b[^>]*?\bsrc\s*=\s*["'])([^"']+)(["'])/gi, (whole, before: string, url: string, after: string) => {
         const path = imagePath("index.html", url);
         const data = path ? images.get(path) : undefined;
         return data ? `${before}${data}${after}` : whole;
       });
-      const style = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+      // No script defines the components here, so a site's "hide until defined" rule would hide them for good.
+      const style = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style><style>:not(:defined){visibility:visible!important}</style>`;
       return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, () => `${style}</head>`) : `${style}${html}`;
     } catch {
       return undefined;
