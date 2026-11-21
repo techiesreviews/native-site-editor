@@ -639,13 +639,6 @@ dd {
   border-block-end: 1px solid var(--line);
   background: var(--surface);
 }
-/* The project menu's trigger (repository-menu.css, slim) and panel. Alone on the bar, its words need not give way to other buttons. */
-.welcome-bar .repository-menu__trigger {
-  max-width: 100%;
-}
-.welcome-bar .repository-menu__popover {
-  position-anchor: --repository-menu;
-}
 /* The welcome page: "Where does your site live?" with one card per place (GitHub
    for now). The same page signed out (the login page) and for a signed-in
    account with nothing to open yet (in the workspace content). */

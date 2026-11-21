@@ -5,6 +5,7 @@
 
 import { icon, iconMarkup } from "../icons";
 import { button, link, node } from "../ui/dom";
+import "./welcome-bar.css";
 
 /**
  * Fills `bar` with No projects yet (the project menu's trigger, which opens its panel as a popover). Its menu adds a

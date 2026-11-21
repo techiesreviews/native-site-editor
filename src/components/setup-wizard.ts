@@ -2,11 +2,8 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { button, link, node } from "../ui/dom";
 import { reported } from "../ui/report-failure";
 import { icon } from "../icons";
-import {
-  DEFAULT_REPOSITORY_NAME,
-  siteNameFromRepository,
-  type StartingPoint,
-} from "../../shared/starting-point";
+import { DEFAULT_REPOSITORY_NAME, type StartingPoint } from "../../shared/starting-point";
+import { siteNameFromRepository } from "../../shared/native-project";
 import type { OwnerInstallation } from "../../shared/types";
 import {
   WIZARD_STEPS,
@@ -100,6 +97,13 @@ function external(text: string, href: string, className = "text-link") {
   anchor.target = "_blank";
   anchor.rel = "noopener noreferrer";
   return anchor;
+}
+
+/** The editor behind the full-screen wizard takes no clicks, keys or screen-reader focus until the returned call gives it back. */
+export function holdEditorBehind(root: HTMLElement) {
+  const behind = [...(document.body.children as HTMLCollectionOf<HTMLElement>)].filter(element => element !== root && !element.inert);
+  for (const element of behind) element.inert = true;
+  return () => { for (const element of behind) element.inert = false; };
 }
 
 export function createSetupWizard(options: SetupWizardOptions) {

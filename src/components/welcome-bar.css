@@ -1,0 +1,8 @@
+/* The welcome bar's menu (welcome-bar.ts), loaded with it; the bar's own box stays in style.css so nothing jumps. */
+/* The project menu's trigger (repository-menu.css, slim) and panel. Alone on the bar, its words need not give way to other buttons. */
+.welcome-bar .repository-menu__trigger {
+  max-width: 100%;
+}
+.welcome-bar .repository-menu__popover {
+  position-anchor: --repository-menu;
+}
