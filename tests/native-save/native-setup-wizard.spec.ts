@@ -82,6 +82,8 @@ test("signed out: one Continue with GitHub, the install trip by itself, a site s
   // A first site starts Private.
   await expect(page.getByRole("radio", { name: /Private/ })).toBeChecked();
   await expect(page.getByRole("button", { name: "Do this with an agent" })).toBeVisible();
+  // The editor behind the wizard takes no clicks or keys while it is open (TOOLS-188 new-user test).
+  expect(await page.evaluate(() => document.getElementById("app")!.inert)).toBe(true);
 
   // An invalid name is refused in the form.
   await page.getByLabel("Repository name").fill("my-site.git");
@@ -125,6 +127,7 @@ test("signed out: one Continue with GitHub, the install trip by itself, a site s
 
   await expect(frame(page).getByRole("heading", { name: "Starter site heading" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".wizard")).toHaveCount(0);
+  expect(await page.evaluate(() => document.getElementById("app")!.inert), "the editor is given back").toBe(false);
   // What is left of setup waits in the Inbox (TOOLS-188), not in a pill.
   await expect(page.locator(".setup-pill")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.hasAttribute("data-inbox-waiting"))).toBe(true);
