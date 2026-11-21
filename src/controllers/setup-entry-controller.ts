@@ -1,4 +1,4 @@
-import type { SetupWizardOptions, createSetupWizard } from "../components/setup-wizard";
+import type { SetupWizardOptions, createSetupWizard, holdEditorBehind } from "../components/setup-wizard";
 import { openingStep, type Connection, type WizardMemory } from "../setup-wizard";
 
 export interface SetupEntryPorts {
@@ -10,9 +10,9 @@ export interface SetupEntryPorts {
   readMemory(): WizardMemory | undefined;
   writeMemory(change: Partial<WizardMemory>): WizardMemory;
   clearMemory(): void;
-  loadWizard(): Promise<{ createSetupWizard: typeof createSetupWizard }>;
-  /** Shows the wizard over the editor, which takes no input while it is open; returns what gives the editor back. */
-  append(root: HTMLElement): () => void;
+  loadWizard(): Promise<{ createSetupWizard: typeof createSetupWizard; holdEditorBehind: typeof holdEditorBehind }>;
+  /** Shows the wizard over the editor, which takes no input while it is open (holdEditorBehind). */
+  append(root: HTMLElement): void;
   actions: Pick<SetupWizardOptions, "loadOwners" | "create" | "findRepository" | "listRepositories" | "accessUrl" | "loadPreview" | "agentPrompt" | "finish">;
   onExit(): void;
 }
@@ -58,7 +58,7 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
     dismissed = false;
     return run(`account:${login}`, async mount => {
       const live = () => mount === mounts && !wizard && !dismissed && ports.login() === login && !ports.repositoryCount();
-      const { createSetupWizard } = await ports.loadWizard();
+      const { createSetupWizard, holdEditorBehind } = await ports.loadWizard();
       if (!live()) return;
       const memory = ports.readMemory();
       const connection = ports.connectionHint() ?? await ports.connection();
@@ -72,14 +72,15 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
         finish: (repo, made) => { if (mount === mounts) ports.actions.finish(repo, made); },
         exit: () => { if (mount === mounts) close(); },
       });
-      release = ports.append(wizard.root);
+      ports.append(wizard.root);
+      release = holdEditorBehind(wizard.root);
       wizard.focus();
     });
   }
   function openOwner(ownerSetupUrl: string) {
     if (wizard || dismissed) return Promise.resolve();
     return run(`owner:${ownerSetupUrl}`, async mount => {
-      const { createSetupWizard } = await ports.loadWizard();
+      const { createSetupWizard, holdEditorBehind } = await ports.loadWizard();
       if (mount !== mounts || wizard || dismissed || ports.login() || ports.ownerSetupUrl() !== ownerSetupUrl) return;
       wizard = createSetupWizard({
         login: "", connected: false, step: "connect", connectUrl: ownerSetupUrl,
@@ -89,7 +90,8 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
         remember: () => {}, finish: () => {},
         exit: () => { if (mount === mounts) { remove(); dismissed = true; } },
       });
-      release = ports.append(wizard.root);
+      ports.append(wizard.root);
+      release = holdEditorBehind(wizard.root);
       wizard.focus();
     });
   }

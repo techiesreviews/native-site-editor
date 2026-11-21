@@ -6,8 +6,8 @@
 // before the login page shows (`closeWorkspace`).
 
 import type { OwnerInstallation, Repository, SessionInfo } from "../shared/types";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../shared/native-project";
-import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, siteNameFromRepository } from "../shared/native-project";
+import type { StartingPoint } from "../shared/starting-point";
 import type { AppStore } from "./app-store";
 import type { createStartSite } from "./components/start-site";
 import type { createBootController } from "./controllers/boot-controller";
@@ -83,11 +83,6 @@ export function createSetupHost(ports: SetupHostPorts) {
     ports.closeWorkspace();
     ports.app.className = "login-page";
     const info = ports.info;
-    // Where the card's button leads, offered by the bar's menu too.
-    const way = mode !== "ready" && mode !== "expired" ? undefined
-      : info?.configured ? EDITOR_LOGIN
-      : info?.ownerSetupOpen && info.ownerSetupUrl ? info.ownerSetupUrl
-      : undefined;
     // One layout for every state, so nothing jumps when the answer arrives: the
     // loading and automatic states keep the card's size and hide what is below.
     const checking = mode === "loading" || mode === "auto";
@@ -96,17 +91,14 @@ export function createSetupHost(ports: SetupHostPorts) {
     // likely has projects. Then its menu loads, so only a signed-out visitor fetches it.
     ports.app.innerHTML = `
     <header class="welcome-bar" id="welcome-bar" aria-hidden="true"></header>
-    <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", mode !== "loading" && mode !== "auto")}
+    <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", !checking)}
       <div id="notice" class="login-notice" role="alert" hidden></div>
     </main>
   `;
-    if (!checking) {
-      const bar = ports.element("welcome-bar");
-      // A page drawn again meanwhile has a bar of its own; a bar that could not load stays empty, as the card offers the same way in.
-      import("./components/welcome-bar").then(({ fillWelcomeBar }) => { if (bar.isConnected) fillWelcomeBar(bar, way); }, () => {});
-    }
-    const action = ports.element("login-action");
-    if (mode === "loading" || mode === "auto") {
+    // Where the card's button leads, offered by the bar's menu too.
+    let way: string | undefined;
+    const bar = ports.element("welcome-bar"), action = ports.element("login-action");
+    if (checking) {
       const loading = node("p", "login-state login-busy");
       loading.setAttribute("role", "status");
       const spinner = node("span", "login-spinner");
@@ -127,12 +119,12 @@ export function createSetupHost(ports: SetupHostPorts) {
       // One button for everyone: the Worker decides where the sign-in leads
       // (the editor, GitHub's install page for an account without the App, or
       // the Setup wizard for a first site), so there is no choice to make here.
-      action.append(link("Continue with GitHub", EDITOR_LOGIN, "button primary login-button login-signin"));
+      action.append(link("Continue with GitHub", way = EDITOR_LOGIN, "button primary login-button login-signin"));
     } else if (info?.ownerSetupOpen && info.ownerSetupUrl) {
       // A fresh self-hosted editor (Deploy to Cloudflare): its owner has one
       // thing left to do, which the Setup wizard's Connect step explains and
       // starts. Nothing leaves this page before that click.
-      action.append(link("Connect your editor to GitHub", info.ownerSetupUrl, "button primary login-button"));
+      action.append(link("Connect your editor to GitHub", way = info.ownerSetupUrl, "button primary login-button"));
       if (mode === "ready") void setupEntry.openOwner(info.ownerSetupUrl).catch((error: unknown) => ports.errorMessage(error));
     } else {
       const disabled = button(
@@ -151,6 +143,8 @@ export function createSetupHost(ports: SetupHostPorts) {
         action.append(node("p", "login-state", SIGN_IN_ERRORS.setup), details);
       }, (error: unknown) => ports.errorMessage(error));
     }
+    // A page drawn again meanwhile has a bar of its own; a bar that could not load stays empty, as the card offers the same way in.
+    if (!checking) import("./components/welcome-bar").then(({ fillWelcomeBar }) => { if (bar.isConnected) fillWelcomeBar(bar, way); }, () => {});
   }
 
   // Start your site: in place of the preview when the repository has nothing
@@ -234,13 +228,7 @@ export function createSetupHost(ports: SetupHostPorts) {
     writeMemory: change => writeWizard(localStorage, change),
     clearMemory: () => clearWizard(localStorage),
     loadWizard: () => ports.loadWizard(),
-    append: root => {
-      document.body.append(root);
-      // The editor behind the full-screen wizard takes no clicks, keys or screen-reader focus until it goes.
-      const behind = [...(document.body.children as HTMLCollectionOf<HTMLElement>)].filter(element => element !== root && !element.inert);
-      for (const element of behind) element.inert = true;
-      return () => { for (const element of behind) element.inert = false; };
-    },
+    append: root => document.body.append(root),
     actions: {
       loadOwners: () => ports.api<OwnerInstallation[]>("owners"),
       create: createSiteInWizard,

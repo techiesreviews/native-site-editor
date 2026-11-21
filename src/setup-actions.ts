@@ -1,8 +1,8 @@
 import type { CreateChoice, WizardCreateOutcome } from "./components/setup-wizard";
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
-import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
-import { nativeComponentCssPath, nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix, resolveNativeProject } from "../shared/native-project";
+import { blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
+import { nativeComponentCssPath, nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix, resolveNativeProject, siteNameFromRepository } from "../shared/native-project";
 import { startTags } from "../shared/html-source";
 import { expandComponents } from "./page-builder/thumbnail-doc";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";

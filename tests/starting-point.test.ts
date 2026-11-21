@@ -4,10 +4,10 @@ import {
   blankSiteFiles,
   prepareStarterFiles,
   repositoryNameProblem,
-  siteNameFromRepository,
   startingConfig,
   suggestedRepositoryName,
 } from "../shared/starting-point.ts";
+import { siteNameFromRepository } from "../shared/native-project.ts";
 import type { StarterFile } from "../shared/types.ts";
 
 test("repository names follow GitHub's rules", () => {

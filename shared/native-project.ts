@@ -60,6 +60,15 @@ export function nativeSiteSettings(text: string | undefined): NativeSiteSettings
   return out;
 }
 
+/**
+ * A repository name as a site name: "my-site" → "My site". It lives here, not with the starting points, so the editor's
+ * first load (setup-host.ts) need not carry the blank-site template to name a site.
+ */
+export function siteNameFromRepository(name: string): string {
+  const words = name.replace(/[-_.]+/g, " ").trim();
+  return words ? words[0].toUpperCase() + words.slice(1) : name;
+}
+
 /** The address of the page at `route` on the site at `siteUrl` (`https://x.example` and `/about/` give `https://x.example/about/`). */
 export function nativePageUrl(siteUrl: string | undefined, route: string): string | undefined {
   return siteUrl ? `${siteUrl.replace(/\/index\.html?\/?$/i, "").replace(/\/+$/, "")}${route}` : undefined;

@@ -134,7 +134,7 @@ function fixture(race?: AwaitRace) {
     api: async <T,>() => [] as T,
     loadRepositories: async (prefetched?: Repository[]) => { loads.push(prefetched); },
     loadSetupActions: lazy("loadSetupActions", async () => { await actions.promise; return setupActions; }),
-    loadWizard: async () => ({ createSetupWizard: (options: SetupWizardOptions) => { wizards.push(options); return { root: asElement<HTMLDivElement>(new FakeElement()), focus: () => {}, destroy: () => {} }; } }),
+    loadWizard: async () => ({ createSetupWizard: (options: SetupWizardOptions) => { wizards.push(options); return { root: asElement<HTMLDivElement>(new FakeElement()), focus: () => {}, destroy: () => {} }; }, holdEditorBehind: () => () => {} }),
     loadStartSite: async () => ({ createStartSite: (options: StartSiteOptions) => { started.push(options); return { root: asElement(new FakeElement()) }; } }),
     loadAgentPrompts: async () => ({ setupPrompt: (options: { name: string }) => `prompt for ${options.name}` }),
     status: (message: string) => { statuses.push(message); },

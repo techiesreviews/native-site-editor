@@ -5,7 +5,8 @@
 // commits, but its contents API creates the first commit, and the branch,
 // from one file. So the first file goes through the contents API; the rest
 // follow as a tree and a commit on top (images as blobs).
-import { blankSiteFiles, siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
+import { blankSiteFiles, type StartingPoint } from "../shared/starting-point";
+import { siteNameFromRepository } from "../shared/native-project";
 import type { Repository, StarterFile } from "../shared/types";
 import { base64Bytes } from "./blobs";
 import { GitHub, HttpError } from "./github";

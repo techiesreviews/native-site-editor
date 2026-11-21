@@ -37,12 +37,6 @@ export function suggestedRepositoryName(text: string): string {
     .slice(0, 100);
 }
 
-/** A repository name as a site name: "my-site" → "My site". */
-export function siteNameFromRepository(name: string): string {
-  const words = name.replace(/[-_.]+/g, " ").trim();
-  return words ? words[0].toUpperCase() + words.slice(1) : name;
-}
-
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!);
 
