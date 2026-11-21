@@ -82,14 +82,23 @@ function welcomeMarkup(titleId: string, actionId: string, picture = true) {
  * project yet, drawn with the project menu's own trigger, tile, panel and rows (repository-menu.css). Its menu adds
  * one the way the card does (`way`); while the card has no way in, the button is disabled. While the session is
  * still checked (`checking`) the bar stays empty, and hidden from screen readers so they meet no empty banner: a
- * returning visitor most likely has projects.
+ * returning visitor most likely has projects. The menu's button is put in by `welcomeProjectsButton`.
  */
 const welcomeBarMarkup = (way: string | undefined, checking: boolean) => checking ? `
     <header class="welcome-bar" aria-hidden="true"></header>` : `
-    <header class="welcome-bar">
-      <button type="button" id="welcome-projects-button" class="repository-menu__trigger" popovertarget="welcome-projects"${way ? "" : " disabled"}><span class="repository-menu__initial" aria-hidden="true">n</span><span class="repository-menu__name">No projects yet</span>${iconMarkup("caret-down", 12, "repository-menu__caret")}</button>
+    <header class="welcome-bar" id="welcome-bar">
       <div id="welcome-projects" class="dropdown-panel repository-menu__popover" popover="auto" role="dialog" aria-label="Projects"><div class="repository-menu__heading">Add project</div>${way ? `<a class="text-button repository-menu__action" href="${escapeWords(way)}">${iconMarkup("github-logo", 16, "icon--before")}On GitHub</a>` : ""}</div>
     </header>`;
+
+/** The welcome bar's No projects yet: the project menu's trigger, which opens its panel as a popover. */
+function welcomeProjectsButton(way: string | undefined) {
+  const trigger = button("", () => {}, "repository-menu__trigger");
+  trigger.id = "welcome-projects-button";
+  trigger.setAttribute("popovertarget", "welcome-projects");
+  trigger.disabled = !way;
+  trigger.innerHTML = `<span class="repository-menu__initial" aria-hidden="true">n</span><span class="repository-menu__name">No projects yet</span>${iconMarkup("caret-down", 12, "repository-menu__caret")}`;
+  return trigger;
+}
 
 export function createSetupHost(ports: SetupHostPorts) {
   function renderLogin(
@@ -105,11 +114,16 @@ export function createSetupHost(ports: SetupHostPorts) {
       : undefined;
     // One layout for every state, so nothing jumps when the answer arrives: the
     // loading and automatic states keep the card's size and hide what is below.
-    ports.app.innerHTML = `${welcomeBarMarkup(way, mode === "loading" || mode === "auto")}
+    const checking = mode === "loading" || mode === "auto";
+    ports.app.innerHTML = `${welcomeBarMarkup(way, checking)}
     <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", mode !== "loading" && mode !== "auto")}
       <div id="notice" class="login-notice" role="alert" hidden></div>
     </main>
   `;
+    if (!checking) {
+      const bar = ports.element("welcome-bar");
+      bar.insertBefore(welcomeProjectsButton(way), bar.firstChild);
+    }
     const action = ports.element("login-action");
     if (mode === "loading" || mode === "auto") {
       const loading = node("p", "login-state login-busy");
