@@ -255,7 +255,8 @@ export function createSetupActions(ports: SetupPorts) {
     // and template is read first. When they cannot be, nothing is set, so the old name is not left
     // on the pages behind a done row; Save name stays to try again.
     if (change.name !== undefined) {
-      const unread = await ports.readSite().then(() => false, () => true);
+      // The port answers a failed read with its message (nativeSiteReadForCreate); a thrown error counts the same.
+      const unread = await ports.readSite().then(problem => problem !== undefined, () => true);
       if (!since.holds()) return changed;
       if (unread) return "The site's pages could not be read, so the name was not set. Try again.";
     }

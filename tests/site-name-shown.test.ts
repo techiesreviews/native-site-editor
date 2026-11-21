@@ -161,11 +161,12 @@ test("a switch to another site while Save name reads the config or the pages wri
   assert.equal(awaits, 2);
 });
 
-test("when the pages could not be read, Save name sets nothing and says so, and a try once they can be read sets the name everywhere", async () => {
+// The real port (nativeSiteReadForCreate) answers a failed read with its message; a thrown error is refused the same way.
+for (const [how, failed] of [["says why", async () => "The repository could not be read."], ["throws", async () => { throw new Error("GitHub said no"); }]] as const) test(`when the pages could not be read (the read ${how}), Save name sets nothing and says so, and a try once they can be read sets the name everywhere`, async () => {
   const header = "components/site-header/site-header.html";
   const reads = { fail: true };
   const { workspace, appStore, ports } = nameScenario('{\n  "site": {\n    "name": "My site"\n  }\n}\n', {
-    readSite: async () => { if (reads.fail) throw new Error("GitHub said no"); },
+    readSite: async () => reads.fail ? failed() : undefined,
   });
   const module = await bundled;
   try {
