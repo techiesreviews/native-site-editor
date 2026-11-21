@@ -9,8 +9,8 @@ declare global {
     guestBarRace: {
       bar: ReturnType<typeof createGuestEditBar>;
       sent: GuestMessage[];
-      select(tag: "img" | "p", render?: boolean): void;
-      answer(source: string): void;
+      select(tag: "img" | "p" | "h2", render?: boolean): void;
+      answer(source: string, ask?: number): void;
       picture(): void;
     };
   }
@@ -39,8 +39,9 @@ async function mount(page: Page) {
     const url = photo.toDataURL("image/png");
     const bar = createGuestEditBar({ canvas, frame, frameLink, send: message => { sent.push(message); }, me: "anna", picture: path => path === "images/current.png" ? url : undefined });
     bar.receive({ t: "context", context: { path: "index.html", links: [], pictures: ["images/slow.png", "images/missing.png"] } });
-    const answer = (source: string) => {
-      const asked = sent.filter((message): message is Extract<GuestMessage, { t: "sources" }> => message.t === "sources").at(-1);
+    const answer = (source: string, ask?: number) => {
+      const requests = sent.filter((message): message is Extract<GuestMessage, { t: "sources" }> => message.t === "sources");
+      const asked = ask === undefined ? requests.at(-1) : requests.find(message => message.ask === ask);
       if (!asked) throw new Error("The guest has not asked for sources.");
       bar.receive({ t: "sources", to: "anna", ask: asked.ask, sources: { "index.html": source } });
     };
@@ -121,7 +122,8 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.select("p", true));
   await expect(bold).toHaveAttribute("aria-disabled", "true");
-  await page.evaluate(text => window.guestBarRace.answer(text), source("<strong>Old bold</strong>"));
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  await page.evaluate(text => window.guestBarRace.answer(text, 2), source("<strong>Old bold</strong>"));
   // The old answer must not flash Bold on during the next read's debounce.
   await expect(bold).toHaveAttribute("aria-pressed", "false");
   await page.clock.runFor(1_201);
@@ -133,5 +135,15 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({
     t: "change", seen: 2, change: { kind: "bold", on: false },
   });
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
+test("heading level stays usable while a new render waits for its text read", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("h2"));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Heading").replace("<p>", "<h2>").replace("</p>", "</h2>"));
+  await expect(bar(page).getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await page.evaluate(() => window.guestBarRace.select("h2", true));
+  expect(await bar(page).getByRole("combobox", { name: "Heading level" }).getAttribute("aria-disabled")).not.toBe("true");
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
