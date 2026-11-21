@@ -117,7 +117,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   // Why the last change on the selected element was not written, shown on the bar until the next one or another selection.
   let refused: string | undefined;
   // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
-  let text: { key: string; size?: string; bold?: boolean } | undefined;
+  let text: { key: string; on: number; size?: string; bold?: boolean } | undefined;
   let reading = 0;
   let reread: ReturnType<typeof setTimeout> | undefined;
   // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and its
@@ -131,6 +131,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let typedShown = 0;
   let typedTimer: ReturnType<typeof setTimeout> | undefined;
   const typingAhead = () => typedSent > typedShown;
+  const textStale = () => Boolean(text && text.on !== seen) || selectedSeen !== seen;
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
   status.className = "live-guest__said";
@@ -337,6 +338,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
     text = {
       key: key(target),
+      on,
       size: scale && textSizeable(tag) ? currentTextSize(found.source, found.range.tag, scale) : undefined,
       bold: TEXT_LINE_TAGS.has(tag) ? Boolean(wholeWrapper(found.source.slice(found.range.tag.end, close.start), ["strong", "b"])) : undefined,
     };
@@ -345,10 +347,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
   function textControls(at: Selected): EditBarControl[] {
-    const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead();
+    const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead() || textStale();
     // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
-      if (sending?.key === key(at) || typingAhead()) { render(); return; }
+      if (sending?.key === key(at) || typingAhead() || textStale()) { render(); return; }
       const mine: NonNullable<typeof sending> = { key: key(at), ...next.kind === "heading" ? { level: next.level } : {} };
       sending = mine;
       if (shown && text?.key === key(at)) text = { ...text, ...shown };
@@ -489,8 +491,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         if (typingAhead() && typed >= typedSent) {
           typedShown = typed;
           clearTimeout(typedTimer);
-          render();
         }
+        render();
         return false;
       }
       if (message.t === "context") {
