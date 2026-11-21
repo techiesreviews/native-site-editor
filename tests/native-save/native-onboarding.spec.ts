@@ -129,6 +129,8 @@ test("the welcome page has the slim top bar: No projects yet, whose menu adds a 
     expect(box.y).toBe(0);
     expect(box.height).toBeLessThanOrEqual(45);
     expect((await projects.boundingBox())!.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 28);
+    // Alone on the bar, the words are never cut short.
+    expect(await projects.locator(".repository-menu__name").evaluate((name) => name.scrollWidth <= name.clientWidth)).toBe(true);
     await projects.click();
     const menu = page.getByRole("dialog", { name: "Projects" });
     await expect(menu).toBeVisible();
