@@ -491,6 +491,7 @@ test("guests change a heading's level, a paragraph's text size and bold from the
   await expect(bar.getByRole("combobox", { name: "Text size" })).toHaveValue("l", { timeout: 20_000 });
   const bold = bar.getByRole("button", { name: "Bold", exact: true });
   await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
   // While Lex's answer is held back, the bar shows her Bold at once and its text controls wait: nothing else is sent.
   holding = true;
   await bold.click();

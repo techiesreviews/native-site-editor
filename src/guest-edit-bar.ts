@@ -119,7 +119,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
   let text: { key: string; on: number; size?: string; bold?: boolean } | undefined;
   let reading = 0;
-  let textReading = false, readAgain = false;
+  let textReading: { key: string; again: boolean } | undefined;
   let reread: ReturnType<typeof setTimeout> | undefined;
   // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and its
   // text controls wait until Lex's tab refuses it, or a later render shows it written (so the next change names a page
@@ -328,10 +328,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
-    if (textReading) { readAgain = true; return; }
-    textReading = true;
+    const ticket = ++reading;
+    if (textReading?.key === key(target)) { textReading.again = true; return; }
+    const mine = { key: key(target), again: false };
+    textReading = mine;
     try {
-      const ticket = ++reading, on = seen;
+      const on = seen;
       const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
         sources().catch(() => undefined), import("./native-text-size"), import("./whole-wrapper"),
       ]);
@@ -348,10 +350,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       };
       render();
     } finally {
-      textReading = false;
-      const again = readAgain;
-      readAgain = false;
-      if (again && !closed && selected && selected.tag !== "img" && context?.path === selected.path) void readText(selected);
+      if (textReading === mine) {
+        textReading = undefined;
+        if (mine.again && !closed && selected && selected.tag !== "img" && context?.path === selected.path) void readText(selected);
+      }
     }
   }
 
