@@ -976,7 +976,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     }, `edit-bar__button edit-bar__address${control.warning ? " edit-bar__field--warning" : ""}${control.icon ? " edit-bar__address--icon" : ""}`);
     if (control.icon) {
       item.append(icon("link"));
-      if (control.warning) item.append(document.createTextNode(control.warning));
+      if (control.warning) item.append(node("span", "edit-bar__address-warning", control.warning));
       item.setAttribute("aria-label", control.label);
       item.title = control.warning ? `${control.label}: ${control.warning}` : control.value ? `${control.label}: ${control.value}` : control.label;
     } else if (control.warning) {

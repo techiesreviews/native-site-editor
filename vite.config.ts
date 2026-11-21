@@ -43,10 +43,14 @@ export default defineConfig({
   // The editor keeps the key index: kit preview and scripts/agents/cold.sh find its bundle as assets/index-*.js.
   // Every browser the editor supports preloads modules itself: no polyfill (with three pages it would be a chunk of its own,
   // one more request before the editor's first paint).
+  // The guest page lazily opens the editor's picture picker, Text size and Bold (TOOLS-185), so the small modules those share
+  // with the editor's first screen can no longer sit in its index chunk. One chunk for them all, not one each: each would be
+  // one more request, and smaller files gzip worse, before the editor's first paint (tests/perf/byte-budget.ts).
   build: { modulePreload: { polyfill: false }, rolldownOptions: { input: {
     index: fileURLToPath(new URL("./index.html", import.meta.url)), live: fileURLToPath(new URL("./live.html", import.meta.url)),
     preview: fileURLToPath(new URL("./preview-visit.html", import.meta.url)),
-  } },
+  }, output: { codeSplitting: { groups: [{ name: "shared-with-guest", includeDependenciesRecursively: false,
+    test: /\/(src\/(announce|components\/row-menu|components\/refusal-note|ui\/text-button\/[\w-]+|whole-wrapper|native-text-size)|shared\/(slotted-css|media-records-path))\.(ts|css)$/ }] } } },
   // The catalogue's own build (see catalogue() above): only its page, added to the editor's dist/.
   ...(catalogueOnly ? { emptyOutDir: false, rolldownOptions: { input: { catalogue: fileURLToPath(new URL("./catalogue.html", import.meta.url)) } } } : {}) },
   // Keep light-dark() as written (src/theme.css). The CSS minifier otherwise rewrites it into a

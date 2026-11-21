@@ -428,18 +428,22 @@
   font-weight: 400;
 }
 /* A reason wraps onto a second line, so it reads whole on a phone too (a title
-   shows only under a mouse); one longer still ends there, its text in the title. */
-.edit-bar__warning {
+   shows only under a mouse); one longer still ends there, its text in the title.
+   A link's reason, beside the Address button's icon, wraps the same (TOOLS-185). */
+.edit-bar__warning,
+.edit-bar__address-warning {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   max-inline-size: min(36ch, 70vw);
   overflow: hidden;
-  color: var(--warning-fg);
-  font-weight: 600;
   text-align: start;
   white-space: normal;
+}
+.edit-bar__warning {
+  color: var(--warning-fg);
+  font-weight: 600;
 }
 .edit-bar__warning::before {
   content: "";

@@ -28,10 +28,7 @@ export const GUEST_NOT_KEPT = "The page changed meanwhile. Try again.";
 export const GUEST_OTHER_PAGE = "Lex's editor is on another page now.";
 /** The longest reason a guest is shown. */
 export const GUEST_REASON_CHARS = 200;
-/** A thrown error's words for a guest: only a plain Error, which this editor raises with words for people. A TypeError,
- * a failed fetch or a browser's error says nothing a guest can act on, and may name what lies behind the page. */
-export const guestReason = (error: unknown) =>
-  error instanceof Error && Object.getPrototypeOf(error) === Error.prototype && error.message ? error.message : undefined;
+export { guestReason } from "./guest-reason";
 
 /** The biggest picture a guest may upload, and its base64 length. */
 export const GUEST_UPLOAD_BYTES = 15 * 1024 * 1024;
