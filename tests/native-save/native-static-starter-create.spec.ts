@@ -29,6 +29,10 @@ test('Create site commits the native starter and every public page works without
   expect(state.installs).toBe(1);
   expect(state.authorizations).toBe(1);
   expect(state.starterFetches).toBe(0); // No codeload/template request.
+  // The ready page's thumbnail is the new home page itself: its components drawn without scripts (declarative shadow roots).
+  const thumbnail = page.locator('.wizard-preview__frame');
+  await expect(thumbnail).toHaveAttribute('srcdoc', /shadowrootmode/, { timeout: 30_000 });
+  await expect(page.frameLocator('.wizard-preview__frame').getByRole('heading', { name: 'A short, clear headline for the page.' })).toBeVisible();
   const head = await (await page.request.get(`${baseURL}/__demo/head?repo=native-proof`)).json();
   expect(head.commit).toMatch(/^[a-f0-9]{40}$/);
 
