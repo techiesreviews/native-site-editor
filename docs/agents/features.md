@@ -33,7 +33,7 @@ its number unused.
 
 ### F-setup-01 Sign in with GitHub
 - Try: Open the editor signed out and press Continue with GitHub.
-- Good: A short loading state, then the welcome page "Where does your site live?" with one card, On GitHub, and its one button (TOOLS-188); back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
+- Good: A short loading state, then the welcome page "Where does your site live?" with one card, On GitHub, and its one button, under a slim top bar whose **No projects yet** menu offers On GitHub too (TOOLS-188); back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
 - Files: `src/setup-host.ts`, `src/auto-signin.ts`, `src/sign-in-words.ts`, `shared/sign-in-error.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`

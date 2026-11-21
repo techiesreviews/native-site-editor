@@ -17,6 +17,7 @@ import type { DraftScope } from "./drafts";
 import type { createSetupActions } from "./setup-actions";
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
 import { iconMarkup } from "./icons";
+import { escapeWords } from "./ui/escape";
 import { button, link, node } from "./ui/dom";
 import type { SessionStamp } from "./workspace-session";
 
@@ -76,21 +77,36 @@ function welcomeMarkup(titleId: string, actionId: string, picture = true) {
       </div>`;
 }
 
+/**
+ * The slim top bar over the login page, as in the approved sketch (TOOLS-188): the project menu's place, with no
+ * project yet. Its menu adds one the way the card does (`way`); while the card has no way in, the button is disabled.
+ */
+const welcomeBarMarkup = (way: string | undefined) => `
+    <header class="welcome-bar">
+      <button type="button" id="welcome-projects-button" class="welcome-bar__projects" popovertarget="welcome-projects"${way ? "" : " disabled"}><span class="welcome-bar__tile" aria-hidden="true">n</span><span>No projects yet</span>${iconMarkup("caret-down", 12, "icon--after")}</button>
+      <div id="welcome-projects" class="welcome-bar__menu" popover="auto" role="dialog" aria-label="Projects"><p class="welcome-bar__label">Add project</p>${way ? `<a class="welcome-bar__item" href="${escapeWords(way)}">${iconMarkup("github-logo", 16)}On GitHub</a>` : ""}</div>
+    </header>`;
+
 export function createSetupHost(ports: SetupHostPorts) {
   function renderLogin(
     mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
   ) {
     ports.closeWorkspace();
     ports.app.className = "login-page";
+    const info = ports.info;
+    // Where the card's button leads, offered by the bar's menu too.
+    const way = mode !== "ready" && mode !== "expired" ? undefined
+      : info?.configured ? EDITOR_LOGIN
+      : info?.ownerSetupOpen && info.ownerSetupUrl ? info.ownerSetupUrl
+      : undefined;
     // One layout for every state, so nothing jumps when the answer arrives: the
     // loading and automatic states keep the card's size and hide what is below.
-    ports.app.innerHTML = `
+    ports.app.innerHTML = `${welcomeBarMarkup(way)}
     <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", mode !== "loading" && mode !== "auto")}
       <div id="notice" class="login-notice" role="alert" hidden></div>
     </main>
   `;
     const action = ports.element("login-action");
-    const info = ports.info;
     if (mode === "loading" || mode === "auto") {
       const loading = node("p", "login-state login-busy");
       loading.setAttribute("role", "status");
@@ -112,7 +128,7 @@ export function createSetupHost(ports: SetupHostPorts) {
       // One button for everyone: the Worker decides where the sign-in leads
       // (the editor, GitHub's install page for an account without the App, or
       // the Setup wizard for a first site), so there is no choice to make here.
-      action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
+      action.append(link("Continue with GitHub", EDITOR_LOGIN, "button primary login-button login-signin"));
     } else if (info?.ownerSetupOpen && info.ownerSetupUrl) {
       // A fresh self-hosted editor (Deploy to Cloudflare): its owner has one
       // thing left to do, which the Setup wizard's Connect step explains and
