@@ -116,15 +116,15 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
   const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
   await expect(bold).toHaveAttribute("aria-pressed", "false");
-  // A debounced read starts, then Lex changes the same paragraph while its reply is held.
+  // A read starts, then Lex changes the same paragraph while its reply is held.
   await page.evaluate(() => window.guestBarRace.select("p", true));
   await page.clock.runFor(1_201);
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.select("p", true));
   await expect(bold).toHaveAttribute("aria-disabled", "true");
-  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(text => window.guestBarRace.answer(text, 2), source("<strong>Old bold</strong>"));
-  // The old answer must not flash Bold on during the next read's debounce.
+  // The old answer must not flash Bold on while the current read waits.
   await expect(bold).toHaveAttribute("aria-pressed", "false");
   await page.clock.runFor(1_201);
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
@@ -140,10 +140,19 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
 
 test("heading level stays usable while a new render waits for its text read", async ({ page }) => {
   await mount(page);
+  const heading = source("Heading").replace("<p>", "<h2>").replace("</p>", "</h2>");
   await page.evaluate(() => window.guestBarRace.select("h2"));
-  await page.evaluate(text => window.guestBarRace.answer(text), source("Heading").replace("<p>", "<h2>").replace("</p>", "</h2>"));
+  await page.evaluate(text => window.guestBarRace.answer(text), heading);
   await expect(bar(page).getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "false");
-  await page.evaluate(() => window.guestBarRace.select("h2", true));
-  expect(await bar(page).getByRole("combobox", { name: "Heading level" }).getAttribute("aria-disabled")).not.toBe("true");
+  for (let render = 0; render < 5; render++) {
+    await page.evaluate(() => window.guestBarRace.select("h2", true));
+    expect(await bar(page).getByRole("combobox", { name: "Heading level" }).getAttribute("aria-disabled")).not.toBe("true");
+    expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+    await page.clock.runFor(200);
+  }
+  await page.evaluate(text => window.guestBarRace.answer(text, 2), heading);
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  await page.evaluate(text => window.guestBarRace.answer(text), heading);
+  await expect(bar(page).getByRole("button", { name: "Bold", exact: true })).not.toHaveAttribute("aria-disabled", "true");
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
