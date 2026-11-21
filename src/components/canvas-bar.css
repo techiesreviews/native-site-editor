@@ -263,17 +263,11 @@
   width: 64px;
   height: var(--size-icon);
   padding: 0 24px 0 6px;
-  border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  background: var(--surface-input);
   color: var(--text);
   font: var(--type-small) / 1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
-}
-.canvas-width__input:focus {
-  border-color: var(--focus);
-  outline: 1px solid var(--focus);
 }
 .canvas-width__unit {
   position: absolute;

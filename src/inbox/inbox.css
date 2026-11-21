@@ -110,15 +110,8 @@
     --btn-background: var(--surface-subtle);
     --btn-hover-background: linear-gradient(var(--hover) 0 0), var(--surface-subtle);
   }
-  /* Busy or unavailable: the part's plain disabled look (it keeps the keyboard, so it is aria-disabled, not disabled). */
-  .inbox__act.button[aria-disabled="true"] {
-    --btn-background: var(--btn-disabled-background, var(--surface-subtle));
-    --btn-hover-background: var(--btn-background);
-    --btn-text-color: var(--btn-disabled-text-color, var(--muted));
-    cursor: default;
-  }
-  /* Accepted: done, in the success colour. */
-  .inbox__done.button[aria-disabled="true"] { --btn-text-color: var(--success-fg); }
+  /* Accepted: done, in the success colour (over the Button's plain disabled text hook). */
+  .inbox__done.button[aria-disabled="true"] { --btn-disabled-text-color: var(--success-fg); }
   /* Touch: the rows and their actions are 44 px targets (U6). */
   @media (hover: none), (pointer: coarse), (width <= 768px) {
     .inbox__item.button, .inbox__act.button { --btn-min-block-size: var(--size-touch); }

@@ -374,16 +374,10 @@
   box-sizing: border-box;
   height: var(--size-compact);
   padding: 0 8px;
-  border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  background: var(--surface-input);
   color: var(--text);
   font: inherit;
   font-size: var(--type-base);
-}
-.component-field__input:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: -1px;
 }
 .component-field__upload {
   display: flex;

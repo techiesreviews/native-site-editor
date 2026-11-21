@@ -10,9 +10,9 @@
 .media-library h3 { font-size: var(--type-base); font-weight: 600; }
 .media-library button, .media-library input, .media-library select { font: inherit; }
 .media-library button { cursor: pointer; min-height: var(--size-control); border-radius: var(--radius); }
-.media-library :is(:disabled, [aria-disabled="true"]) { cursor: default; opacity: .55; }
-/* A filled button, disabled or held while a change runs, is plain rather than pale (slice 106). */
-.media-library :is(.primary, .secondary, .button):is(:disabled, [aria-disabled="true"]) { background: var(--surface-subtle); color: var(--muted); opacity: 1; }
+.media-library :is(:disabled, [aria-disabled="true"]) { cursor: default; }
+/* A Button handles its own plain disabled look (src/ui/button/button.css); other disabled controls fade. */
+.media-library :is(:disabled, [aria-disabled="true"]):where(:not(.button)) { opacity: .55; }
 .media-library :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .media-library input:focus-visible, .media-library select:focus-visible { outline-offset: -1px; }
 .media-library__header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }

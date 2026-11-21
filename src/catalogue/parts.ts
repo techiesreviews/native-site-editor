@@ -274,6 +274,44 @@ const ATOMS: Part[] = [
     },
   },
   {
+    id: "icon-button", area: "atoms", name: "Icon button",
+    files: ["src/ui/icon-button/icon-button.ts", "src/ui/icon-button/icon-button-options.ts", "src/ui/icon-button/icon-button.css"],
+    css: "src/ui/icon-button/icon-button.css",
+    defaults: { icon: "undo", label: "Undo", pressed: false },
+    controls: [choice("icon", "Icon", ICON_NAMES), text("label", "Label"), toggle("pressed", "Pressed")],
+    rows: [{ label: "Plain", values: { pressed: false } }, { label: "Pressed", values: { pressed: true } }],
+    columns: states("normal", "hover", "pressed", "focus", "disabled"),
+    async render(values, state) {
+      const [{ iconButton }, { icon }] = await Promise.all([import("../ui/icon-button/icon-button"), import("../icons")]);
+      const element = iconButton(str(values.label) || "Action", icon(str(values.icon) as IconName), { title: false });
+      if (values.pressed) element.setAttribute("aria-pressed", "true");
+      element.disabled = state === "disabled";
+      return element;
+    },
+  },
+  {
+    id: "text-button", area: "atoms", name: "Text button",
+    files: ["src/ui/text-button/text-button.ts", "src/ui/text-button/text-button-options.ts", "src/ui/text-button/text-button.css"],
+    css: "src/ui/text-button/text-button.css",
+    defaults: { size: "base", underlined: false, label: "Undo" },
+    controls: [choice("size", "Size", [["base", "Base"], ["compact", "Compact"]]), toggle("underlined", "Underlined"), text("label", "Label")],
+    rows: [
+      { label: "Base", values: { size: "base", underlined: false } },
+      { label: "Compact", values: { size: "compact", underlined: false } },
+      { label: "Underlined", values: { size: "base", underlined: true } },
+    ],
+    columns: states("normal", "hover", "pressed", "focus", "disabled"),
+    async render(values, state) {
+      const { textButton } = await import("../ui/text-button/text-button");
+      const element = textButton(str(values.label) || "Action", () => undefined, {
+        size: values.size === "compact" ? "compact" : "base",
+        underlined: Boolean(values.underlined),
+      });
+      element.disabled = state === "disabled";
+      return element;
+    },
+  },
+  {
     id: "icon", area: "atoms", name: "Icon", files: ["src/ui/icon/icon.ts", "src/ui/icon/icon-options.ts", "src/icons.ts", "src/icons.css"],
     defaults: { name: "check", size: "16", place: "alone", words: "Save" },
     controls: [
@@ -291,7 +329,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "spinner", area: "atoms", name: "Spinner", files: ["src/ui/spinner/spinner.ts", "src/ui/spinner/spinner-options.ts", "src/ui/spinner/spinner.css"],
+    id: "spinner", area: "atoms", name: "Spinner", files: ["src/ui/spinner/spinner.ts", "src/ui/spinner/spinner-options.ts", "src/ui/spinner/spinner.css"], css: "src/ui/spinner/spinner.css",
     defaults: { size: "medium", place: "inline", label: "Loading" },
     controls: [choice("size", "Size", SPINNER_SIZE_CHOICES), choice("place", "Place", SPINNER_PLACE_CHOICES), text("label", "Label")],
     rows: SPINNER_PLACE_CHOICES.map(([place, label]) => ({ label, values: { place } })),
@@ -307,7 +345,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "progress", area: "atoms", name: "Progress bar", files: ["src/ui/progress/progress.ts", "src/ui/progress/progress-options.ts", "src/ui/progress/progress.css"],
+    id: "progress", area: "atoms", name: "Progress bar", files: ["src/ui/progress/progress.ts", "src/ui/progress/progress-options.ts", "src/ui/progress/progress.css"], css: "src/ui/progress/progress.css",
     defaults: { amount: "60", label: "Adding pictures" },
     controls: [choice("amount", "Amount", PROGRESS_AMOUNTS), text("label", "Label")],
     rows: PROGRESS_AMOUNTS.map(([amount, label]) => ({ label, values: { amount } })),
@@ -320,7 +358,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "badge", area: "atoms", name: "Badge", files: ["src/ui/badge/badge.ts", "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css"],
+    id: "badge", area: "atoms", name: "Badge", files: ["src/ui/badge/badge.ts", "src/ui/badge/badge-options.ts", "src/ui/badge/badge.css"], css: "src/ui/badge/badge.css",
     defaults: { kind: "tag", tone: "neutral", words: "Draft", icon: "check" },
     controls: [
       choice("kind", "Kind", BADGE_KIND_CHOICES), choice("tone", "Tone", BADGE_TONE_CHOICES), text("words", "Words"), choice("icon", "Mark icon", ICON_NAMES),
@@ -343,7 +381,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "section-heading", area: "atoms", name: "Section heading", files: ["src/ui/section-heading/section-heading.ts", "src/ui/section-heading/section-heading-options.ts", "src/ui/section-heading/section-heading.css"],
+    id: "section-heading", area: "atoms", name: "Section heading", files: ["src/ui/section-heading/section-heading.ts", "src/ui/section-heading/section-heading-options.ts", "src/ui/section-heading/section-heading.css"], css: "src/ui/section-heading/section-heading.css",
     defaults: { words: "Pages", level: "3", end: "none" },
     controls: [text("words", "Words"), choice("level", "Level", HEADING_LEVEL_CHOICES), choice("end", "End slot", HEADING_ENDS)],
     rows: [
@@ -365,7 +403,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "key", area: "atoms", name: "Keyboard key", files: ["src/ui/key/key.ts", "src/ui/key/key-options.ts", "src/ui/key/key.css"],
+    id: "key", area: "atoms", name: "Keyboard key", files: ["src/ui/key/key.ts", "src/ui/key/key-options.ts", "src/ui/key/key.css"], css: "src/ui/key/key.css",
     defaults: { keys: "Ctrl+K" },
     controls: [text("keys", "Keys (joined with +)")],
     rows: [
@@ -383,7 +421,7 @@ const ATOMS: Part[] = [
     },
   },
   {
-    id: "inline-field", area: "atoms", name: "Inline field", files: ["src/ui/inline-field/inline-field.css"],
+    id: "inline-field", area: "atoms", name: "Inline field", files: ["src/ui/inline-field/inline-field.css"], css: "src/ui/inline-field/inline-field.css",
     defaults: { value: "About us", placeholder: "Page title" },
     controls: [text("value", "Value"), text("placeholder", "Placeholder")],
     rows: [{ label: "Filled" }, { label: "Empty", values: { value: "" } }],

@@ -4,7 +4,6 @@
 import { iconSource, type IconName } from "../../icons";
 import { badgeKind, badgeMarkup, type BadgeOptions } from "./badge-options";
 import { iconSvg } from "../icon/icon-options";
-import "./badge.css";
 
 export interface BadgePartOptions extends BadgeOptions {
   /** The icon a `mark` holds. */

@@ -7,16 +7,12 @@
   box-sizing: border-box;
   height: var(--size-control);
   padding: 0 8px;
-  border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  background: var(--surface-input);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--type-small);
 }
-.url-change__input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-.url-change__input[aria-invalid="true"] { border-color: var(--warning-fg); }
-.url-change__input[readonly] { background: transparent; border-style: dashed; }
+.url-change__input[readonly] { border-style: dashed; }
 .url-change__details { display: flex; flex-direction: column; gap: 4px; }
 .url-change__details[hidden], .url-change__keep[hidden] { display: none; }
 .url-change__message { margin: 0; font-size: var(--type-small); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
