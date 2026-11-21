@@ -81,10 +81,11 @@ function welcomeMarkup(titleId: string, actionId: string, picture = true) {
  * The slim top bar over the login page, as in the approved sketch (TOOLS-188): the project menu's place, with no
  * project yet, drawn with the project menu's own trigger, tile, panel and rows (repository-menu.css). Its menu adds
  * one the way the card does (`way`); while the card has no way in, the button is disabled. While the session is
- * still checked (`checking`) the bar stays empty: a returning visitor most likely has projects.
+ * still checked (`checking`) the bar stays empty, and hidden from screen readers so they meet no empty banner: a
+ * returning visitor most likely has projects.
  */
 const welcomeBarMarkup = (way: string | undefined, checking: boolean) => checking ? `
-    <header class="welcome-bar"></header>` : `
+    <header class="welcome-bar" aria-hidden="true"></header>` : `
     <header class="welcome-bar">
       <button type="button" id="welcome-projects-button" class="repository-menu__trigger" popovertarget="welcome-projects"${way ? "" : " disabled"}><span class="repository-menu__initial" aria-hidden="true">n</span><span class="repository-menu__name">No projects yet</span>${iconMarkup("caret-down", 12, "repository-menu__caret")}</button>
       <div id="welcome-projects" class="dropdown-panel repository-menu__popover" popover="auto" role="dialog" aria-label="Projects"><div class="repository-menu__heading">Add project</div>${way ? `<a class="text-button repository-menu__action" href="${escapeWords(way)}">${iconMarkup("github-logo", 16, "icon--before")}On GitHub</a>` : ""}</div>
