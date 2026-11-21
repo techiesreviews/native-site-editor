@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blobOfDataUrl, dataUrlOf } from "../src/native-assets";
+import { blobOfDataUrl } from "../src/data-url-blob";
+import { dataUrlOf } from "../src/native-assets";
 
 test("a data address turns back into its bytes, base64 or written out, non-Latin text included (TOOLS-185)", async () => {
   const svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>€ Привет 日本 🎂</text></svg>";

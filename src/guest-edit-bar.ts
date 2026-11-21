@@ -14,7 +14,7 @@ import type { MediaPickerHost } from "./page-builder/media-picker";
 import type { TextSizeScale } from "./native-text-size";
 import { createGuestAsks } from "./guest-asks";
 import { GUEST_NOT_KEPT, GUEST_OTHER_PAGE, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange, type GuestHeadingLevel } from "./guest-changes";
-import { blobOfDataUrl } from "./native-assets";
+import { blobOfDataUrl } from "./data-url-blob";
 import { nativeKindLabel } from "./native-structure";
 import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
 import { GUEST_PICTURES_MAX, type GuestMessage, type HostMessage } from "./live-session";

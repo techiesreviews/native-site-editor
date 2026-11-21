@@ -29,6 +29,7 @@ test("whole wrapper: one bold element (whitespace around it, attributes, <b>, in
     "Hello <strong>you</strong>",
     "<em><strong>A</strong></em>",
     "plain words",
+    "<STRONG>Hi</STRONG>",
   ];
   const found = await page.evaluate((all) => {
     const { wholeWrapper: whole } = globalThis as typeof globalThis & { wholeWrapper: typeof wholeWrapper };
@@ -45,5 +46,7 @@ test("whole wrapper: one bold element (whitespace around it, attributes, <b>, in
     undefined,
     undefined,
     undefined,
+    // Tag names are any case in HTML.
+    { open: "<STRONG>", close: "</STRONG>", inside: "Hi" },
   ]);
 }));

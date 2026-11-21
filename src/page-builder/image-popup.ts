@@ -31,7 +31,7 @@ import { isPictureSpot } from "./looping-video";
 import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "./media-spot-pick";
 import { PLACEHOLDER_IMAGE_PATH } from "./native-elements";
 import { mediaKind } from "./media-library-filter";
-import { guestReason } from "../guest-changes";
+import { guestReason } from "../guest-reason";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
 export interface ImagePopupHost extends MediaPopupHost {
