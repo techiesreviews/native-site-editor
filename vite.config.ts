@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { Features } from "lightningcss";
-import { build as viteBuild, defineConfig, type Plugin } from "vite";
+import { build as viteBuild, defineConfig, type Plugin, type ResolvedConfig } from "vite";
 import { monacoDompurify } from "./vite-monaco-dompurify.ts";
 import { monacoTrim } from "./vite-monaco-trim.ts";
 import { previewRuntime } from "./vite-preview-runtime.ts";
@@ -16,15 +16,20 @@ const dompurify = monacoDompurify();
 const catalogueOnly = process.env.CATALOGUE_ONLY === "1";
 const guestOnly = process.env.GUEST_ONLY === "1";
 function separatePages(): Plugin {
+  let config: ResolvedConfig;
   return {
     name: "ase-separate-pages-build",
     apply: "build",
+    configResolved(resolved) { config = resolved; },
     async closeBundle() {
       // The guest's bar and picker share editor modules, but must not split those modules out of its first load.
       // As with the catalogue, a separate build keeps each page's lazy imports within that page's own graph.
       for (const flag of ["GUEST_ONLY", ...(process.env.CATALOGUE === "1" ? ["CATALOGUE_ONLY"] : [])]) {
         process.env[flag] = "1";
-        try { await viteBuild({ configFile: fileURLToPath(import.meta.url), configLoader: "runner", logLevel: "warn" }); }
+        try { await viteBuild({ configFile: fileURLToPath(import.meta.url), configLoader: "runner", logLevel: "warn",
+          root: config.root, base: config.base,
+          build: { outDir: config.build.outDir, assetsDir: config.build.assetsDir, write: config.build.write, emptyOutDir: false },
+        }); }
         finally { delete process.env[flag]; }
       }
     },

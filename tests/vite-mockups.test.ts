@@ -274,7 +274,7 @@ test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy an
   }
 });
 
-test("vite.config.ts adds the mock-ups only with MOCKUPS=1 and the catalogue build only with CATALOGUE=1", async () => {
+test("vite.config.ts enables mock-ups only with MOCKUPS=1 and extra pages only in the initial build", async () => {
   const pluginNames = async (value: string | undefined, name = "MOCKUPS") => {
     const saved = process.env[name];
     if (value === undefined) delete process.env[name];
@@ -290,10 +290,11 @@ test("vite.config.ts adds the mock-ups only with MOCKUPS=1 and the catalogue bui
   assert.ok(!(await pluginNames(undefined)).includes("ase-mockups"));
   assert.ok(!(await pluginNames("0")).includes("ase-mockups"));
   assert.ok((await pluginNames("1")).includes("ase-mockups"));
-  // The catalogue board's second build (vite.config.ts `catalogue`) runs only with CATALOGUE=1.
-  assert.ok(!(await pluginNames(undefined, "CATALOGUE")).includes("ase-catalogue-build"));
-  assert.ok(!(await pluginNames("0", "CATALOGUE")).includes("ase-catalogue-build"));
-  assert.ok((await pluginNames("1", "CATALOGUE")).includes("ase-catalogue-build"));
+  // Extra pages append to the initial build; their own builds must never start that loop again.
+  assert.ok((await pluginNames(undefined, "CATALOGUE")).includes("ase-separate-pages-build"));
+  assert.ok((await pluginNames("1", "CATALOGUE")).includes("ase-separate-pages-build"));
+  assert.ok(!(await pluginNames("1", "GUEST_ONLY")).includes("ase-separate-pages-build"));
+  assert.ok(!(await pluginNames("1", "CATALOGUE_ONLY")).includes("ase-separate-pages-build"));
 });
 
 test("only the preview Worker builds with the mock-ups and the catalogue board", () => {
