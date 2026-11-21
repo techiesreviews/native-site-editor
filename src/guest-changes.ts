@@ -1,7 +1,8 @@
 // What a guest of a synced session may change besides text (TOOLS-185): a link's address, a picture
-// swapped for one of the site's or one they upload, and a picture's focus and crop made in the image
-// popup (src/page-builder/image-popup.ts). Lex's tab reads each change with these rules before it
-// writes anything (src/live-session.ts): a message is a guest's word, never trusted as typed. No DOM here.
+// swapped for one of the site's or one they upload, a picture's focus and crop made in the image
+// popup (src/page-builder/image-popup.ts), and the host bar's heading level, text size and bold.
+// Lex's tab reads each change with these rules before it writes anything (src/live-session.ts):
+// a message is a guest's word, never trusted as typed. No DOM here.
 import type { PopupEdit } from "./page-builder/image-large-rules";
 import type { PopupShape } from "./page-builder/image-popup-rules";
 import { guestPhotoTypes, previewablePictures } from "../shared/media-kinds";
@@ -11,9 +12,26 @@ export type GuestChange =
   | { kind: "link"; path: string; node: number[]; href: string }
   | { kind: "picture"; path: string; node: number[]; file: string }
   | { kind: "upload"; path: string; node: number[]; name: string; type: string; data: string }
-  | { kind: "crop"; path: string; node: number[]; edit: PopupEdit; recrop: boolean };
+  | { kind: "crop"; path: string; node: number[]; edit: PopupEdit; recrop: boolean }
+  | { kind: "heading"; path: string; node: number[]; level: GuestHeadingLevel }
+  /** A size the page's Text size offers (src/native-text-size.ts), or "default". */
+  | { kind: "size"; path: string; node: number[]; size: string }
+  /** The whole element's text bold, or not. */
+  | { kind: "bold"; path: string; node: number[]; on: boolean };
 /** The same change once Lex's tab holds it: an upload is a file again. */
 export type GuestPageChange = Exclude<GuestChange, { kind: "upload" }> | { kind: "upload"; path: string; node: number[]; file: File };
+export type GuestHeadingLevel = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+
+/** Why a guest's change was not written when Lex's tab gave no reason: his page changed after the guest saw it. */
+export const GUEST_NOT_KEPT = "The page changed meanwhile. Try again.";
+/** Why a guest's change was not written when Lex's editor shows another page than the one it was made on. */
+export const GUEST_OTHER_PAGE = "Lex's editor is on another page now.";
+/** The longest reason a guest is shown. */
+export const GUEST_REASON_CHARS = 200;
+/** A thrown error's words for a guest: only a plain Error, which this editor raises with words for people. A TypeError,
+ * a failed fetch or a browser's error says nothing a guest can act on, and may name what lies behind the page. */
+export const guestReason = (error: unknown) =>
+  error instanceof Error && Object.getPrototypeOf(error) === Error.prototype && error.message ? error.message : undefined;
 
 /** The biggest picture a guest may upload, and its base64 length. */
 export const GUEST_UPLOAD_BYTES = 15 * 1024 * 1024;
@@ -103,5 +121,9 @@ export function readGuestChange(value: unknown): GuestChange | undefined {
     const edit = readPopupEdit(value.edit);
     return edit && typeof value.recrop === "boolean" ? { kind: "crop", ...at, edit, recrop: value.recrop } : undefined;
   }
+  if (value.kind === "heading") return typeof value.level === "string" && /^h[1-6]$/.test(value.level) ? { kind: "heading", ...at, level: value.level as GuestHeadingLevel } : undefined;
+  // A class name, a variable's name or a scale step: Lex's tab writes only a size the page offers.
+  if (value.kind === "size") return text(value.size, 80) && /^-{0,2}[A-Za-z0-9][\w-]*$/.test(value.size) ? { kind: "size", ...at, size: value.size } : undefined;
+  if (value.kind === "bold") return typeof value.on === "boolean" ? { kind: "bold", ...at, on: value.on } : undefined;
   return undefined;
 }

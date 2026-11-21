@@ -34,6 +34,7 @@ import { gridOfItem } from "./page-builder/card-source";
 import type * as sourceEditor from "./components/source-editor";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import { descendants, parseSource } from "./page-builder/component-model";
+import { wholeWrapper } from "./whole-wrapper";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativePageHead, resolveNativeProject, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
@@ -536,21 +537,6 @@ export function createPageBuilderHost(ports: PageBuilderHostPorts) {
     return undefined;
   }
 
-  // Whether `inner` is exactly one `tags` element (plus whitespace), the bar's
-  // notion of "the whole element is bold/italic"; returns that wrapper's range.
-  function wholeWrapper(inner: string, tags: string[]) {
-    const template = document.createElement("template");
-    template.innerHTML = inner;
-    const nodes = [...template.content.childNodes].filter((n) => n.nodeType !== Node.TEXT_NODE || n.textContent?.trim());
-    const only = nodes.length === 1 && nodes[0] instanceof Element ? nodes[0] : undefined;
-    if (!only || !tags.includes(only.localName)) return undefined;
-    const open = inner.search(new RegExp(`<(${tags.join("|")})[\\s>]`, "i"));
-    const closeAt = inner.toLowerCase().lastIndexOf(`</${only.localName}`);
-    const closeEnd = inner.indexOf(">", closeAt);
-    if (open < 0 || closeAt < 0 || closeEnd < 0) return undefined;
-    const openEnd = inner.indexOf(">", open);
-    return { open, openEnd: openEnd + 1, closeAt, closeEnd: closeEnd + 1 };
-  }
   // Elements a link inside can be removed from, keeping its text.
   const nativeLinkParents = new Set([...TEXT_LINE_TAGS].filter((tag) => tag !== "a" && tag !== "button"));
 

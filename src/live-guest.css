@@ -103,6 +103,16 @@ button, input { font: inherit; color: inherit; }
 .live-guest__waiting { place-self: center; padding: 16px; color: var(--muted); }
 .live-guest__frame { inline-size: 100%; block-size: 100%; min-block-size: 0; border: 0; background: var(--surface); }
 .live-guest__frame[hidden], .live-guest__waiting[hidden] { display: none; }
+/* The guest bar's read-out of a refusal (src/guest-edit-bar.ts): heard, never shown, and out of the canvas's grid
+   (this page has no style.css, so no .sr-only). */
+.live-guest__said {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 /* Phones: the edit bar docks in its own row under the frame (edit-bar.css), as in the editor. */
 @media (max-width: 650px) {
   .live-guest__canvas { display: flex; flex-direction: column; }

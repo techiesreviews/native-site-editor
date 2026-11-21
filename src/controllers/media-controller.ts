@@ -12,6 +12,7 @@ import { mediaAttribute, mediaExistingAlt } from "../page-builder/media-attribut
 import { startTags } from "../../shared/html-source";
 import type { EditBarControl } from "../components/edit-bar";
 import { locateNativeElementRange } from "../native-source-location";
+import { guestReason } from "../guest-changes";
 import type { TreeEntry } from "../../shared/types";
 
 export interface MediaWorkspaceSnapshot {
@@ -272,9 +273,12 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
   }
   /** A synced session guest's focus and crop, or picture, written as the image popup writes it (TOOLS-185). */
   async function guestImage(target: { path: string; node: number[] }, change: import("../page-builder/image-popup").ImagePopupApply, proof: { stamp: Stamp; source: string }) {
-    // A stale guest change resolves false; one that throws (a failed encode or write) is answered false too and only
-    // logged, since Lex's notice bar is for his own work.
-    try { await loadPopups(); return await popups!.apply(target, change, proof); } catch (error) { console.error(error); return false; }
+    // A stale guest change resolves false; one that throws (a failed encode or write) is answered with why, and logged
+    // only, since Lex's notice bar is for his own work.
+    try { await loadPopups(); return await popups!.apply(target, change, proof); } catch (error) {
+      console.error(error);
+      return guestReason(error) ?? false;
+    }
   }
 
   let videos: ReturnType<typeof import("../page-builder/media-video-place")["createVideoPlaces"]> | undefined;

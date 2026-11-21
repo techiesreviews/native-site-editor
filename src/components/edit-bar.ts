@@ -5,7 +5,6 @@ import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
 import { dockLift, dockScroll, editBarPlacement, type DockScrollOptions } from "./edit-bar-placement";
 import { componentIcon, mark } from "../page-builder/component-icon";
-import type { createPicturesPanel, PicturesControl } from "./edit-bar-pictures";
 import "./edit-bar.css";
 
 // The edit bar: contextual controls anchored to the element selected in the
@@ -17,8 +16,6 @@ import "./edit-bar.css";
 // is scrolled out of view unless its controls retain focus. On a phone-wide
 // window it is docked instead: a toolbar in its own row under the frame, like
 // a word editor's on a phone, raised onto the on-screen keyboard.
-
-export type { PicturesControl } from "./edit-bar-pictures";
 
 export interface SelectionRect {
   top: number;
@@ -43,6 +40,8 @@ export type EditBarControl =
       ariaLabel?: string;
       title?: string;
       disabled?: boolean;
+      // Takes nothing while a change is on its way, kept focusable (aria-disabled): a guest's bar (TOOLS-185).
+      waiting?: boolean;
       // A toggle, reflected as aria-pressed.
       pressed?: boolean;
       // Drawn before the label (the Media button).
@@ -118,9 +117,7 @@ export type EditBarControl =
       placeholder?: string;
       maxLength?: number;
       onSend: (text: string) => Promise<string | undefined>;
-    }
-  // A button opening the site's pictures to swap the selected one for (edit-bar-pictures.ts).
-  | PicturesControl;
+    };
 
 export interface SelectControl {
   kind: "select";
@@ -131,6 +128,8 @@ export interface SelectControl {
   caption?: boolean;
   // Where it applies, after it ("wide screens only").
   note?: string;
+  // As a button's `waiting`.
+  waiting?: boolean;
   onChange: (value: string) => void;
 }
 export interface CheckboxControl {
@@ -236,9 +235,7 @@ interface Note {
  * hidden behind the docked bar or the keyboard is scrolled into view above it
  * once (after a double-click's second press could land).
  */
-export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow, scroll?: (dy: number) => void,
-  // Replace's picture panel, passed by the bar that offers it (a session guest's), so the editor's own bar loads without it.
-  pictures?: typeof createPicturesPanel) {
+export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow, scroll?: (dy: number) => void) {
   let suggestionRows: typeof import("./suggestion-rows") | undefined;
   let suggestionRowsLoad: Promise<void> | undefined;
   // After a failed load (said once), it is tried again only when an address field opens.
@@ -276,8 +273,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   let openAddress: { target: string; meaning: string; onClose?: () => void; label: string; opened: string; input: HTMLInputElement; list: HTMLElement; control: AddressControl } | undefined;
   // The open fields popover (Variants), kept across re-renders while its control persists.
   let openFields: { target: string; label: string } | undefined;
-  // The open picture panel, kept the same way, with an upload under way.
-  let openPictures: { target: string; label: string; panel: ReturnType<typeof createPicturesPanel> } | undefined;
   // Ask agent's note, kept across re-renders with what is typed in it, and
   // a sent one shrinking away, which the bar keeps clear of until it is gone.
   let note: Note | undefined;
@@ -295,7 +290,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const address = openAddress;
     openAddress = undefined;
     openFields = undefined;
-    openPictures = undefined;
     popover.hidden = true;
     popover.replaceChildren();
     popoverButton = undefined;
@@ -929,6 +923,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     select.title = name;
     for (const option of control.options) select.append(new Option(option.label, option.value));
     select.value = control.value;
+    if (control.waiting) select.setAttribute("aria-disabled", "true");
     select.addEventListener("change", () => {
       if (select.value !== control.value) control.onChange(select.value);
     });
@@ -973,26 +968,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (focused !== null) (fieldInputs().find((input) => input.getAttribute("aria-label") === focused) ?? fieldInputs()[0])?.focus();
   }
 
-  function openPicturesPanel(item: HTMLButtonElement, control: PicturesControl) {
-    if (!pictures) return;
-    const panel = pictures(control, () => { if (openPictures?.panel === panel) closePopover(true); });
-    openPopover(item, [panel.element], "dialog");
-    openPictures = { target: addressTarget, label: control.label, panel };
-    control.onOpen?.();
-    placePopover(item);
-    panel.focus();
-  }
-  function picturesButton(control: PicturesControl) {
-    const item = button(control.label, () => {
-      if (popoverButton === item) { closePopover(true); return; }
-      openPicturesPanel(item, control);
-    }, "edit-bar__button edit-bar__button--icon edit-bar__replace");
-    item.prepend(icon("image"));
-    item.setAttribute("aria-label", control.ariaLabel ?? control.label);
-    item.setAttribute("aria-haspopup", "dialog");
-    item.setAttribute("aria-expanded", "false");
-    return item;
-  }
 
   function addressButton(control: AddressControl) {
     const item = button(control.icon ? "" : control.warning ?? control.label, () => {
@@ -1042,10 +1017,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       control.kind === "prompt" && control.label === note?.label);
     const keptFields = openFields && openFields.target === addressTarget
       ? model.controls.find((control): control is FieldsControl => control.kind === "fields" && control.label === openFields?.label) : undefined;
-    const keptPictures = openPictures && openPictures.target === addressTarget
-      ? model.controls.find((control): control is PicturesControl => control.kind === "pictures" && control.label === openPictures?.label) : undefined;
     if (kept && openAddress) openAddress.control = kept;
-    else if (!keptFields && !keptPictures) closePopover(false);
+    else if (!keptFields) closePopover(false);
     if (keptPrompt && note) note.control = keptPrompt;
     else closeNote(false);
     onFormat = model.onFormat;
@@ -1140,6 +1113,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         if (control.title) item.title = control.title;
         if (control.pressed !== undefined) item.setAttribute("aria-pressed", String(control.pressed));
         item.disabled = Boolean(control.disabled);
+        if (control.waiting) item.setAttribute("aria-disabled", "true");
         target.append(item);
       } else if (control.kind === "menu") {
         const item = button(control.label, () => {
@@ -1166,16 +1140,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
           renderSuggestions(openAddress);
         } else if (control.open && !kept) {
           opening = () => openAddressField(item, control);
-        }
-        target.append(item);
-      } else if (control.kind === "pictures") {
-        const item = picturesButton(control);
-        if (control === keptPictures && openPictures) {
-          popoverButton = item;
-          item.setAttribute("aria-expanded", "true");
-          openPictures.panel.fill(control);
-        } else if (control.open && !keptPictures) {
-          opening = () => openPicturesPanel(item, control);
         }
         target.append(item);
       } else if (control.kind === "prompt") {
@@ -1209,7 +1173,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // A selection with no controls shows its label alone.
     if (!panel.childElementCount) panel.remove();
     bar.dataset.model = "1";
-    if ((kept || keptFields || keptPictures) && popoverButton) placePopover(popoverButton);
+    if ((kept || keptFields) && popoverButton) placePopover(popoverButton);
     return opening;
   }
 

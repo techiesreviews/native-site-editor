@@ -4,6 +4,7 @@ import { imageResult } from "../page-builder/image-sizes";
 import { samePreviewFiles } from "./preview-files";
 import type { DropReport } from "../page-builder/drop-report";
 import type { GuestPageChange } from "../guest-changes";
+import type { TextSizeScale } from "../native-text-size";
 import type { FrameHost } from "./preview-protocol";
 import { createPreviewLink, iframeFramePort } from "./preview-link";
 import { handleChunkLoadFailure } from "../chunk-recovery";
@@ -274,17 +275,17 @@ export interface NativePreviewHandlers {
   // Loaded when a session starts (src/live-session.ts), so the editor's first paint does not carry it.
   guestEdits?: () => Promise<GuestEditHandlers>;
 }
-/** The page's pictures and links a guest's edit bar offers (TOOLS-185): the site's pictures, the site's pages. */
-export interface GuestContext { path: string; links: { label: string; value: string }[]; pictures: string[] }
+/** What a guest's edit bar offers on a page (TOOLS-185): the site's pictures, the site's pages, the page's text sizes. */
+export interface GuestContext { path: string; links: { label: string; value: string }[]; pictures: string[]; sizes?: TextSizeScale }
 export interface GuestEditHandlers {
   context(path: string): Omit<GuestContext, "path">;
   /** The files the image popup reads for a picture of this page: the page, its components, media records, the site's settings. */
   sources(path: string): Record<string, string>;
   /** Small copies of these site pictures, as addresses a guest's page can show. */
   pictures(paths: string[]): Promise<Record<string, string>>;
-  /** Writes a guest's change as this tab's own (an unsaved change here, its Undo here); false when it was not.
+  /** Writes a guest's change as this tab's own (an unsaved change here, its Undo here): true, or why it was not.
    * `seen`: the page's source as the guest's copy showed it, so a change to an element that moved is refused. */
-  change(change: GuestPageChange, seen: string): Promise<boolean>;
+  change(change: GuestPageChange, seen: string): Promise<true | string>;
 }
 
 // The part of a page document the preview renders: its <body> content.

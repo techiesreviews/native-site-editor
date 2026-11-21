@@ -5,8 +5,8 @@ import { mock, test } from "node:test";
 import { forEachAwait } from "./support/await-race";
 import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type GuestMessage, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
-import { createGuestAsks } from "../src/guest-asks";
-import type { GuestChange } from "../src/guest-changes";
+import { createGuestAsks, GUEST_NO_ANSWER } from "../src/guest-asks";
+import { GUEST_REASON_CHARS, type GuestChange } from "../src/guest-changes";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
@@ -315,6 +315,32 @@ test("a guest's change made on a render this tab no longer keeps, or on another 
   (await session.started).stop();
 });
 
+test("a guest hears why a change was not written: another page, the words it was refused with (cut short), never a technical error's", async () => {
+  const room = heard();
+  const shown = rendering();
+  const outcomes: (() => Promise<true | string>)[] = [
+    async () => "x".repeat(500),
+    async () => { throw new Error("The picture is too large to crop."); },
+    async () => { throw new TypeError("Failed to fetch"); },
+  ];
+  const session = await fakeSession({ ...shown, guestTextEdit: async () => true, refresh() {},
+    ...guestEdits({ change: () => outcomes.shift()!() }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  const picture = { kind: "picture", path: "index.html", node: [0], file: "images/a.jpg" };
+  await session.deliver("p1", "guest", { t: "change", change: { ...picture, path: "about.html" }, ask: 1, seen: 1 });
+  for (const ask of [2, 3, 4]) await session.deliver("p1", "guest", { t: "change", change: picture, ask, seen: 1 });
+  await settle();
+  assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done, message.why]), [
+    [1, false, "Lex's editor is on another page now."],
+    [2, false, "x".repeat(GUEST_REASON_CHARS)],
+    [3, false, "The picture is too large to crop."],
+    [4, false, undefined],
+  ]);
+  (await session.started).stop();
+});
+
 test("a guest's upload keeps the render it names while its bytes travel, however many renders come meanwhile", async () => {
   const room = heard(), changed: unknown[] = [];
   let source = "<p>first</p>";
@@ -447,10 +473,10 @@ test("a guest's upload on a slow link is waited for as each of its parts arrives
     asks.heard();
   }
   t.mock.timers.tick(50_000);
-  asks.answer(1, true);
-  asks.answer(2, true);
+  asks.answer(1, { done: true });
+  asks.answer(2, { done: true });
   await settled();
-  assert.deepEqual(results, [["upload", true], ["link", true]]);
+  assert.deepEqual(results, [["upload", undefined], ["link", undefined]], "written: no reason");
   // Nothing arrives: an upload gives up once one part's time is over, any other change sent with no upload waiting
   // after a minute.
   void asks.change(link, 4).then((done) => results.push(["lost link", done]));
@@ -460,13 +486,13 @@ test("a guest's upload on a slow link is waited for as each of its parts arrives
   assert.equal(results.length, 2, "both still wait a second before a minute is over");
   t.mock.timers.tick(1_000);
   await settled();
-  assert.deepEqual(results.slice(2), [["lost link", false]]);
+  assert.deepEqual(results.slice(2), [["lost link", GUEST_NO_ANSWER]]);
   t.mock.timers.tick(119_000);
   await settled();
   assert.equal(results.length, 3, "the upload still waits a second before one part's time is over");
   t.mock.timers.tick(1_000);
   await settled();
-  assert.deepEqual(results.slice(2), [["lost link", false], ["lost upload", false]]);
+  assert.deepEqual(results.slice(2), [["lost link", GUEST_NO_ANSWER], ["lost upload", GUEST_NO_ANSWER]]);
 });
 
 test("a guest's upload reaches the page as a file with its name, type and bytes", async () => {

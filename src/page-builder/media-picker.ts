@@ -186,6 +186,9 @@ export interface MediaPickerOptions {
   /** MIME types, extensions or image/*, like a native file input's accept; none: every kind (Add → Media). */
   accept?: string;
   files?: File[];
+  /** Choosing only (a synced session guest's picker, TOOLS-185): no File details and no Manage collections, as
+   * nothing but the choice reaches the site. */
+  chooseOnly?: boolean;
   /** Where the picker's window is placed; inside an open popover (the explorer) it keeps that open. */
   within?: HTMLElement;
 }
@@ -222,7 +225,7 @@ export async function openMediaPicker(options: MediaPickerOptions & { adapter?: 
   // A picker for other kinds (background videos) brings its own listing; the Media screen stays as it is.
   const adapter = options.adapter ?? host;
   if (!adapter) throw new Error("Open a repository before choosing an image.");
-  const dialog = node("dialog", "media-library media-library--picker");
+  const dialog = node("dialog", `media-library media-library--picker${options.chooseOnly ? " media-library--choose-only" : ""}`);
   // Escape closes only the picker, not a popover it was placed in.
   if (options.within) dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
   const state = pickerClose(() => options.onClose?.());

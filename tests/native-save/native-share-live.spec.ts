@@ -11,6 +11,10 @@ import { editorMounted, storedDraft } from "./drafts";
 // Default fixture group: the real Worker routes (worker/app.ts `/api/live/share`, `/api/live/guest`) and relay.
 const pageErrors: string[] = [];
 const heading = "A native browser preview";
+// A guest's page whose photo reads the test holds back (a big photo on a slow phone).
+declare global {
+  interface Window { holdReads?: boolean; releaseReads?: () => void }
+}
 
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/source-editor.ts")).getMountedSource("index.html") ?? "");
 
@@ -71,6 +75,16 @@ async function joins(visitor: Awaited<ReturnType<typeof guest>>, link: string, n
   return frame;
 }
 const ended = (page: Page) => page.getByRole("heading", { name: "This edit link has ended." });
+
+/** Lex types `words` at the end of `selector`'s text on his page. */
+async function typeInLex(lex: Page, selector: string, words: string) {
+  const target = lex.frameLocator(".native-preview-frame").locator(selector);
+  await clickOnText(target);
+  await expect(target).toHaveAttribute("contenteditable", /.+/);
+  await lex.keyboard.press("Control+End");
+  await lex.keyboard.type(words, { delay: 30 });
+  await lex.keyboard.press("Escape");
+}
 
 test("guests edit a heading through Lex's link; his Undo takes it back, they follow his page, and pressing the row again ends it", async ({ page: lex, browser, baseURL, context }) => {
   test.setTimeout(180_000);
@@ -177,10 +191,24 @@ test("guests edit a heading through Lex's link; his Undo takes it back, they fol
   expect(pageErrors).toEqual([]);
 });
 
-// The guest's edit bar (TOOLS-185): on a picture, Replace (the site's pictures, or an upload) and Focus and crop (the
-// editor's own image popup); on a link, its Address. Each change is Lex's own unsaved change, which his Undo takes back.
-// On a computer the bar floats by the selection; on a phone it sits docked under the page, and its panels open there too.
+// The guest's edit bar (TOOLS-185): on a picture, the editor's Media button (its image popup: shape, focus and crop,
+// and Replace, which opens the editor's Media picker with the site's pictures or an upload); on a link, its Address;
+// on text, the editor's heading level, text size and bold. Each change is Lex's own unsaved change, which his Undo
+// takes back. On a computer the bar floats by the selection; on a phone it sits docked under the page.
 const guestBar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
+const imagePopup = (page: Page) => page.getByRole("dialog", { name: "Image", exact: true });
+const chooser = (page: Page) => page.getByRole("dialog", { name: "Choose image", exact: true });
+/** The guest's Media button, then the popup's Replace: the Media picker, as on Lex's bar. */
+async function openChooser(page: Page) {
+  await guestBar(page).locator(".edit-bar__media").click();
+  await expect(imagePopup(page)).toBeVisible({ timeout: 20_000 });
+  await imagePopup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  // Replace closes the popup and opens the picker, as on Lex's bar.
+  await expect(imagePopup(page)).toBeHidden();
+  await expect(chooser(page)).toBeVisible({ timeout: 20_000 });
+  await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
+  return chooser(page);
+}
 const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*class="hero-image"[^>]*>/)?.[0] ?? "";
 // A guest's upload: a photo of four coloured quarters (a photo can be trimmed; the fixture's SVGs cannot).
 const quarters = (page: Page) => page.evaluate(() => {
@@ -219,33 +247,43 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Image");
   await expect(bar).not.toHaveAttribute("data-side", "docked");
 
-  // Replace lists the site's pictures, the one shown ticked; a pick is his change at once.
-  await bar.getByRole("button", { name: "Replace the picture" }).click();
-  const panel = anna.page.getByRole("dialog", { name: "Replace the picture" });
-  await expect(panel.getByRole("button", { name: "placeholder.svg" })).toHaveAttribute("aria-pressed", "true");
-  await panel.getByRole("button", { name: "studio-desk.svg" }).click();
-  await expect(panel).toBeHidden();
+  // Media, then the popup's Replace: the editor's Media picker with the site's pictures; Use is his change at once.
+  const picker = await openChooser(anna.page);
+  await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
+  // Only choosing: no file details, no collections to manage.
+  await expect(picker.getByRole("button", { name: "File details", exact: true })).toHaveCount(0);
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toHaveCount(0, { timeout: 20_000 });
   await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
   await expect(annaFrame.locator(".hero-image")).not.toHaveAttribute("src", shown, { timeout: 20_000 });
 
-  // Or a picture from her computer: it lands in the site's pictures folder and on the page.
-  await bar.getByRole("button", { name: "Replace the picture" }).click();
-  await expect(panel.getByRole("button", { name: "studio-desk.svg" })).toHaveAttribute("aria-pressed", "true");
-  // A file that is not a picture is refused, with the reason beside Upload…, and the panel stays.
-  await expect(panel.getByRole("status")).toHaveText("");
-  await panel.locator('input[type="file"]').setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hello") });
-  await expect(panel.getByRole("status")).toHaveText("That file is not a picture");
-  await panel.locator('input[type="file"]').setInputFiles({ name: "guest-quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(anna.page), "base64") });
-  await expect(panel).toBeHidden({ timeout: 20_000 });
+  // Or a picture from her computer, added in the picker: Use puts it in the site's pictures folder and on the page.
+  await annaFrame.locator(".hero-image").click();
+  await openChooser(anna.page);
+  // A drawing she adds is refused when she uses it (it could carry a script), the reason in the picker, which stays.
+  await picker.locator(".media-library__upload-input").setInputFiles({ name: "guest-drawing.svg", mimeType: "image/svg+xml",
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="teal"/></svg>') });
+  await expect(picker.locator(".media-library__chosen-name")).toHaveText("guest-drawing.svg", { timeout: 30_000 });
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker.locator(".media-library__message")).toHaveText(/Only a photo can be added/, { timeout: 20_000 });
+  await expect(picker).toBeVisible();
+  expect(await heroTag(lex)).toContain('src="/images/studio-desk.svg"');
+  await picker.locator(".media-library__upload-input").setInputFiles({ name: "guest-quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(anna.page), "base64") });
+  await expect(picker.locator(".media-library__chosen-name")).toHaveText("guest-quarters.jpg", { timeout: 30_000 });
+  const useAdded = picker.getByRole("button", { name: "Use image", exact: true });
+  await expect(useAdded).toBeEnabled({ timeout: 60_000 });
+  await useAdded.click();
+  await expect(picker).toHaveCount(0, { timeout: 30_000 });
   await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toMatch(/src="\/images\/guest-quarters[^"]*\.(?:jpe?g|webp)"/);
   const uploaded = /src="([^"]+)"/.exec(await heroTag(lex))![1];
 
-  // Focus and crop opens the editor's own image popup; a shape and a zoom, then Close, is his change: a trimmed copy.
+  // Media opens the editor's own image popup; a shape and a zoom, then Close, is his change: a trimmed copy.
   await annaFrame.locator(".hero-image").click();
-  await bar.getByRole("button", { name: "Focus and crop" }).click();
-  const popup = anna.page.getByRole("dialog", { name: "Image", exact: true });
+  await bar.locator(".edit-bar__media").click();
+  const popup = imagePopup(anna.page);
   await expect(popup).toBeVisible({ timeout: 20_000 });
-  await expect(bar.getByRole("button", { name: "Focus and crop" })).toHaveAttribute("aria-expanded", "true");
+  await expect(bar.locator(".edit-bar__media")).toHaveAttribute("aria-expanded", "true");
   await popup.getByRole("button", { name: /^Shape:/ }).click();
   await popup.getByRole("menuitemradio", { name: "Square", exact: true }).click();
   await popup.getByRole("slider", { name: "Zoom" }).fill("200");
@@ -258,7 +296,7 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   // A second crop is made on the picture her popup showed, the cropped copy (her page was never sent the original):
   // a new shape keeps that copy, never the original swapped back in under it.
   await annaFrame.locator(".hero-image").click();
-  await bar.getByRole("button", { name: "Focus and crop" }).click();
+  await bar.locator(".edit-bar__media").click();
   await expect(popup).toBeVisible({ timeout: 20_000 });
   await popup.getByRole("button", { name: /^Shape:/ }).click();
   await popup.getByRole("menuitemradio", { name: "16:9", exact: true }).click();
@@ -267,25 +305,25 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   await expect.poll(() => heroTag(lex), { timeout: 30_000 }).toMatch(/aspect-ratio: 16 \/ 9/);
   expect(/src="([^"]+)"/.exec(await heroTag(lex))![1]).toBe(cropped);
 
-  // Ben, on a phone: one bar docked under the page; its picture panel and the popup open there too.
+  // Ben, on a phone: one bar docked under the page; the popup and the picker open full-screen, as on Lex's phone.
   const ben = await guest(browser, true);
   const benFrame = await joins(ben, link, "Ben");
   const benBar = guestBar(ben.page);
   await benFrame.locator(".hero-image").click();
   await expect(benBar).toHaveAttribute("data-side", "docked");
-  await benBar.getByRole("button", { name: "Replace the picture" }).click();
-  const benPanel = ben.page.getByRole("dialog", { name: "Replace the picture" });
-  await expect(benPanel.getByRole("button", { name: "studio-desk.svg" })).toBeVisible();
-  await expect(benPanel.getByRole("button", { name: "Upload…" })).toBeVisible();
-  await ben.page.keyboard.press("Escape");
-  await expect(benPanel).toBeHidden();
-  await benBar.getByRole("button", { name: "Focus and crop" }).click();
-  const benPopup = ben.page.getByRole("dialog", { name: "Image", exact: true });
+  const benPicker = await openChooser(ben.page);
+  await expect(benPicker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true })).toBeVisible();
+  await benPicker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(benPicker).toHaveCount(0);
+  await benBar.locator(".edit-bar__media").click();
+  const benPopup = imagePopup(ben.page);
   await expect(benPopup).toBeVisible({ timeout: 20_000 });
   // While his crop is open, Anna picks another picture there: his crop, made on the old one, is not put on hers.
-  await bar.getByRole("button", { name: "Replace the picture" }).click();
-  await panel.getByRole("button", { name: "studio-desk.svg" }).click();
-  await expect(panel).toBeHidden();
+  await annaFrame.locator(".hero-image").click();
+  await openChooser(anna.page);
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toHaveCount(0, { timeout: 20_000 });
   await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
   const picked = await heroTag(lex);
   // A shape other than the 16:9 the picture already has, so his crop is a change.
@@ -293,10 +331,20 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   await benPopup.getByRole("menuitemradio", { name: "Square", exact: true }).click();
   await ben.page.keyboard.press("Escape");
   await expect(benPopup).toBeHidden();
-  // Refused, and his picture panel opens saying so.
-  await expect(benPanel).toContainText("The page changed meanwhile", { timeout: 20_000 });
-  await ben.page.keyboard.press("Escape");
-  await expect(benPanel).toBeHidden();
+  // Refused, and his bar says why on itself; pressing it clears it.
+  const why = benBar.locator(".edit-bar__warning");
+  await expect(why).toHaveText("The picture changed before your change arrived.", { timeout: 20_000 });
+  // Read out too, and the docked bar stays inside his phone's screen.
+  const said = ben.page.getByRole("status").filter({ hasText: "The picture changed before your change arrived." });
+  await expect(said).toHaveCount(1);
+  // Heard, never shown: it takes no room from his page.
+  expect(await said.evaluate((line) => line.getBoundingClientRect().height)).toBeLessThanOrEqual(1);
+  await expect(why).toHaveAccessibleName("The picture changed before your change arrived. (dismiss)");
+  expect(await benBar.evaluate((bar) => bar.scrollWidth <= window.innerWidth)).toBe(true);
+  // Its words are all there to read on his phone (a title shows only under a mouse).
+  expect(await why.evaluate((button) => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight)).toBe(true);
+  await why.click();
+  await expect(why).toHaveCount(0);
 
   // He changes the button's address there: Enter takes it, and it is Lex's change.
   await benFrame.locator(".hero-link").click();
@@ -310,12 +358,12 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('<a class="hero-link" href="https://example.test/" data-key="hero-link">');
   // Ben's crop was refused: Anna's picked picture is as she left it (the Undo count below would catch a late one).
   expect(await heroTag(lex)).toBe(picked);
-  // A pick from his docked panel is Lex's change too.
+  // A pick from his phone's picker is Lex's change too.
   await benFrame.locator(".hero-image").click();
-  await benBar.getByRole("button", { name: "Replace the picture" }).click();
-  await expect(benPanel.getByRole("button", { name: "placeholder.svg" })).toHaveAttribute("aria-pressed", "false");
-  await benPanel.getByRole("button", { name: "placeholder.svg" }).click();
-  await expect(benPanel).toBeHidden();
+  await openChooser(ben.page);
+  await benPicker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true }).click();
+  await benPicker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(benPicker).toHaveCount(0, { timeout: 20_000 });
   await expect.poll(() => heroTag(lex), { timeout: 20_000 }).toContain("placeholder.svg");
 
   // Still nothing of the editor on a guest's page, and no editor API reached.
@@ -339,6 +387,199 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   for (const frame of [annaFrame, benFrame]) await expect(frame.locator(".hero-image")).toHaveAttribute("src", shown, { timeout: 20_000 });
 
   for (const visitor of [anna, ben]) await visitor.context.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test("guests change a heading's level, a paragraph's text size and bold from the edit bar; Lex's Undo takes each back", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(180_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  const start = await source(lex);
+  const link = await share(lex);
+  const anna = await guest(browser);
+  // Her session socket, through a route that can hold back what Lex's tab sends her (all of it, or only the renders)
+  // and what she sends him, for a while. The room's frames are sealed, so only their size tells them apart: a render
+  // carries the page, far larger than an answer, a caret or who is here.
+  let holding: boolean | ((message: string | Buffer) => boolean) = false;
+  let holdingOut = false;
+  const renders = (message: string | Buffer) => typeof message !== "string" && message.byteLength > 1_024;
+  const heldBack: (string | Buffer)[] = [], heldOut: (string | Buffer)[] = [];
+  let toAnna: ((message: string | Buffer) => void) | undefined, toLex: ((message: string | Buffer) => void) | undefined;
+  const release = () => { holding = false; heldBack.splice(0).forEach((message) => toAnna!(message)); };
+  await anna.page.routeWebSocket(/\/api\/live\/guest/, (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => { if (holdingOut && typeof message !== "string") heldOut.push(message); else server.send(message); });
+    server.onMessage((message) => {
+      if (holding === true || typeof holding === "function" && holding(message)) { heldBack.push(message); return; }
+      socket.send(message);
+    });
+    toAnna = (message) => socket.send(message);
+    toLex = (message) => server.send(message);
+  });
+  const annaFrame = await joins(anna, link, "Anna");
+  const bar = guestBar(anna.page);
+
+  // The heading level, as on Lex's bar: H3 is his change, on his page and hers, and the bar keeps the heading. While
+  // it is on its way the box shows H3 at once, waiting.
+  await clickOnText(annaFrame.locator(".hero h1"));
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Heading");
+  const level = bar.getByRole("combobox", { name: "Heading level" });
+  await expect(level).toHaveValue("h1");
+  holding = true;
+  await level.selectOption("h3");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`<h3 data-key="hero-title">${heading}</h3>`);
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveValue("h3");
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveAttribute("aria-disabled", "true");
+  release();
+  await expect(annaFrame.locator(".hero h3")).toHaveText(heading, { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveValue("h3");
+
+  // Her typing on its way holds the text controls: a change made then would name a page without her letters. Once
+  // a render has them, H2 is written, not refused.
+  await clickOnText(annaFrame.locator(".hero h3"));
+  await anna.page.keyboard.press("Control+End");
+  holding = renders;
+  await anna.page.keyboard.type(" now", { delay: 30 });
+  // At once: with no render, the controls wait at most two seconds after her last letter.
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveAttribute("aria-disabled", "true", { timeout: 1_000 });
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`${heading} now</h3>`);
+  expect(heldBack.length).toBeGreaterThan(0);
+  release();
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  // A render that left before Lex's tab wrote her change does not show it: the controls wait for one that came after
+  // his answer. Her change is held on its way while Lex types elsewhere, then her renders are held as it is answered.
+  holdingOut = true;
+  await bar.getByRole("combobox", { name: "Heading level" }).selectOption("h2");
+  await expect.poll(() => heldOut.length, { timeout: 10_000 }).toBeGreaterThan(0);
+  const before = await source(lex);
+  await typeInLex(lex, ".hero p.lead", " Lex");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).not.toBe(before);
+  // fixed-wait: the render of Lex's typing reaches Anna's page, so a render newer than her change is there.
+  await anna.page.waitForTimeout(1_500);
+  holding = renders;
+  holdingOut = false;
+  heldOut.splice(0).forEach((message) => toLex!(message));
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`<h2 data-key="hero-title">${heading} now</h2>`);
+  // His answer leaves as he writes, ahead of the render that shows it, which is held.
+  await expect.poll(() => heldBack.length, { timeout: 20_000 }).toBeGreaterThan(0);
+  // fixed-wait: her page opens and takes the answer that went through (an answer alone used to settle the change).
+  await anna.page.waitForTimeout(300);
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveAttribute("aria-disabled", "true", { timeout: 100 });
+  release();
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  await expect(bar.locator(".edit-bar__warning")).toHaveCount(0);
+
+  // Text size and bold on the paragraph: each is his change, and the bar shows its state from his page.
+  const lead = annaFrame.locator(".hero p.lead");
+  await lead.click();
+  await expect(bar.locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveCount(0);
+  const size = bar.getByRole("combobox", { name: "Text size" });
+  await expect(size).toHaveValue("default", { timeout: 20_000 });
+  await size.selectOption("l");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('<p class="lead" data-key="hero-lead" style="font-size: 1.25rem">');
+  await expect(lead).toHaveCSS("font-size", "20px", { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Text size" })).toHaveValue("l", { timeout: 20_000 });
+  const bold = bar.getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  // While Lex's answer is held back, the bar shows her Bold at once and its text controls wait: nothing else is sent.
+  holding = true;
+  await bold.click();
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('style="font-size: 1.25rem"><strong>Edit plain HTML');
+  await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-disabled", "true");
+  const waiting = bar.getByRole("combobox", { name: "Text size" });
+  await expect(waiting).toHaveAttribute("aria-disabled", "true");
+  // A pick there anyway (Playwright refuses to pick in an aria-disabled select; a mouse can).
+  await waiting.evaluate((select: HTMLSelectElement) => {
+    select.value = "default";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(bar.getByRole("combobox", { name: "Text size" })).toHaveValue("l");
+  release();
+  await expect(lead.locator("strong")).toHaveCount(1, { timeout: 20_000 });
+  await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Text size" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  expect(await source(lex)).toContain('style="font-size: 1.25rem"><strong>Edit plain HTML');
+  // The next change, made at once, names a page that has her Bold: it is written, not refused.
+  await bar.getByRole("combobox", { name: "Text size" }).selectOption("default");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('<p class="lead" data-key="hero-lead"><strong>Edit plain HTML');
+  await expect(bar.locator(".edit-bar__warning")).toHaveCount(0);
+
+  // Still no Save, publish, files, settings or agents, and no editor API reached.
+  for (const name of [/save/i, /publish/i, /settings/i, /files/i, /agent/i, /connect/i])
+    await expect(anna.page.getByRole("button", { name })).toHaveCount(0);
+  expect([...new Set(anna.calls)]).toEqual(["/api/live/guest"]);
+
+  // Lex's Undo takes them all back (the guest's and his own typing too), one step at a time, to the page he shared.
+  const undo = lex.getByRole("banner").getByRole("button", { name: "Undo", exact: true });
+  for (let step = 0; step < 12 && await source(lex) !== start; step++) {
+    const before = await source(lex);
+    await undo.click();
+    await expect.poll(() => source(lex), { timeout: 10_000, message: `Undo ${step + 1} changed the page` }).not.toBe(before);
+  }
+  expect(await source(lex)).toBe(start);
+  await expect(annaFrame.locator(".hero h1")).toHaveText(heading, { timeout: 20_000 });
+  await expect(annaFrame.locator(".hero p.lead strong")).toHaveCount(0);
+
+  await anna.context.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test("a guest's photo Cancelled while it is read is never sent, and the session ending closes her picker", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(150_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  const start = await source(lex);
+  const link = await share(lex);
+  const anna = await guest(browser);
+  // Her photo's read waits while the test holds it, as a big photo's would on a slow phone.
+  await anna.page.addInitScript(() => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called below with its own reader as `this`
+    const read = FileReader.prototype.readAsDataURL;
+    FileReader.prototype.readAsDataURL = function (this: FileReader, blob: Blob) {
+      if (!window.holdReads) return read.call(this, blob);
+      const before = window.releaseReads;
+      window.releaseReads = () => { before?.(); read.call(this, blob); };
+    };
+  });
+  const annaFrame = await joins(anna, link, "Anna");
+  await annaFrame.locator(".hero-image").click();
+  const picker = await openChooser(anna.page);
+  await picker.locator(".media-library__upload-input").setInputFiles({ name: "late-quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(anna.page), "base64") });
+  await expect(picker.locator(".media-library__chosen-name")).toHaveText("late-quarters.jpg", { timeout: 30_000 });
+  const use = picker.getByRole("button", { name: "Use image", exact: true });
+  await expect(use).toBeEnabled({ timeout: 60_000 });
+  await anna.page.evaluate(() => { window.holdReads = true; });
+  await use.click();
+  await expect.poll(() => anna.page.evaluate(() => Boolean(window.releaseReads))).toBe(true);
+  // Cancel while it is read: once read, nothing reaches Lex's page.
+  await picker.getByRole("contentinfo").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await anna.page.evaluate(() => {
+    window.holdReads = false;
+    window.releaseReads!();
+  });
+  // fixed-wait: nothing on either page shows a change that was never sent; an upload sent would have landed by now.
+  await anna.page.waitForTimeout(3_000);
+  expect(await source(lex)).toBe(start);
+
+  // Lex stops sharing while her picker is open: the picker closes, and her page says the link has ended.
+  await annaFrame.locator(".hero-image").click();
+  await openChooser(anna.page);
+  await lex.locator(".repository-menu__trigger").click();
+  await editRow(lex).click();
+  await expect(ended(anna.page)).toBeVisible({ timeout: 15_000 });
+  await expect(chooser(anna.page)).toHaveCount(0);
+  await lex.keyboard.press("Escape");
+  expect(await source(lex)).toBe(start);
+
+  await anna.context.close();
   expect(pageErrors).toEqual([]);
 });
 
