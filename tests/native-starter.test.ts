@@ -56,6 +56,17 @@ test("the vendored files match the manifest's sizes and checksums, and the manif
   }
 });
 
+test("starter.pack is the vendored files back to back in manifest order (run scripts/native-starter-pack.mjs after vendoring)", () => {
+  const files = manifest.files.map((entry: { path: string }) => readFileSync(`${base}files/${entry.path}.asset`));
+  assert.ok(readFileSync(`${base}starter.pack`).equals(Buffer.concat(files)));
+});
+
+test("nativeStarterFiles reads the whole Starter in two ASSETS fetches: the manifest and the pack", async () => {
+  const fake = assets();
+  await nativeStarterFiles("My site", fake);
+  assert.deepEqual(fake.paths, [`/native-static-starter/${NATIVE_STARTER_VERSION}/manifest.json`, `/native-static-starter/${NATIVE_STARTER_VERSION}/starter.pack`]);
+});
+
 test("nativeStarterFiles reads only ASSETS and returns the six routes, components, styles, images, AGENTS.md and named settings, sorted", async () => {
   const fake = assets();
   const files = await starterProvider({ STARTER_SOURCE: "native-static", ASSETS: fake }, noNetwork)("My site");
@@ -132,9 +143,12 @@ test("a malformed manifest, unsafe path, duplicate or missing file fails clearly
   await assert.rejects(nativeStarterFiles("x", withManifest({ ...manifest, files: [{ ...manifest.files[0], size: 1e9 }] })), damaged(/bad size/));
   await assert.rejects(nativeStarterFiles("x", withManifest({ ...manifest, files: manifest.files.filter((f: { path: string }) => f.path !== "index.html") })), damaged(/no home page/));
   await assert.rejects(nativeStarterFiles("x", assets({ "manifest.json": null })), damaged(/manifest.json is missing/));
-  await assert.rejects(nativeStarterFiles("x", assets({ "files/images/social-card.png.asset": null })), damaged(/social-card.png.asset is missing/));
-  await assert.rejects(nativeStarterFiles("x", assets({ "files/images/social-card.png.asset": new Uint8Array([1, 2, 3]) })), damaged(/does not match/));
-  await assert.rejects(nativeStarterFiles("x", assets({ "files/styles/site.css.asset": "body{}" })), damaged(/does not match/));
+  const pack = readFileSync(`${base}starter.pack`);
+  await assert.rejects(nativeStarterFiles("x", assets({ "starter.pack": null })), damaged(/starter.pack is missing/));
+  await assert.rejects(nativeStarterFiles("x", assets({ "starter.pack": pack.subarray(0, pack.length - 3) })), damaged(/starter.pack does not match/));
+  const flipped = Buffer.from(pack);
+  flipped[pack.length - 1] ^= 1;
+  await assert.rejects(nativeStarterFiles("x", assets({ "starter.pack": flipped })), damaged(/does not match/));
 });
 
 test("an unknown STARTER_SOURCE fails clearly; unset keeps the template tarball", async () => {

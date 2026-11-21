@@ -1028,7 +1028,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous", live?: LiveConn
       const prefix = `/native-static-starter/${NATIVE_STARTER_VERSION}/`;
       if (process.env.ASE_NATIVE_STARTER_SOURCE !== "native-static" || !path.startsWith(prefix)) return new Response("Not found", { status: 404 });
       const relative = path.slice(prefix.length);
-      if (relative !== "manifest.json" && !/^files\/(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.asset$/.test(relative)) return new Response("Not found", { status: 404 });
+      if (relative !== "manifest.json" && relative !== "starter.pack" && !/^files\/(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]+\.asset$/.test(relative)) return new Response("Not found", { status: 404 });
       if (relative.split("/").some(part => part === "." || part === "..")) return new Response("Not found", { status: 404 });
       const file = resolve(projectRoot, "public", prefix.slice(1), relative);
       return existsSync(file) ? new Response(readFileSync(file)) : new Response("Not found", { status: 404 });
