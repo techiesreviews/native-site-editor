@@ -242,6 +242,7 @@ export function createSetupActions(ports: SetupPorts) {
     // The file is read for this repository and branch; if the user moves on meanwhile, nothing is
     // written (it would land in the other one). The branch's file is read first, so the plan reads it.
     const since = ports.guardedEdits.stamp("repository"), changed = "The repository changed meanwhile. Try again.";
+    const unreadPages = "The site's pages could not be read, so the name was not set. Try again.";
     if (ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH) === undefined) {
       try {
         const base = await ports.branchText(NATIVE_CONFIG_PATH);
@@ -258,7 +259,7 @@ export function createSetupActions(ports: SetupPorts) {
       // The port answers a failed read with its message (nativeSiteReadForCreate); a thrown error counts the same.
       const unread = await ports.readSite().then(problem => problem !== undefined, () => true);
       if (!since.holds()) return changed;
-      if (unread) return "The site's pages could not be read, so the name was not set. Try again.";
+      if (unread) return unreadPages;
     }
     const what = change.name !== undefined ? "name" : "address";
     const done = `Site ${what} set as a draft. Publish to keep it.`, undone = `Undid setting the site ${what}.`;
@@ -266,23 +267,28 @@ export function createSetupActions(ports: SetupPorts) {
       const text = r.source(NATIVE_CONFIG_PATH), next = withSiteSettings(text, change);
       if ("error" in next) return { refuse: next.error };
       const edits = change.name === undefined ? new Map<string, string>() : shownNameEdits(r, change.name);
+      if (!edits) return { refuse: unreadPages };
       if (text !== undefined) edits.set(NATIVE_CONFIG_PATH, next.text);
       return { ...text === undefined ? { creates: [{ path: NATIVE_CONFIG_PATH, content: next.text }] } : {}, edits, done, undone };
     }, { since });
     return outcome.ok ? outcome.message : outcome.reason === "stale" ? changed : outcome.message;
   }
 
-  /** The site's pages and templates that show its old name, with `name` in its place (src/page-builder/site-name-shown.ts). */
-  function shownNameEdits(r: Reads, name: string): Map<string, string> {
+  /**
+   * The site's pages and templates that show its old name, with `name` in its place (src/page-builder/site-name-shown.ts);
+   * undefined when one of them has no text read (the site read skips a file GitHub refuses), so nothing is set.
+   */
+  function shownNameEdits(r: Reads, name: string): Map<string, string> | undefined {
     const site = r.site();
     if (!site) return new Map();
-    const read = (paths: Iterable<string>) => new Map([...new Set(paths)].flatMap(path => {
-      const source = r.source(path);
-      return source === undefined ? [] : [[path, source] as const];
-    }));
+    const read = (paths: string[]) => {
+      const sources = new Map(paths.map(path => [path, r.source(path)] as const));
+      return [...sources.values()].includes(undefined) ? undefined : sources as Map<string, string>;
+    };
     // The home page first: with no shared title ending, its og:site_name is the old name.
     const routes = Object.entries(site.routes).sort(([a], [b]) => (a === "/" ? -1 : b === "/" ? 1 : 0)).map(([, path]) => path);
-    return siteNameShownEdits({ pages: read(routes), templates: read(Object.values(site.components)) }, name);
+    const pages = read(routes), templates = read(Object.values(site.components));
+    return pages && templates && siteNameShownEdits({ pages, templates }, name);
   }
 
   // A starting point's files as drafts: the files of `point` (the blank page,

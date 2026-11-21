@@ -99,10 +99,11 @@ const bundled = build({ entryPoints: ["src/setup-actions.ts"], bundle: true, wri
 type SetupPorts = Parameters<typeof createSetupActions>[0];
 
 /** The Starter's pages and templates in the memory workspace, with Save name's ports; `config` is the branch's .editor/config.json, if any. */
-function nameScenario(config: string | undefined, wrap: { branchText?: SetupPorts["branchText"]; readSite?: SetupPorts["readSite"] } = {}) {
+function nameScenario(config: string | undefined, wrap: { branchText?: SetupPorts["branchText"]; readSite?: SetupPorts["readSite"]; unread?: string } = {}) {
   const files = starterFiles();
   const branch: Record<string, string> = config === undefined ? {} : { ".editor/config.json": config };
-  for (const [path, text] of [...files.pages, ...files.templates]) branch[path] = text;
+  // `unread`: a page or template the site has whose text was not read (the site read skips a file GitHub refuses).
+  for (const [path, text] of [...files.pages, ...files.templates]) if (path !== wrap.unread) branch[path] = text;
   const routes = { "/": "index.html", "/about/": "about/index.html", "/404.html": "404.html", "/work/fern-and-kettle/": "work/fern-and-kettle/index.html",
     "/work/harbour-lane-pottery/": "work/harbour-lane-pottery/index.html", "/work/meadow-row-allotments/": "work/meadow-row-allotments/index.html" };
   const components = Object.fromEntries(templatePaths.map((path) => [path.split("/")[1], path]));
@@ -179,6 +180,20 @@ for (const [how, failed] of [["says why", async () => "The repository could not 
     assert.equal(await actions.writeSiteSettings({ name: "Bean & Leaf" }), undefined);
     assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "Bean & Leaf");
     assert.match(workspace.source(header)!, />Bean &amp; Leaf<\/a>/);
+  } finally {
+    appStore.dispose();
+  }
+});
+
+// The site read finishes when a file is too large or not text (it is skipped), so Save name checks every page and template itself.
+for (const unread of ["components/site-header/site-header.html", "about/index.html"]) test(`when the site read skipped ${unread}, Save name sets nothing and says so`, async () => {
+  const { workspace, appStore, ports } = nameScenario('{\n  "site": {\n    "name": "My site"\n  }\n}\n', { unread });
+  const module = await bundled;
+  try {
+    assert.equal(await module.createSetupActions(ports).writeSiteSettings({ name: "Bean & Leaf" }), "The site's pages could not be read, so the name was not set. Try again.");
+    assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "My site");
+    for (const path of [...pagePaths, ...templatePaths]) assert.equal(workspace.draft(path), undefined, path);
+    assert.deepEqual(workspace.steps(), []);
   } finally {
     appStore.dispose();
   }
