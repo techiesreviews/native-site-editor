@@ -78,6 +78,34 @@
 }
 .onboard-input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
 .onboard-input[aria-invalid="true"] { border-color: var(--warning-fg); }
+.onboard-field__hint:empty { display: none; }
+/* An input behind fixed text (github.com/<owner>/): the box draws the field, the input only the text. */
+.onboard-input--prefixed {
+  display: flex;
+  align-items: center;
+  cursor: text;
+}
+.onboard-input--prefixed:focus-within { outline: var(--focus-ring); outline-offset: -1px; }
+.onboard-input--prefixed:has([aria-invalid="true"]) { border-color: var(--warning-fg); }
+.onboard-input__prefix {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.onboard-input__bare {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.onboard-input__bare:focus { outline: none; }
 
 .onboard-group {
   display: flex;

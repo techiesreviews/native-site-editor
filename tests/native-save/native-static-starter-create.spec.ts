@@ -25,7 +25,7 @@ test('Create site commits the native starter and every public page works without
   await page.getByRole('button', { name: 'Create site' }).click();
   await expect(page.getByRole('heading', { name: 'Your site is ready' })).toBeVisible({ timeout: 30_000 });
   const state = await (await page.request.get(`${baseURL}/__demo/onboarding`)).json();
-  expect(state.created).toEqual([{ name: 'native-proof', private: false, description: 'A website edited with Native Site Editor' }]);
+  expect(state.created).toEqual([{ name: 'native-proof', private: true, description: 'A website edited with Native Site Editor' }]);
   expect(state.installs).toBe(1);
   expect(state.authorizations).toBe(1);
   expect(state.starterFetches).toBe(0); // No codeload/template request.

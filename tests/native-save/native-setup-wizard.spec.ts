@@ -77,7 +77,10 @@ test("signed out: one Continue with GitHub, the install trip by itself, a site s
   await expect(page.locator(".wizard__step")).toHaveText([/Connect GitHub/, /Create your site/, /Your site is ready/]);
   await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);
   await expect(page.locator(".wizard__step").nth(1)).toHaveAttribute("aria-current", "step");
-  await expect(page.getByText("github.com/native-demo-user/my-site")).toBeVisible();
+  // Where the site will live, inside the name field, before the name (TOOLS-188 sketch).
+  await expect(page.locator(".wizard-form .onboard-input__prefix")).toHaveText("github.com/native-demo-user/");
+  // A first site starts Private.
+  await expect(page.getByRole("radio", { name: /Private/ })).toBeChecked();
   await expect(page.getByRole("button", { name: "Do this with an agent" })).toBeVisible();
 
   // An invalid name is refused in the form.
@@ -264,6 +267,11 @@ test("at a narrow width the steps become Step 2 of 3", async ({ page, baseURL })
   await startSignedOut(page, baseURL!);
   await expect(page.getByText("Step 2 of 3")).toBeVisible();
   await expect(page.locator(".wizard__steps")).toBeHidden();
+  // Every button on the step is a full touch target (TOOLS-188 new-user test: they were 32px).
+  for (const name of ["Create site", "Use a site you have", "Do this with an agent", "Leave setup"]) {
+    const box = (await page.getByRole("button", { name, exact: true }).boundingBox())!;
+    expect(box.height, name).toBeGreaterThanOrEqual(44);
+  }
   const overflow = await page.evaluate(() => document.querySelector(".wizard")!.scrollWidth > document.querySelector(".wizard")!.clientWidth);
   expect(overflow).toBe(false);
 });
