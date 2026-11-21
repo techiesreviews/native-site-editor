@@ -109,12 +109,26 @@ test("an empty name says so on the field, and the form keeps the keyboard", asyn
 test("Connect an agent opens the project menu with Connect to MCP lit and focused", async ({ page, baseURL }) => {
   await startBlankSite(page, baseURL);
   await openInbox(page);
+  // The Inbox is a white card, as in the sketch (TOOLS-188 new-user test: it was the tinted panel colour).
+  const [panel, card] = await inbox(page).evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.background = "var(--surface-card)";
+    document.body.append(probe);
+    const colours = [getComputedStyle(element).backgroundColor, getComputedStyle(probe).backgroundColor];
+    probe.remove();
+    return colours;
+  });
+  expect(panel).toBe(card);
   await agentRow(page).click();
   await expect(inbox(page)).toBeHidden();
   await expect(page.locator("#repository-actions")).toBeVisible();
   const entry = page.getByRole("button", { name: "Connect to MCP" });
   await expect(entry).toHaveClass(/is-spotlit/);
   await expect(entry).toBeFocused();
+  // Lit means seen: a ring round the row, even when the click that got here leaves no focus ring.
+  expect(await entry.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
+  await entry.blur();
+  expect(await entry.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
   await page.keyboard.press("Escape");
   await expect(page.locator("#repository-actions")).toBeHidden();
   await expect(page.locator(".agent-menu__action")).not.toHaveClass(/is-spotlit/);

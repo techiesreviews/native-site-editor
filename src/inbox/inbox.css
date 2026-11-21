@@ -31,9 +31,10 @@
   overflow: auto;
   margin: 0;
   padding: var(--space-3xs);
-  border: 0;
+  /* A white card, as in the sketch (TOOLS-188). */
+  border: 1px solid var(--line);
   border-radius: var(--radius-panel);
-  background: var(--panel-surface);
+  background: var(--surface-card);
   color: var(--text);
   box-shadow: var(--shadow);
 }
