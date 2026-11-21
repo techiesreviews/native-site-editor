@@ -9,7 +9,7 @@ declare global {
     guestBarRace: {
       bar: ReturnType<typeof createGuestEditBar>;
       sent: GuestMessage[];
-      select(tag: "img" | "p" | "h2", render?: boolean): void;
+      select(tag: "img" | "p" | "h2", render?: boolean, node?: number[]): void;
       answer(source: string, ask?: number): void;
       picture(): void;
     };
@@ -47,13 +47,13 @@ async function mount(page: Page) {
     };
     window.guestBarRace = {
       bar, sent, answer,
-      select(tag, changed = false) {
+      select(tag, changed = false, node) {
         if (changed) {
           // Only the render number is consumed by the bar; the frame reports its selection below.
           bar.receive({ t: "render", n: ++render, typed: {}, colours: {}, payload: { html: "", css: "" } });
         }
         receive({ source: FRAME_SOURCE, type: "select", context: frameLink.context(), path: "index.html", tag,
-          node: [0, tag === "img" ? 0 : 1], rect: { top: 100, left: 100, bottom: 130, right: 400, width: 300, height: 30 } });
+          node: node ?? [0, tag === "img" ? 0 : 1], rect: { top: 100, left: 100, bottom: 130, right: 400, width: 300, height: 30 } });
       },
       picture() { bar.receive({ t: "pictures", to: "anna", pictures: { "images/slow.png": url } }); },
     };
@@ -154,5 +154,19 @@ test("heading level stays usable while a new render waits for its text read", as
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
   await page.evaluate(text => window.guestBarRace.answer(text), heading);
   await expect(bar(page).getByRole("button", { name: "Bold", exact: true })).not.toHaveAttribute("aria-disabled", "true");
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
+test("selecting another paragraph does not wait for an old selection's unanswered read", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p"));
+  await page.evaluate(() => window.guestBarRace.select("p", false, [0, 2]));
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+  const second = source("First").replace("</main>", "<p><strong>Second</strong></p></main>");
+  await page.evaluate(text => window.guestBarRace.answer(text, 2), second);
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(text => window.guestBarRace.answer(text, 1), source("First"));
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
