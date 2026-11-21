@@ -171,7 +171,7 @@
   color: inherit;
   font: inherit;
 }
-.edit-bar__select:hover {
+.edit-bar__select:hover:not([aria-disabled="true"]) {
   background: var(--hover);
 }
 /* The open list matches the bar's own menus: its panel, hover and current
@@ -427,13 +427,19 @@
   font: inherit;
   font-weight: 400;
 }
-/* A long reason stays on one short line; its whole text is in the title. */
+/* A reason wraps onto a second line, so it reads whole on a phone too (a title
+   shows only under a mouse); one longer still ends there, its text in the title. */
 .edit-bar__warning {
-  max-inline-size: min(28ch, 60vw);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  max-inline-size: min(36ch, 70vw);
   overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--warning-fg);
   font-weight: 600;
+  text-align: start;
+  white-space: normal;
 }
 .edit-bar__warning::before {
   content: "";

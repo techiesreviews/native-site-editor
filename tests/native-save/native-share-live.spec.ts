@@ -76,6 +76,16 @@ async function joins(visitor: Awaited<ReturnType<typeof guest>>, link: string, n
 }
 const ended = (page: Page) => page.getByRole("heading", { name: "This edit link has ended." });
 
+/** Lex types `words` at the end of `selector`'s text on his page. */
+async function typeInLex(lex: Page, selector: string, words: string) {
+  const target = lex.frameLocator(".native-preview-frame").locator(selector);
+  await clickOnText(target);
+  await expect(target).toHaveAttribute("contenteditable", /.+/);
+  await lex.keyboard.press("Control+End");
+  await lex.keyboard.type(words, { delay: 30 });
+  await lex.keyboard.press("Escape");
+}
+
 test("guests edit a heading through Lex's link; his Undo takes it back, they follow his page, and pressing the row again ends it", async ({ page: lex, browser, baseURL, context }) => {
   test.setTimeout(180_000);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -331,6 +341,8 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   expect(await said.evaluate((line) => line.getBoundingClientRect().height)).toBeLessThanOrEqual(1);
   await expect(why).toHaveAccessibleName("The picture changed before your change arrived. (dismiss)");
   expect(await benBar.evaluate((bar) => bar.scrollWidth <= window.innerWidth)).toBe(true);
+  // Its words are all there to read on his phone (a title shows only under a mouse).
+  expect(await why.evaluate((button) => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight)).toBe(true);
   await why.click();
   await expect(why).toHaveCount(0);
 
@@ -387,27 +399,78 @@ test("guests change a heading's level, a paragraph's text size and bold from the
   const start = await source(lex);
   const link = await share(lex);
   const anna = await guest(browser);
-  // Her session socket, through a route that can hold back what Lex's tab sends her (his answers) for a while.
-  let holding = false;
-  const heldBack: (string | Buffer)[] = [];
-  let toAnna: ((message: string | Buffer) => void) | undefined;
+  // Her session socket, through a route that can hold back what Lex's tab sends her (all of it, or only the renders)
+  // and what she sends him, for a while. The room's frames are sealed, so only their size tells them apart: a render
+  // carries the page, far larger than an answer, a caret or who is here.
+  let holding: boolean | ((message: string | Buffer) => boolean) = false;
+  let holdingOut = false;
+  const renders = (message: string | Buffer) => typeof message !== "string" && message.byteLength > 1_024;
+  const heldBack: (string | Buffer)[] = [], heldOut: (string | Buffer)[] = [];
+  let toAnna: ((message: string | Buffer) => void) | undefined, toLex: ((message: string | Buffer) => void) | undefined;
+  const release = () => { holding = false; heldBack.splice(0).forEach((message) => toAnna!(message)); };
   await anna.page.routeWebSocket(/\/api\/live\/guest/, (socket) => {
     const server = socket.connectToServer();
-    socket.onMessage((message) => server.send(message));
-    server.onMessage((message) => { if (holding) heldBack.push(message); else socket.send(message); });
+    socket.onMessage((message) => { if (holdingOut && typeof message !== "string") heldOut.push(message); else server.send(message); });
+    server.onMessage((message) => {
+      if (holding === true || typeof holding === "function" && holding(message)) { heldBack.push(message); return; }
+      socket.send(message);
+    });
     toAnna = (message) => socket.send(message);
+    toLex = (message) => server.send(message);
   });
   const annaFrame = await joins(anna, link, "Anna");
   const bar = guestBar(anna.page);
 
-  // The heading level, as on Lex's bar: H3 is his change, on his page and hers, and the bar keeps the heading.
+  // The heading level, as on Lex's bar: H3 is his change, on his page and hers, and the bar keeps the heading. While
+  // it is on its way the box shows H3 at once, waiting.
   await clickOnText(annaFrame.locator(".hero h1"));
   await expect(bar.locator(".edit-bar__kind")).toHaveText("Heading");
   const level = bar.getByRole("combobox", { name: "Heading level" });
   await expect(level).toHaveValue("h1");
+  holding = true;
   await level.selectOption("h3");
   await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`<h3 data-key="hero-title">${heading}</h3>`);
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveValue("h3");
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveAttribute("aria-disabled", "true");
+  release();
   await expect(annaFrame.locator(".hero h3")).toHaveText(heading, { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveValue("h3");
+
+  // Her typing on its way holds the text controls: a change made then would name a page without her letters. Once
+  // a render has them, H2 is written, not refused.
+  await clickOnText(annaFrame.locator(".hero h3"));
+  await anna.page.keyboard.press("Control+End");
+  holding = renders;
+  await anna.page.keyboard.type(" now", { delay: 30 });
+  // At once: with no render, the controls wait at most two seconds after her last letter.
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveAttribute("aria-disabled", "true", { timeout: 1_000 });
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`${heading} now</h3>`);
+  expect(heldBack.length).toBeGreaterThan(0);
+  release();
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  // A render that left before Lex's tab wrote her change does not show it: the controls wait for one that came after
+  // his answer. Her change is held on its way while Lex types elsewhere, then her renders are held as it is answered.
+  holdingOut = true;
+  await bar.getByRole("combobox", { name: "Heading level" }).selectOption("h2");
+  await expect.poll(() => heldOut.length, { timeout: 10_000 }).toBeGreaterThan(0);
+  const before = await source(lex);
+  await typeInLex(lex, ".hero p.lead", " Lex");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).not.toBe(before);
+  // fixed-wait: the render of Lex's typing reaches Anna's page, so a render newer than her change is there.
+  await anna.page.waitForTimeout(1_500);
+  holding = renders;
+  holdingOut = false;
+  heldOut.splice(0).forEach((message) => toLex!(message));
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain(`<h2 data-key="hero-title">${heading} now</h2>`);
+  // His answer leaves as he writes, ahead of the render that shows it, which is held.
+  await expect.poll(() => heldBack.length, { timeout: 20_000 }).toBeGreaterThan(0);
+  // fixed-wait: her page opens and takes the answer that went through (an answer alone used to settle the change).
+  await anna.page.waitForTimeout(300);
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).toHaveAttribute("aria-disabled", "true", { timeout: 100 });
+  release();
+  await expect(bar.getByRole("combobox", { name: "Heading level" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  await expect(bar.locator(".edit-bar__warning")).toHaveCount(0);
 
   // Text size and bold on the paragraph: each is his change, and the bar shows its state from his page.
   const lead = annaFrame.locator(".hero p.lead");
@@ -436,8 +499,7 @@ test("guests change a heading's level, a paragraph's text size and bold from the
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await expect(bar.getByRole("combobox", { name: "Text size" })).toHaveValue("l");
-  holding = false;
-  heldBack.splice(0).forEach((message) => toAnna!(message));
+  release();
   await expect(lead.locator("strong")).toHaveCount(1, { timeout: 20_000 });
   await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   await expect(bar.getByRole("combobox", { name: "Text size" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
@@ -452,9 +514,9 @@ test("guests change a heading's level, a paragraph's text size and bold from the
     await expect(anna.page.getByRole("button", { name })).toHaveCount(0);
   expect([...new Set(anna.calls)]).toEqual(["/api/live/guest"]);
 
-  // Lex's Undo takes the four back, one step each, to the page he shared.
+  // Lex's Undo takes them all back (the guest's and his own typing too), one step at a time, to the page he shared.
   const undo = lex.getByRole("banner").getByRole("button", { name: "Undo", exact: true });
-  for (let step = 0; step < 4; step++) {
+  for (let step = 0; step < 12 && await source(lex) !== start; step++) {
     const before = await source(lex);
     await undo.click();
     await expect.poll(() => source(lex), { timeout: 10_000, message: `Undo ${step + 1} changed the page` }).not.toBe(before);

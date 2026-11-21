@@ -120,10 +120,17 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let text: { key: string; size?: string; bold?: boolean } | undefined;
   let reading = 0;
   let reread: ReturnType<typeof setTimeout> | undefined;
-  // The element whose heading level, text size or bold change is on its way, and the render it was made on: its bar
-  // shows the change at once and its text controls wait until Lex's tab refuses it, or a later render shows it
-  // written (so the next change names a page that has it).
-  let sending: { key: string; on: number; written?: boolean; timer?: ReturnType<typeof setTimeout> } | undefined;
+  // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and its
+  // text controls wait until Lex's tab refuses it, or a later render shows it written (so the next change names a page
+  // that has it). `level` is a heading level on its way (the box shows it, not the tag still on the page); `answeredAt`
+  // the last render come when Lex's tab answered that it was written: only a render after it can show the change.
+  let sending: { key: string; level?: string; answeredAt?: number; timer?: ReturnType<typeof setTimeout> } | undefined;
+  // The guest's last typed letter sent to Lex's tab, and the last one a render has: while letters are on their way the
+  // text controls wait, as a change made then would name a page without them (a lost answer waits no longer).
+  let typedSent = 0;
+  let typedShown = 0;
+  let typedTimer: ReturnType<typeof setTimeout> | undefined;
+  const typingAhead = () => typedSent > typedShown;
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
   status.className = "live-guest__said";
@@ -174,8 +181,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     });
   }
 
-  /** Sends `file` for `target`, unless `cancelled` (the picker's Cancel) turned true while it was read. */
-  async function upload(target: Target, file: File | undefined, on = selectedSeen, cancelled = () => false): Promise<string | undefined> {
+  /** Sends `file` for `target`, unless `cancelled` (the picker's Cancel) turned true while it was read, or `gone` (the
+   * picker's picture no longer selected) says why it is no change any more. */
+  async function upload(target: Target, file: File | undefined, on = selectedSeen, cancelled = () => false,
+    gone = (at: Target): string | undefined => context?.path !== at.path ? GUEST_OTHER_PAGE : undefined): Promise<string | undefined> {
     if (!file) return undefined;
     if (!guestPhoto(file.name, file.type)) return NOT_A_PHOTO;
     if (file.size > GUEST_UPLOAD_BYTES) return `That picture is over ${GUEST_UPLOAD_BYTES / 1024 / 1024} MB.`;
@@ -183,7 +192,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     send({ t: "hold", seen: on });
     const data = await base64(file);
     if (closed || cancelled()) return undefined;
-    if (context?.path !== target.path) return GUEST_OTHER_PAGE;
+    const why = gone(target);
+    if (why) return why;
     return await write({ kind: "upload", ...target, name: file.name, type: file.type, data }, on);
   }
 
@@ -229,7 +239,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         }
         if (cancelled()) return;
         check();
-        const reason = file ? await upload(target, file, on, cancelled) : await write({ kind: "picture", ...target, file: image.path }, on);
+        const reason = file ? await upload(target, file, on, cancelled, stale) : await write({ kind: "picture", ...target, file: image.path }, on);
         if (reason) throw new Error(reason);
         answered(target, undefined);
       },
@@ -328,11 +338,11 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
   function textControls(at: Selected): EditBarControl[] {
-    const controls: EditBarControl[] = [], waiting = sending?.key === key(at);
+    const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead();
     // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
-      if (sending?.key === key(at)) { render(); return; }
-      const mine: NonNullable<typeof sending> = { key: key(at), on: selectedSeen };
+      if (sending?.key === key(at) || typingAhead()) { render(); return; }
+      const mine: NonNullable<typeof sending> = { key: key(at), ...next.kind === "heading" ? { level: next.level } : {} };
       sending = mine;
       if (shown && text?.key === key(at)) text = { ...text, ...shown };
       render();
@@ -346,16 +356,17 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       void write(next).then((reason) => {
         answered(at, reason);
         if (sending !== mine) return;
-        // Written: settled by the render that shows it (`select`), or already shown; a lost render waits no longer.
-        if (reason || selectedSeen > mine.on) { settle(); return; }
-        mine.written = true;
+        // Written: settled by the render that shows it (`select`), which Lex's tab sends after its answer; a render
+        // come before the answer left before the change was written. A lost render waits no longer.
+        if (reason) { settle(); return; }
+        mine.answeredAt = seen;
         mine.timer = setTimeout(settle, RENDER_WAIT_MS);
       });
     };
     if (/^h[1-6]$/.test(at.tag)) controls.push({
       kind: "select", label: "Heading level", waiting,
       options: LEVELS.map((level) => ({ label: level.toUpperCase(), value: level })),
-      value: at.tag,
+      value: waiting && sending?.level || at.tag,
       onChange: (value) => change({ kind: "heading", ...at, level: value as GuestHeadingLevel }),
     });
     const state = text?.key === key(at) ? text : undefined, scale = sizesOf(context);
@@ -425,7 +436,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     selected = next;
     selectedSeen = seen;
     // A text change on its way is settled by another selection, or by the render that shows it written.
-    const shown = Boolean(!moved && sending?.written && selectedSeen > sending.on);
+    const shown = Boolean(!moved && sending?.answeredAt !== undefined && selectedSeen > sending.answeredAt);
     if (moved || shown) {
       clearTimeout(sending?.timer);
       sending = undefined;
@@ -467,6 +478,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       // A render is the page's (src/live-guest.ts); the bar only notes its number.
       if (message.t === "render") {
         if (Number.isInteger(message.n)) seen = message.n;
+        const typed = message.typed && typeof message.typed[me] === "number" ? message.typed[me] : 0;
+        if (typingAhead() && typed >= typedSent) {
+          typedShown = typed;
+          clearTimeout(typedTimer);
+          render();
+        }
         return false;
       }
       if (message.t === "context") {
@@ -492,10 +509,22 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       } else return false;
       return true;
     },
+    /** The guest typed: letter `seq` (their frame's numbering) went to Lex's tab. */
+    typing(seq: number) {
+      if (closed || !Number.isInteger(seq)) return;
+      const was = typingAhead();
+      // A fresh frame numbers its typing from 1 again: the last letter sent is the one to wait for.
+      typedSent = seq;
+      if (seq <= typedShown) typedShown = seq - 1;
+      clearTimeout(typedTimer);
+      typedTimer = setTimeout(() => { typedShown = typedSent; render(); }, RENDER_WAIT_MS);
+      if (!was) render();
+    },
     close() {
       closed = true;
       clearTimeout(reread);
       clearTimeout(sending?.timer);
+      clearTimeout(typedTimer);
       // Tiles still waiting for a small copy get none.
       for (const list of [...waiting.values()]) for (const done of [...list]) done(undefined);
       status.remove();

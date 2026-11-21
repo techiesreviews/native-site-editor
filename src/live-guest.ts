@@ -265,6 +265,7 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
   // The text typed here goes to Lex's tab, which writes it; the next render says it is written (`typed`).
   frameLink.on("text-edit", (message) => {
     send({ t: "edit", edit: { path: message.path, node: message.node, before: message.before, after: message.after, live: message.live }, seq: message.seq, session: message.session });
+    editBar.typing(message.seq);
   });
 
   return {
