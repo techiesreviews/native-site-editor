@@ -80,10 +80,15 @@ test("a new site lists its setup in the Inbox, not a pill, and Save name takes i
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   const config = JSON.parse(await (await file(page, baseURL, "blank-repo", ".editor/config.json")).text());
   expect(config.site.name).toBe("Blank Studio");
+  // The page shows it too: its title, sharing title and header, as saved to GitHub (TOOLS-188).
+  const home = await (await file(page, baseURL, "blank-repo", "index.html")).text();
+  expect(home).toContain("<title>Blank Studio</title>");
+  expect(home).toContain('<meta property="og:title" content="Blank Studio">');
+  expect(home).toContain('<meta property="og:site_name" content="Blank Studio">');
 
-  // Remembered: after a reload only Connect an agent is left.
+  // Remembered: after a reload only Connect an agent is left, and the header says the new name.
   await page.reload();
-  await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
+  await expect(frame(page).locator("a.site-name")).toHaveText("Blank Studio", { timeout: 30_000 });
   await openInbox(page);
   await expect(setupRows(page)).toHaveText([/Connect an agent/]);
 });

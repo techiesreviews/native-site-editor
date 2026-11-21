@@ -35,10 +35,14 @@ function heads(pages: Map<string, string>) {
 /** The name the pages show now, and how their titles set it off (" · "), if any. */
 export function shownSiteName(pages: Map<string, string>): { name: string; separator?: string } | undefined {
   const read = heads(pages);
-  const ending = sharedTitleEnding([...read.values()].map((head) => head.title));
+  const titles = [...read.values()].map((head) => head.title);
+  const ending = sharedTitleEnding(titles);
+  const home = read.get([...pages.keys()][0] ?? "")?.["og:site_name"].trim();
+  // A name with a separator in it ("Bean - Leaf"): the titles' last part is only its end, so the whole name is the home page's.
+  const wider = ending && home?.endsWith(ending) && TITLE_SEPARATORS.find((candidate) => titles.filter((title) => title.endsWith(candidate + home)).length >= 2);
+  if (home && wider) return { name: home, separator: wider };
   const separator = ending && TITLE_SEPARATORS.find((candidate) => ending.startsWith(candidate));
   if (ending && separator) return { name: ending.slice(separator.length), separator };
-  const home = read.get([...pages.keys()][0] ?? "")?.["og:site_name"].trim();
   return home ? { name: home } : undefined;
 }
 
@@ -65,8 +69,10 @@ export function siteNameShownEdits(files: SiteNameFiles, name: string): Map<stri
     const head = read.get(path);
     let next = source;
     if (head) {
+      // A title that ends with the name changes its ending; one that is only the name (the Blank page's) becomes the new one.
       for (const field of ["title", "og:title"] as const)
         if (ending && newEnding && head[field].endsWith(ending)) next = upsertHeadTag(next, field, head[field].slice(0, -ending.length) + newEnding);
+        else if (head[field].trim() === shown.name) next = upsertHeadTag(next, field, wanted);
       if (head["og:site_name"].trim() === shown.name) next = upsertHeadTag(next, "og:site_name", wanted);
     }
     next = asData(asText(next));

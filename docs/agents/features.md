@@ -73,7 +73,7 @@ its number unused.
 
 ### F-setup-06 Setup in the Inbox
 - Try: Finish the wizard and open the Inbox.
-- Good: Name your site (Setup) and Connect an agent (Setup · Optional) sit at the top and light the Inbox dot; Save name in the row's own form writes the site name as a draft, puts it in the page titles, sharing tags, structured data, header brand and home eyebrow in the same undo step, and the row goes; with nothing left the Inbox says All done. No Setup pill in the top bar (TOOLS-188). A site opened from Use a site you have gets no setup rows; another site starts the name form afresh.
+- Good: Name your site (Setup) and Connect an agent (Setup · Optional) sit at the top and light the Inbox dot; Save name in the row's own form writes the site name as a draft, puts it in the page titles, sharing tags, structured data, header brand and home eyebrow in the same undo step, and the row goes (pages that cannot be read: nothing set, the row says so); with nothing left the Inbox says All done. No Setup pill in the top bar (TOOLS-188). A site opened from Use a site you have gets no setup rows; another site starts the name form afresh.
 - Files: `src/inbox/inbox-setup.ts`, `src/inbox/inbox.ts`, `src/controllers/setup-checklist-controller.ts`, `src/setup-checklist.ts`, `src/setup-actions.ts`, `src/page-builder/site-name-shown.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-checklist.spec.ts`
