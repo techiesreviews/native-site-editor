@@ -170,6 +170,12 @@ test.describe("new checks (TOOLS-253)", () => {
     await expect(row(page, /^Video without subtitles/).getByRole("button", { name: /^No speech/ })).toBeVisible();
     await expect(row(page, /^Video without subtitles/).getByRole("button", { name: /Fix with AI/ })).toHaveCount(0);
     await expect(row(page, /^Picture without a description, Site header/).getByRole("button", { name: /^Decorative/ })).toBeVisible();
+    // On the Inbox's card, which is the same colour as a quiet button, the manual fixes keep an edge (TOOLS-188).
+    const edge = await row(page, /^Video without subtitles/).getByRole("button", { name: /^No speech/ }).evaluate((button) => {
+      const own = getComputedStyle(button);
+      return { fill: own.backgroundColor, card: getComputedStyle(button.closest(".inbox")!).backgroundColor, ring: own.boxShadow };
+    });
+    expect(edge.fill !== edge.card || edge.ring !== "none", JSON.stringify(edge)).toBe(true);
   });
 
   test("Use H3 and No speech fix their rows from the Inbox, as one Undo step each", async ({ page, baseURL }) => {
