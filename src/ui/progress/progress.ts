@@ -4,7 +4,6 @@
 // one each time would start from nothing and never animate.
 // The editor's screens still draw their own bars until the Progress swap slice (ticket 34).
 
-import "./progress.css";
 import { progressAttributes, progressPercent, type ProgressOptions } from "./progress-options";
 
 /** Puts the options on a bar: value, mode and label. Going from known to unknown takes the value away again. */

@@ -32,9 +32,10 @@
 .site-settings__legend { margin-bottom: 12px; padding: 0; font-weight: 600; font-size: 14px; color: var(--muted); }
 .site-settings__field { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 6px 18px; padding: 16px 0; margin: 0; border-bottom: 1px solid var(--control-line); }
 .site-settings__label { font-size: 14px; line-height: 1.5; align-self: start; padding-top: 8px; }
-.site-settings__input { min-width: 0; width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text); font: inherit; box-sizing: border-box; }
+.site-settings__input { min-width: 0; width: 100%; min-height: 36px; padding: 8px 10px; border-radius: var(--radius); color: var(--text); font: inherit; box-sizing: border-box; }
+select.site-settings__input { border: 1px solid var(--control-line); background: var(--surface-input); }
 textarea.site-settings__input { resize: vertical; min-height: 88px; line-height: 1.5; }
-.site-settings__input[readonly] { color: var(--muted); background: var(--surface-subtle); }
+.site-settings__input[readonly] { color: var(--muted); }
 /* The Site address grows to show a long address whole, wrapping on a phone (slice 113). */
 textarea.site-settings__address { field-sizing: content; min-height: 36px; resize: none; overflow-wrap: anywhere; }
 /* Favicon: its 32 px preview before the field, and Choose favicon… under it in the field's column. */
@@ -57,7 +58,7 @@ textarea.site-settings__address { field-sizing: content; min-height: 36px; resiz
 .site-settings__thumb-image[hidden] { display: none; }
 .site-settings__image { border: 1px solid var(--control-line); }
 .site-settings__image[aria-expanded="true"] { background: var(--pressed); color: var(--on-pressed); }
-.site-settings :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.site-settings :not(input.site-settings__input, textarea.site-settings__input, .url-change__input):focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .site-settings__footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; background: var(--surface); }
 .site-settings__actions { display: flex; justify-content: flex-end; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .site-settings__status { margin: 0; color: var(--danger-fg); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }

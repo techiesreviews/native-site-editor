@@ -295,10 +295,6 @@
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
-.edit-bar__field-input:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: -1px;
-}
 .edit-bar__address,
 .edit-bar__button--icon {
   display: inline-flex;
@@ -419,10 +415,8 @@
   max-width: 100%;
   height: var(--size-control);
   margin: 0;
-  border: 1px solid var(--control-line);
   border-radius: var(--radius);
   padding: 0 8px;
-  background: var(--surface-input);
   color: inherit;
   font: inherit;
   font-weight: 400;

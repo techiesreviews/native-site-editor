@@ -2,7 +2,6 @@
 // at the far end for a count or a button. The editor's screens still draw their own until the swap slice (ticket 32).
 
 import { sectionHeadingMarkup, type SectionHeadingOptions } from "./section-heading-options";
-import "./section-heading.css";
 
 export interface SectionHeadingPartOptions extends SectionHeadingOptions {
   /** The end slot, an argument: text, or any node (a Badge, a button). */

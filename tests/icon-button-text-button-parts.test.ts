@@ -61,9 +61,8 @@ for (const [name, path, cls] of [
     assert.match(css, new RegExp(`@layer components \\{\\s*\\${cls} \\{`), "the look sits inside the components layer");
     assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/, "hover waits for a mouse; touch gets the press");
     assert.ok(homes.buttonLooks.includes(path), "the part's file is its look's home in the copy count");
-    const file = path.slice("src/".length);
     assert.match(read("src/ui/parts.css"), new RegExp(`^@import "\\./${path.slice("src/ui/".length)}";$`, "m"), "the editor loads it through src/ui/parts.css");
-    assert.match(read("src/catalogue/main.ts"), new RegExp(`^import "\\.\\./${file}";$`, "m"), "the design board loads it");
+    assert.match(read("src/catalogue/parts.ts"), new RegExp(`css:\\s*"${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`), "the design board loads it as a component file");
   });
 }
 
@@ -92,7 +91,7 @@ test("the underlined text button is underlined at rest, after the compact size s
   const text = read("src/ui/text-button/text-button.css").replace(/\/\*[\s\S]*?\*\//g, "");
   const base = /\.text-button \{([^}]*?)&/.exec(text)?.[1] ?? "";
   assert.doesNotMatch(base, /text-decoration/, "the base size is not underlined at rest");
-  assert.equal([...text.matchAll(/text-decoration-line: underline;/g)].length, 2, "hover and press underline");
+  assert.equal([...text.matchAll(/text-decoration-line: underline;/g)].length, 4, "hover and press underline for .text-button and .text-link");
   assert.match(text, /\.text-button--compact \{[^}]*text-decoration-color: transparent;[^}]*\}\s*\.text-button--underlined \{\s*text-decoration: underline;\s*\}/);
   assert.doesNotMatch(text, /text-decoration[\w-]*: var\(/, "keyword values only: the build adds no -webkit- copies");
 });
@@ -129,7 +128,7 @@ test("the editor loads the button parts' files in one line, in their order, afte
   assert.match(main, /^import "\.\/theme\.css";\nimport "\.\/ui\/parts\.css";$/m);
   assert.doesNotMatch(main, /icon-button\.css|text-button\.css|ui\/button\/button\.css/, "only through src/ui/parts.css");
   const imports = [...read("src/ui/parts.css").matchAll(/^@import "([^"]+)";$/gm)].map((match) => match[1]);
-  assert.deepEqual(imports, ["./button/button.css", "./icon-button/icon-button.css", "./text-button/text-button.css"]);
+  assert.deepEqual(imports.slice(0, 3), ["./button/button.css", "./icon-button/icon-button.css", "./text-button/text-button.css"]);
 });
 
 test("Page structure's icon actions are Icon buttons; its own CSS sizes them and keeps a look only for the Show toggle and Open", () => {

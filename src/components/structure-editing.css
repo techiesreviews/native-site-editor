@@ -39,7 +39,7 @@
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
 }
 .page-structure__slot-field :is(input, textarea),
-.page-structure__attribute-add input { min-width: 0; width: 100%; box-sizing: border-box; color: var(--text); background: var(--surface-input, var(--panel-surface)); border: 1px solid var(--control-line, var(--line)); border-radius: var(--radius-small, 4px); padding: 4px 6px; font: inherit; font-size: var(--type-small); }
+.page-structure__attribute-add input { min-width: 0; width: 100%; box-sizing: border-box; color: var(--text); border-radius: var(--radius-small, 4px); padding: 4px 6px; font: inherit; font-size: var(--type-small); }
 .page-structure__inline .page-structure__slot-field :is(input, textarea),
 .page-structure__inline .page-structure__attribute-add input { height: 28px; padding: 0 8px; border-radius: var(--radius); }
 /* A text field: one line that wraps and grows with its text, up to 12 lines,
@@ -58,9 +58,6 @@
   padding: 5px 8px;
   overflow-y: auto;
 }
-.page-structure__slot-field :is(input, textarea):focus-visible,
-.page-structure__attribute-add input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-.page-structure__slot-field :is(input, textarea)[aria-invalid=true] { border-color: var(--danger); }
 /* A link's or image's fields: a labelled group, always open. */
 .page-structure__slot-fields { display: flex; flex-direction: column; gap: 6px; }
 .page-structure__attributes { font-size: var(--type-small); }

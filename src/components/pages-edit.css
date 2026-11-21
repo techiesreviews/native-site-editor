@@ -24,17 +24,13 @@
   box-sizing: border-box;
   height: var(--size-compact);
   padding: 0 var(--space-xs);
-  border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  background: var(--surface-input);
   color: var(--text);
   font: inherit;
   font-size: var(--type-base);
 }
 .pages-edit__title { flex: 1; min-width: 0; }
 .pages-edit__slug { width: 16ch; min-width: 0; font-family: var(--font-mono); font-size: var(--type-small); }
-.pages-edit__title:focus-visible, .pages-edit__slug:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-.pages-edit__title[aria-invalid="true"], .pages-edit__slug[aria-invalid="true"] { border-color: var(--warning-fg); }
 .pages-edit__url { padding-left: calc(var(--space-m) + var(--space-2xs)); font-family: var(--font-mono); font-size: var(--type-small); color: var(--muted); }
 .pages-edit__url-button {
   padding: calc(var(--space-4xs) / 2) var(--space-3xs);
@@ -64,11 +60,8 @@
   box-sizing: border-box;
   height: var(--size-compact);
   padding: 0 var(--space-2xs);
-  border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  background: var(--surface-input);
   color: var(--text);
   font: inherit;
   font-size: var(--type-base);
 }
-.pages-rename:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }

@@ -30,7 +30,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/badge/badge.ts`
 - **Styles:** `src/ui/badge/badge.css`
 - **Options:** `src/ui/badge/badge-options.ts`
-- **Tests:** `src/ui/badge/badge.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/parts-list.test.ts`
+- **Tests:** `src/ui/badge/badge.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`, `tests/parts-list.test.ts`
 - **Design board:** Atoms › Badge
 - **Copies to swap:** the shared `.badge` in `src/style.css` and the badge looks screens style themselves (`node scripts/agents/copies.mjs report`).
 
@@ -66,7 +66,8 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/icon-button/icon-button.ts`
 - **Styles:** `src/ui/icon-button/icon-button.css`
 - **Options:** `src/ui/icon-button/icon-button-options.ts`
-- **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
+- **Tests:** `tests/editor-css-layers.test.ts`, `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
+- **Design board:** Atoms › Icon button
 
 ### Inline field
 
@@ -74,7 +75,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Use:** class `inline-field` on the input; the panels listed at the top of `src/ui/inline-field/inline-field.css` get it by selector.
 - **Code:** none (styles only)
 - **Styles:** `src/ui/inline-field/inline-field.css`
-- **Tests:** none yet
+- **Tests:** `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Inline field
 
 ### Keyboard key
@@ -84,7 +85,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/key/key.ts`
 - **Styles:** `src/ui/key/key.css`
 - **Options:** `src/ui/key/key-options.ts`
-- **Tests:** `src/ui/key/key.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Tests:** `src/ui/key/key.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Keyboard key
 
 ### Progress bar
@@ -95,7 +96,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/progress/progress.ts`
 - **Styles:** `src/ui/progress/progress.css`
 - **Options:** `src/ui/progress/progress-options.ts`
-- **Tests:** `src/ui/progress/progress.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Tests:** `src/ui/progress/progress.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Progress bar
 
 ### Section heading
@@ -106,7 +107,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/section-heading/section-heading.ts`
 - **Styles:** `src/ui/section-heading/section-heading.css`
 - **Options:** `src/ui/section-heading/section-heading-options.ts`
-- **Tests:** `src/ui/section-heading/section-heading.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Tests:** `src/ui/section-heading/section-heading.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Section heading
 
 ### Spinner
@@ -118,7 +119,7 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/spinner/spinner.ts`
 - **Styles:** `src/ui/spinner/spinner.css`
 - **Options:** `src/ui/spinner/spinner-options.ts`
-- **Tests:** `src/ui/spinner/spinner.test.ts`, `tests/catalogue-part-options.test.ts`
+- **Tests:** `src/ui/spinner/spinner.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Spinner
 
 ### Text button
@@ -130,7 +131,8 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Code:** `src/ui/text-button/text-button.ts`
 - **Styles:** `src/ui/text-button/text-button.css`
 - **Options:** `src/ui/text-button/text-button-options.ts`
-- **Tests:** `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
+- **Tests:** `tests/editor-css-layers.test.ts`, `tests/icon-button-text-button-parts.test.ts`, `tests/icon-button.test.ts`
+- **Design board:** Atoms › Text button
 
 ## Shared pieces
 
@@ -390,7 +392,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Media library video | File details' Still picture and Subtitles: under a video's or audio file's player, beside the file's other actions. | `src/page-builder/media-library-video.ts` | none yet |
 | Media library view | The Media pane, or the Choose image dialog: the library's grid, details and sheets together. | `src/page-builder/media-library-view.ts` | none yet |
 | Media markup | The markup a picture or video gets when placed on a page: sizes, sources and the player. | `src/page-builder/media-markup.ts` | `tests/mcp-runtime.test.ts`, `tests/media-descriptions.test.ts`, `tests/media-families.test.ts`, `tests/media-markup-alt.test.ts`, `tests/media-markup.test.ts` and 5 more |
-| Media picker | The Media picker's data: the library's files, online videos and what each one is used for. | `src/page-builder/media-picker.ts` `src/page-builder/media-picker.css` | `tests/lazy-loaders.test.ts`, `tests/mcp-runtime.test.ts`, `tests/media-controller.test.ts`, `tests/media-files-adding-runs.test.ts`, `tests/media-library-filter.test.ts` and 2 more |
+| Media picker | The Media picker's data: the library's files, online videos and what each one is used for. | `src/page-builder/media-picker.ts` `src/page-builder/media-picker.css` | `tests/editor-css-layers.test.ts`, `tests/lazy-loaders.test.ts`, `tests/mcp-runtime.test.ts`, `tests/media-controller.test.ts`, `tests/media-files-adding-runs.test.ts` and 3 more |
 | Media play | The edit bar's Play: on the canvas everything stays still so a click selects it; Play checks a selected video, audio or Online video, and Stop (or the end, or the selection moving on) returns it to its still. | `src/page-builder/media-play.ts` | `tests/media-kinds.test.ts`, `tests/media-play.test.ts` |
 | Media popup frame | The media popup's frame: the window a media spot's popup lives in, so the Image popup and the Media popup for video, audio, downloads and Online videos look and behave alike. | `src/page-builder/media-popup-frame.ts` | none yet |
 | Media spot popup | The Media popup: what the edit bar's Media button opens on a video, audio, a download or an Online video, in the media popup frame the Image popup uses. | `src/page-builder/media-spot-popup.ts` `src/page-builder/media-spot-popup.css` | none yet |

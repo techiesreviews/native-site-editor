@@ -4,7 +4,6 @@
 // marks the host `aria-busy="true"` and `inert` while it loads, so the keyboard and screen readers stay out too.
 // The editor's screens still draw their own spinners until the Spinner swap slice (ticket 34).
 
-import "./spinner.css";
 import { spinnerAttributes, type SpinnerOptions } from "./spinner-options";
 
 export function spinner(options: SpinnerOptions = {}): HTMLSpanElement {

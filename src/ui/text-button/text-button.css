@@ -47,4 +47,20 @@
   .text-button--underlined {
     text-decoration: underline;
   }
+
+  /* A link among plain text with the Text button's colour and hover underline, keeping the surrounding font size and no padding. */
+  .text-link {
+    color: var(--text-btn-text-color, var(--link));
+    font-size: inherit;
+    text-decoration: none;
+
+    &:active:not(:disabled) {
+      text-decoration-line: underline;
+    }
+    @media (hover: hover) and (pointer: fine) {
+      &:hover:not(:disabled) {
+        text-decoration-line: underline;
+      }
+    }
+  }
 }

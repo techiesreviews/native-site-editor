@@ -280,7 +280,7 @@ test("a preview annotation on a card names its files and its stylesheet, inside 
   await expect(button).toHaveAttribute("data-files", "src/ui/button/button.css src/ui/dom.ts");
   // Off screen a card is not drawn: in view, it is an article named by its title.
   await flyTo(page, "Button");
-  await expect(page.getByRole("article", { name: "Button" })).toHaveAttribute("data-part", "button");
+  await expect(page.getByRole("article", { name: "Button", exact: true })).toHaveAttribute("data-part", "button");
   await expect(page.locator("#card-badge")).toHaveAttribute("data-css", "src/ui/badge/badge.css");
   // Every card names a stylesheet, and it is one of its files.
   const sheets = await page.locator(".cat-card[data-id]").evaluateAll((cards) => cards.map((card) => [(card as HTMLElement).dataset.css ?? "", (card as HTMLElement).dataset.files ?? ""]));
@@ -838,10 +838,10 @@ test("after a click in a live frame, a key there and then Tab into the next card
 // only (never the state cells or the editor's own styles), per theme for colours; Reset; and "Send to agent", which
 // copies a plain-text change request and says Copied on the button. A part with its own component CSS file shows
 // that file instead (the CSS section, below).
-test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
+test("Tweak edits the live Sharing row's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await openBoard(page, baseURL);
-  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Badge", exact: true }).click();
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Sharing row", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
   const tweak = options.getByRole("region", { name: "Tweak" });
   const send = tweak.getByRole("button", { name: /^(Send to agent|Copied)$/ });
@@ -849,52 +849,55 @@ test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to
   await expect(send).toBeDisabled();
   await expect(reset).toBeDisabled();
 
-  const liveBadge = page.locator('#card-badge [data-cell="live"] .ui-badge');
-  const stateBadge = page.locator('#card-badge .cat-half[data-theme="light"] .cat-cell .ui-badge[data-kind="tag"]').first();
-  const css = (badge: typeof liveBadge, property: string) => badge.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+  const liveRows = page.locator('#card-share-row [data-cell="live"] .link-rows');
+  const liveRow = page.locator('#card-share-row [data-cell="live"] .link-row');
+  const liveMain = page.locator('#card-share-row [data-cell="live"] .link-row__main');
+  const stateRow = page.locator('#card-share-row .cat-half[data-theme="light"] .cat-cell .link-row').first();
+  const css = (target: typeof liveRow, property: string, pseudo?: string) =>
+    target.evaluate((element, [name, p]) => getComputedStyle(element, p).getPropertyValue(name), [property, pseudo ?? null] as const);
 
-  // The real values: a rule of the badge's own and the theme tokens its rules use.
-  const dotPadding = tweak.getByRole("textbox", { name: '.ui-badge[data-kind="dot"] { padding }', exact: true });
-  const space = tweak.getByRole("textbox", { name: "--space-xs", exact: true });
-  await expect(dotPadding).toHaveValue("0px");
-  await expect(space).toHaveValue("8px");
+  // The real values: a rule of the row's own and the theme tokens its rules use.
+  const rowsGap = tweak.getByRole("textbox", { name: ".link-rows { gap }", exact: true });
+  const radius = tweak.getByRole("textbox", { name: "--radius", exact: true });
+  await expect(rowsGap).toHaveValue("2px");
+  await expect(radius).toHaveValue("6px");
   // A value that would break out of its declaration is marked and changes nothing.
-  await dotPadding.fill("1px; } body { display: none");
-  await expect(dotPadding).toHaveAttribute("aria-invalid", "true");
-  expect(await css(liveBadge, "padding-inline-start")).toBe("8px");
+  await rowsGap.fill("1px; } body { display: none");
+  await expect(rowsGap).toHaveAttribute("aria-invalid", "true");
+  expect(await css(liveRows, "row-gap")).toBe("2px");
   await expect(send).toBeDisabled();
   // A slider beside a single length moves the value from the keyboard.
-  await tweak.getByRole("slider", { name: "--space-xs", exact: true }).press("ArrowRight");
-  await expect(space).toHaveValue("9px");
-  await expect.poll(() => css(liveBadge, "padding-inline-start")).toBe("9px");
-  await dotPadding.fill("2px");
-  await expect(dotPadding).toHaveAttribute("aria-invalid", "false");
-  await space.fill("12px");
-  await expect.poll(() => css(liveBadge, "padding-inline-start")).toBe("12px");
-  expect(await css(stateBadge, "padding-inline-start")).toBe("8px");
-  await expect(space.locator("xpath=ancestor::*[@data-changed][1]")).toBeVisible();
+  await tweak.getByRole("slider", { name: "--radius", exact: true }).press("ArrowRight");
+  await expect(radius).toHaveValue("7px");
+  await expect.poll(() => css(liveRow, "border-top-left-radius")).toBe("7px");
+  await rowsGap.fill("4px");
+  await expect(rowsGap).toHaveAttribute("aria-invalid", "false");
+  await radius.fill("12px");
+  await expect.poll(() => css(liveRow, "border-top-left-radius")).toBe("12px");
+  expect(await css(stateRow, "border-top-left-radius")).toBe("6px");
+  await expect(radius.locator("xpath=ancestor::*[@data-changed][1]")).toBeVisible();
 
   // A colour changes only the theme on show: dark here, and light keeps its own.
-  const lightBackground = await css(liveBadge, "background-color");
+  const lightDot = await css(liveMain, "background-color", "::before");
   await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
-  const surface = tweak.getByRole("textbox", { name: "--surface-subtle", exact: true });
-  await surface.fill("rgb(255, 0, 0)");
-  await expect.poll(() => css(liveBadge, "background-color")).toBe("rgb(255, 0, 0)");
+  const muted = tweak.getByRole("textbox", { name: "--muted", exact: true });
+  await muted.fill("rgb(255, 0, 0)");
+  await expect.poll(() => css(liveMain, "background-color", "::before")).toBe("rgb(255, 0, 0)");
   await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Light" }).click();
-  await expect.poll(() => css(liveBadge, "background-color")).toBe(lightBackground);
-  await expect(surface).not.toHaveValue("rgb(255, 0, 0)");
-  await expect(space).toHaveValue("12px");
+  await expect.poll(() => css(liveMain, "background-color", "::before")).toBe(lightDot);
+  await expect(muted).not.toHaveValue("rgb(255, 0, 0)");
+  await expect(radius).toHaveValue("12px");
 
   await expect(send).toBeEnabled();
   await send.click();
   await expect(send).toHaveText("Copied");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("8px → 12px");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("6px → 12px");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("Part: Badge (data-part=\"badge\")");
-  expect(copied).toContain('- .ui-badge[data-kind="dot"] { padding }, light and dark: 0px → 2px');
-  expect(copied).toMatch(/- --space-xs \(theme token in src\/theme\.css, used by [^)]*\{ padding-inline \}[^)]*\), light and dark: 8px → 12px/);
-  expect(copied).toMatch(/- --surface-subtle \(theme token in src\/theme\.css, used by [^)]*\), dark: \S.* → rgb\(255, 0, 0\)/);
-  expect(copied).not.toMatch(/--surface-subtle.*, light:/);
+  expect(copied).toContain("Part: Sharing row (data-part=\"share-row\")");
+  expect(copied).toContain("- .link-rows { gap }, light and dark: 2px → 4px");
+  expect(copied).toMatch(/- --radius \(theme token in src\/theme\.css, used by [^)]*\{ border-radius \}[^)]*\), light and dark: 6px → 12px/);
+  expect(copied).toMatch(/- --muted \(theme token in src\/theme\.css, used by [^)]*\), dark: \S.* → rgb\(255, 0, 0\)/);
+  expect(copied).not.toMatch(/--muted.*, light:/);
 
   // A clipboard that refuses: the button says so for a moment, then offers itself again.
   await page.evaluate(() => {
@@ -909,8 +912,8 @@ test("Tweak edits the live Badge's CSS in light and dark, resets it, and Send to
   await expect(send).not.toHaveAttribute("data-problem");
 
   await reset.click();
-  await expect.poll(() => css(liveBadge, "padding-inline-start")).toBe("8px");
-  await expect(space).toHaveValue("8px");
+  await expect.poll(() => css(liveRow, "border-top-left-radius")).toBe("6px");
+  await expect(radius).toHaveValue("6px");
   await expect(send).toBeDisabled();
   await expect(reset).toBeDisabled();
 });
@@ -988,7 +991,7 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   // A selector that names other buttons still reaches only the live cell: never a state cell or the panel's buttons.
   const secondaryCell = page.locator('#card-button .cat-half[data-theme="light"] .cat-cell button.secondary').first();
   const [cellFill, resetFill] = await Promise.all([css(secondaryCell, "background-color"), css(reset, "background-color")]);
-  await file.fill(edited.replace("&:active:not(:disabled) {", ":is(&, .secondary) { background: rgb(255, 0, 0); }\n    &:active:not(:disabled) {"));
+  await file.fill(edited.replace('&:active:not(:disabled, [aria-disabled="true"]) {', ':is(&, .secondary) { background: rgb(255, 0, 0); }\n    &:active:not(:disabled, [aria-disabled="true"]) {'));
   await expect.poll(() => css(liveButton, "background-color")).toBe("rgb(255, 0, 0)");
   expect(await css(secondaryCell, "background-color")).toBe(cellFill);
   expect(await css(reset, "background-color")).toBe(resetFill);
@@ -1018,6 +1021,34 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   await expect(send).toBeDisabled();
   await expect(reset).toBeDisabled();
   await expect(page.locator('p[role="status"]')).toHaveText("Button reset");
+
+  // Slice 2 and 3 atoms also show their own CSS files and isolate live edits (including deletions) to their live cell.
+  for (const [name, path] of [
+    ["Icon button", "src/ui/icon-button/icon-button.css"],
+    ["Text button", "src/ui/text-button/text-button.css"],
+    ["Badge", "src/ui/badge/badge.css"],
+    ["Spinner", "src/ui/spinner/spinner.css"],
+    ["Progress bar", "src/ui/progress/progress.css"],
+    ["Section heading", "src/ui/section-heading/section-heading.css"],
+    ["Keyboard key", "src/ui/key/key.css"],
+    ["Inline field", "src/ui/inline-field/inline-field.css"],
+  ] as const) {
+    await outline.getByRole("button", { name, exact: true }).click();
+    await expect(options.getByRole("region", { name: "Tweak" })).toHaveCount(0);
+    await expect(options.getByRole("region", { name: "CSS" }).getByRole("textbox", { name: path, exact: true })).toHaveValue(/@layer components \{/);
+  }
+  await outline.getByRole("button", { name: "Badge", exact: true }).click();
+  const badgeFile = options.getByRole("region", { name: "CSS" }).getByRole("textbox", { name: "src/ui/badge/badge.css", exact: true });
+  const badgeBefore = await badgeFile.inputValue();
+  const liveBadge = page.locator('#card-badge [data-cell="live"] .ui-badge');
+  const stateBadge = page.locator('#card-badge .cat-half[data-theme="light"] .cat-cell .ui-badge[data-kind="tag"]').first();
+  await badgeFile.fill(badgeBefore.replace("--badge-padding-inline: var(--space-xs);", "--badge-padding-inline: 20px;").replace(/\n\s*font-weight: var\(--badge-font-weight\);/, ""));
+  await expect.poll(() => liveBadge.evaluate((el) => getComputedStyle(el).paddingInlineStart)).toBe("20px");
+  await expect.poll(() => liveBadge.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("400");
+  expect(await stateBadge.evaluate((el) => getComputedStyle(el).paddingInlineStart)).toBe("8px");
+  expect(await stateBadge.evaluate((el) => getComputedStyle(el).fontWeight)).toBe("600");
+  await options.getByRole("region", { name: "CSS" }).getByRole("button", { name: "Reset" }).click();
+  await expect.poll(() => liveBadge.evaluate((el) => getComputedStyle(el).paddingInlineStart)).toBe("8px");
 });
 
 test("Tweak reaches a part drawn in a live frame, and leaves its state frames as they are", async ({ page, baseURL }) => {
@@ -1249,7 +1280,7 @@ test("the Badge, Section heading and Keyboard key draw their options in the live
 
   // Badge: a count over 99 reads 99+, a dot has a name and no text, the tone is data on the one class.
   await outline.getByRole("button", { name: "Badge", exact: true }).click();
-  const badge = page.locator("#card-badge .cat-live__stage > .ui-badge");
+  const badge = page.locator("#card-badge .cat-live__stage .ui-badge");
   await expect(badge).toHaveAttribute("data-kind", "tag");
   await expect(badge).toHaveText("Draft");
   await options.getByRole("combobox", { name: /^Kind/ }).selectOption("count");
@@ -1266,7 +1297,7 @@ test("the Badge, Section heading and Keyboard key draw their options in the live
 
   // Section heading: the words are a heading of the chosen level, the end slot follows them.
   await outline.getByRole("button", { name: "Section heading", exact: true }).click();
-  const heading = page.locator("#card-section-heading .cat-live__stage > .ui-section-heading");
+  const heading = page.locator("#card-section-heading .cat-live__stage .ui-section-heading");
   await expect(heading.getByRole("heading", { level: 3, name: "Pages" })).toBeVisible();
   await expect(heading.locator("[data-slot='end']")).toHaveCount(0);
   await options.getByRole("combobox", { name: /^Level/ }).selectOption("2");
@@ -1297,14 +1328,18 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
   const stage = page.locator("#card-badge .cat-live__stage");
   await options.getByRole("combobox", { name: /^Kind/ }).selectOption("tag");
   await options.getByRole("textbox", { name: "Words" }).fill("A page title far longer than any badge should ever be, so it must be cut ".padEnd(80, "x"));
-  const badge = stage.locator("> .ui-badge");
+  const badge = stage.locator(".ui-badge");
   await expect(badge).toHaveAttribute("data-kind", "tag");
   await stage.evaluate((element) => { element.style.inlineSize = "120px"; });
-  const widths = await badge.evaluate((element) => ({
-    badge: element.getBoundingClientRect().width,
-    stage: element.parentElement!.getBoundingClientRect().width,
-    cut: element.firstElementChild!.scrollWidth > element.firstElementChild!.clientWidth,
-  }));
+  const widths = await badge.evaluate((element) => {
+    const root = element.getRootNode();
+    const hostStage = root instanceof ShadowRoot ? root.host.parentElement! : element.parentElement!;
+    return {
+      badge: element.getBoundingClientRect().width,
+      stage: hostStage.getBoundingClientRect().width,
+      cut: element.firstElementChild!.scrollWidth > element.firstElementChild!.clientWidth,
+    };
+  });
   expect(widths.badge).toBeLessThanOrEqual(widths.stage + 0.5);
   expect(widths.cut).toBe(true);
 
@@ -1314,7 +1349,8 @@ test("a long badge is cut inside its stage, a mark with no icon draws the check,
     const title = document.createElement("span");
     title.textContent = "Title";
     element.prepend(title);
-    const badgeEl = element.querySelector<HTMLElement>(":scope > .ui-badge")!;
+    const badgeEl = (element.querySelector(":scope > .cat-live__host")?.shadowRoot?.querySelector<HTMLElement>(".ui-badge")
+      ?? element.querySelector<HTMLElement>(":scope > .ui-badge"))!;
     const result = {
       fits: badgeEl.getBoundingClientRect().right <= element.getBoundingClientRect().right + 0.5,
       cut: badgeEl.firstElementChild!.scrollWidth > badgeEl.firstElementChild!.clientWidth,

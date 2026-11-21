@@ -13,6 +13,17 @@ const repo = new URL("..", import.meta.url).pathname;
 const read = (path: string) => readFileSync(join(repo, path), "utf8");
 const BUTTON = "src/ui/button/button.css";
 const ORDER = "@layer tokens, elements, components;";
+const COMPONENTS = [
+  { id: "button", path: "src/ui/button/button.css", prefix: "btn", hooks: ["min-block-size", "radius", "padding-block", "padding-inline", "background", "text-color", "font-size", "font-weight"] },
+  { id: "icon-button", path: "src/ui/icon-button/icon-button.css", prefix: "icon-btn", hooks: ["size", "radius", "background", "text-color", "hover-background", "hover-text-color"] },
+  { id: "text-button", path: "src/ui/text-button/text-button.css", prefix: "text-btn", hooks: ["min-block-size", "padding-block", "padding-inline", "radius", "text-color", "font-size", "hover-background"] },
+  { id: "badge", path: "src/ui/badge/badge.css", prefix: "badge", hooks: ["gap", "padding-inline", "radius", "font-size", "font-weight", "background", "text-color"] },
+  { id: "key", path: "src/ui/key/key.css", prefix: "key", hooks: ["padding-inline", "radius", "border-color", "background", "font-size", "font-weight", "gap"] },
+  { id: "spinner", path: "src/ui/spinner/spinner.css", prefix: "spinner", hooks: ["size", "thickness", "track-color", "color", "duration", "overlay-z-index"] },
+  { id: "progress", path: "src/ui/progress/progress.css", prefix: "progress", hooks: ["height", "radius", "track-background", "fill-background", "duration", "slide-duration"] },
+  { id: "section-heading", path: "src/ui/section-heading/section-heading.css", prefix: "section-heading", hooks: ["gap", "end-gap", "text-color", "font-size", "font-weight", "line-height"] },
+  { id: "inline-field", path: "src/ui/inline-field/inline-field.css", prefix: "inline-field", hooks: ["background", "hover-background", "line-color", "focus-line-color", "invalid-line-color", "caret-color", "duration"] },
+] as const;
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** The text inside the block that opens at the first `{` after `from`. */
@@ -31,29 +42,50 @@ function cssFiles(dir: string): string[] {
     entry.isDirectory() ? cssFiles(join(dir, entry.name)) : entry.name.endsWith(".css") ? [relative(repo, join(repo, dir, entry.name))] : []);
 }
 
-test("the Button's file sets the layers' order, then keeps everything on the components layer", () => {
-  const css = withoutComments(read(BUTTON)).trim();
-  assert.ok(css.startsWith(ORDER), "the order statement comes first, so the file works wherever it loads");
-  const rest = css.slice(ORDER.length).trim();
-  assert.ok(rest.startsWith("@layer components {"), "one components layer block");
-  assert.equal(rest, `@layer components {${block(rest, 0)}}`, "nothing outside the components layer");
+test("each component file sets the layers' order, then keeps everything on the components layer", () => {
+  for (const { path } of COMPONENTS) {
+    const css = withoutComments(read(path)).trim();
+    assert.ok(css.startsWith(ORDER), `${path}: the order statement comes first, so the file works wherever it loads`);
+    const rest = css.slice(ORDER.length).trim();
+    assert.ok(rest.startsWith("@layer components {"), `${path}: one components layer block`);
+    assert.equal(rest, `@layer components {${block(rest, 0)}}`, `${path}: nothing outside the components layer`);
+  }
 });
 
-test("the Button's look comes from its --btn-* defaults, each one used", () => {
+test("each component's look comes from its --<name>-* defaults, each one used", () => {
+  for (const { path, prefix, hooks } of COMPONENTS) {
+    const css = withoutComments(read(path));
+    for (const name of hooks) {
+      const hook = `--${prefix}-${name}`;
+      assert.match(css, new RegExp(`var\\(${hook}[,)]`), `${path}: ${hook} is used`);
+      assert.ok(
+        new RegExp(`${hook}:`).test(css) || new RegExp(`var\\(${hook},\\s*[^)]+\\)`).test(css),
+        `${path}: ${hook} has a default`,
+      );
+    }
+  }
   const css = withoutComments(read(BUTTON));
   const button = block(css, css.indexOf(".button {"));
-  for (const name of ["min-block-size", "radius", "padding-block", "padding-inline", "background", "text-color", "font-size", "font-weight"]) {
-    assert.match(button, new RegExp(`--btn-${name}:`), `--btn-${name} has a default on .button`);
-    assert.match(css, new RegExp(`var\\(--btn-${name}\\)`), `--btn-${name} is used`);
-  }
-  // Disabled has hooks of its own: a screen that sets --btn-background never takes the plain disabled look away.
-  const disabled = block(button, button.indexOf("&:disabled {"));
+  // Disabled (both :disabled and aria-disabled="true") is plain and has hooks of its own: a screen that sets
+  // --btn-background never takes the plain disabled look away, and hover/active ignore both.
+  assert.match(button, /&:active:not\(:disabled, \[aria-disabled="true"\]\)/);
+  assert.match(button, /&:hover:not\(:disabled, \[aria-disabled="true"\]\)/);
+  const disabled = block(button, button.indexOf('&:is(:disabled, [aria-disabled="true"]) {'));
   assert.doesNotMatch(disabled, /--btn-[\w-]+\s*:/, "the disabled state sets no hook");
   assert.match(disabled, /background: var\(--btn-disabled-background, var\(--surface-subtle\)\);/);
   assert.match(disabled, /color: var\(--btn-disabled-text-color, var\(--muted\)\);/);
   // A tone changes only the custom properties, as the Framework's variants do.
   const secondary = block(css, css.indexOf(".secondary {"));
   assert.deepEqual([...secondary.matchAll(/([\w-]+)\s*:/g)].map((match) => match[1]).filter((name) => !name.startsWith("--btn-")), []);
+});
+
+test("the two screen copies of the Button's plain disabled look are gone, and .text-link lives in text-button.css", () => {
+  assert.doesNotMatch(withoutComments(read("src/page-builder/media-picker.css")), /\.media-library\s+:is\(\.primary,\s*\.secondary,\s*\.button\):is\(:disabled,\s*\[aria-disabled="true"\]\)/);
+  assert.doesNotMatch(withoutComments(read("src/catalogue/board.css")), /\.cat-tweak__actions\s+\.button\[aria-disabled="true"\]/);
+  const style = withoutComments(read("src/style.css"));
+  assert.doesNotMatch(style, /(?:^|})\s*\.text-link(?::(?:hover|active))?\s*\{/m, "no standalone .text-link look left in src/style.css");
+  const textButton = withoutComments(read("src/ui/text-button/text-button.css"));
+  assert.match(textButton, /\.text-link\s*\{[^}]*color:\s*var\(--text-btn-text-color,\s*var\(--link\)\);/);
 });
 
 test("no other editor stylesheet holds the Button's own rules", () => {
@@ -90,21 +122,34 @@ test("the editor's bare element rules sit on the elements layer, below every com
   assert.doesNotMatch(outside, /(?:^|})\s*(?:button|a)(?:,\s*(?:a|select))*\s*\{[^}]*(?:font|color): inherit/m, "no unlayered copy left");
 });
 
-test("the editor loads the Button's file; the board loads it as a style of its own", () => {
+test("the editor loads every component file through parts.css; the board loads each as a style of its own", () => {
   // Through src/ui/parts.css, which loads the parts' files in one line of src/main.ts (its line ceiling).
   assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\.css";$/m);
-  assert.match(withoutComments(read("src/ui/parts.css")), /^@import "\.\/button\/button\.css";$/m);
-  // Not through style.css, which the board loads too: the board adds it itself, so a live cell can leave it out.
-  assert.doesNotMatch(withoutComments(read("src/style.css")), /button\.css/);
-  assert.match(read("src/catalogue/main.ts"), /^loadComponentStyles\(\);$/m);
+  const partsCss = withoutComments(read("src/ui/parts.css"));
+  const styleCss = withoutComments(read("src/style.css"));
+  const catalogueMain = withoutComments(read("src/catalogue/main.ts"));
+  for (const { id, path } of COMPONENTS) {
+    const rel = path.replace(/^src\/ui\//, "./");
+    assert.match(partsCss, new RegExp(`^@import "${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}";$`, "m"), `parts.css imports ${path}`);
+    // Not through style.css or the part's own TS module: the board adds each itself, so a live cell can leave it out.
+    assert.doesNotMatch(styleCss, new RegExp(`/${id}\\.css`), `style.css does not import ${id}.css`);
+    assert.doesNotMatch(catalogueMain, new RegExp(`/${id}\\.css`), `catalogue/main.ts does not plain-import ${id}.css`);
+    const tsPath = `src/ui/${id}/${id}.ts`;
+    try {
+      assert.doesNotMatch(withoutComments(read(tsPath)), new RegExp(`import\\s+["']\\./${id}\\.css["']`), `${tsPath} does not import ${id}.css`);
+    } catch { /* styles-only parts (button, inline-field) have no matching ts file */ }
+  }
+  assert.match(catalogueMain, /^loadComponentStyles\(\);$/m);
 });
 
-test("the design board shows the Button's own CSS file", () => {
-  const button = PARTS.find((part) => part.id === "button");
-  assert.ok(button && isPart(button));
-  assert.equal(button.css, BUTTON);
-  assert.ok(button.files.includes(BUTTON));
-  assert.ok(!button.files.includes("src/style.css"));
+test("the design board shows each migrated component's own CSS file", () => {
+  for (const { id, path } of COMPONENTS) {
+    const part = PARTS.find((item) => item.id === id);
+    assert.ok(part && isPart(part), `${id} is on the design board`);
+    assert.equal(part.css, path, `${id}.css is ${path}`);
+    assert.ok(part.files.includes(path), `${id} lists ${path}`);
+    assert.ok(!part.files.includes("src/style.css"), `${id} does not list src/style.css`);
+  }
   for (const part of PARTS) {
     if (!isPart(part) || !part.css) continue;
     assert.ok(part.files.includes(part.css), `${part.id} lists its CSS file`);

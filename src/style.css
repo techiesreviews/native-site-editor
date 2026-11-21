@@ -2,7 +2,6 @@
    tokens, bare elements, then components each in a file of its own. The editor's screen CSS stays unlayered, so it
    wins over all three. */
 @layer tokens, elements, components;
-@import "./ui/inline-field/inline-field.css";
 @import "./ui/editor-scrollbars.css";
 
 :root {
@@ -448,19 +447,6 @@ h1 {
 }
 .notice[hidden] {
   display: none;
-}
-.text-link:active {
-  text-decoration: underline;
-}
-@media (hover: hover) and (pointer: fine) {
-  .text-link:hover {
-    text-decoration: underline;
-  }
-}
-.text-link {
-  font-size: inherit;
-  color: var(--link);
-  text-decoration: none;
 }
 .empty-message {
   color: var(--muted);

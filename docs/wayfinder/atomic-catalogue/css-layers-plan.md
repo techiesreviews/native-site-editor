@@ -2,7 +2,7 @@
 
 Lex, 2026-11-11 (Orbit TOOLS-207): direct access to all the CSS of a component, one file per component with its own
 defaults, edited in CSS on the design board, with layers deciding which rule wins. This plan maps today's CSS onto
-the layers and orders the slices. The pilot (the Button) is built; the rest are later slices.
+the layers and orders the slices. Slices 1, 2 and 3 are done; slices 4 to 7 remain.
 
 ## The layers
 
@@ -56,8 +56,8 @@ Rules that matter for every slice:
 | `src/utilities.css`: the reset (`*` box sizing, `body`, headings) | `elements` (slice 5) |
 | `src/utilities.css`: the old site foundation (`.section`, `.container`, `.image`, `.content`) and its examples | removed in the pilot: nothing in the editor or on the board used them |
 | `src/style.css` and `src/theme.css`: `.button`, `.primary`, `.secondary`; `src/utilities.css` `.button` | `src/ui/button/button.css`: done in the pilot |
-| `src/style.css`: `.icon-button`, `.text-button`, `.text-link` | `src/ui/icon-button/icon-button.css`, `src/ui/text-button/text-button.css` (slice 2) |
-| `src/ui/badge/badge.css`, `src/ui/key/key.css`, `src/ui/spinner/spinner.css`, `src/ui/progress/progress.css`, `src/ui/section-heading/section-heading.css`; `src/ui/inline-field/inline-field.css` | the same files on `components`, each with `--<name>-*` defaults (slice 3) |
+| `src/style.css`: `.icon-button`, `.text-button`, `.text-link` | `src/ui/icon-button/icon-button.css`, `src/ui/text-button/text-button.css`: done in slice 2 |
+| `src/ui/badge/badge.css`, `src/ui/key/key.css`, `src/ui/spinner/spinner.css`, `src/ui/progress/progress.css`, `src/ui/section-heading/section-heading.css`; `src/ui/inline-field/inline-field.css` | the same files on `components`, each with `--<name>-*` defaults: done in slice 3 |
 | `src/components/row-menu.css`, `dropdown.css`, `flyout.css`, `share-row.css`, `create-dialog.css` (the confirm dialog) | component files on `components` (slice 6) |
 | `src/style.css`: top bar, workspace, sidebar, explorer, login, notices | editor CSS, split by screen, unlayered (slice 7) |
 | `src/components/*.css` and `src/page-builder/*.css` for screens (pages tree, files tree, edit bar, phone sheet, media library, …) | editor CSS, unlayered as now; their own copies of a part swap to the part as each part lands |
@@ -66,21 +66,23 @@ Rules that matter for every slice:
 
 ## Slices, in order
 
-1. **Pilot: the Button** (this PR). The layer order; the bare `button`, `select` and `a` rules on `elements`; the
-   Button's whole look in `src/ui/parts/button.css` with `--btn-min-block-size`, `--btn-radius`,
+1. **Pilot: the Button** (done, PR #347). The layer order; the bare `button`, `select` and `a` rules on `elements`; the
+   Button's whole look in `src/ui/button/button.css` with `--btn-min-block-size`, `--btn-radius`,
    `--btn-padding-block`, `--btn-padding-inline`, `--btn-background`, `--btn-hover-background`, `--btn-text-color`,
    `--btn-font-size` and `--btn-font-weight`; the board's CSS section for it; the one-off count reading hooks.
-2. **Icon button and text button.** `.icon-button`, `.text-button` and `.text-link` out of `src/style.css` into
-   their own files, as board parts with their CSS shown. The Button learns `aria-disabled="true"` (today only
-   `:disabled`), and the two screen copies of its plain look go: `src/page-builder/media-picker.css` and the board's
+2. **Icon button and text button** (done). `.icon-button`, `.text-button` and `.text-link` out of `src/style.css` into
+   their own files (`src/ui/icon-button/icon-button.css`, `src/ui/text-button/text-button.css`), as board parts with
+   their CSS shown. The Button handles `aria-disabled="true"` alongside `:disabled`, and the two screen copies of its
+   plain disabled look are gone: `src/page-builder/media-picker.css` and the board's
    `.cat-tweak__actions .button[aria-disabled="true"]`.
-3. **The atoms that already have a file.** Badge, Keyboard key, Spinner, Progress bar, Section heading and Inline
-   field onto `components`, their fixed values turned into `--<name>-*` defaults; the board shows each file.
-4. **Tokens.** `src/theme.css` (and the generator's output) on `@layer tokens`.
-5. **Elements.** The rest of the bare element rules onto `elements`; what is left of `src/utilities.css` (the
+3. **The atoms that already have a file** (done). Badge, Keyboard key, Spinner, Progress bar, Section heading and
+   Inline field onto `components`, their defaults exposed as `--<name>-*` hooks; loaded via `src/ui/parts.css` and
+   shown on the board with their CSS files.
+4. **Tokens** (open). `src/theme.css` (and the generator's output) on `@layer tokens`.
+5. **Elements** (open). The rest of the bare element rules onto `elements`; what is left of `src/utilities.css` (the
    reset) folded in.
-6. **Molecules.** Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
-7. **Screen layout.** `src/style.css` split by screen into unlayered editor files; it keeps only the order line
+6. **Molecules** (open). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
+7. **Screen layout** (open). `src/style.css` split by screen into unlayered editor files; it keeps only the order line
    and its imports. Waits for the top bar work (ticket 66 and the phone layout) to land.
 
 Open for Lex later: the Framework names its variants `data-variant="secondary"` and `data-size="small"`; the editor

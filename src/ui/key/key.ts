@@ -3,7 +3,6 @@
 // (ticket 33).
 
 import { keyMarkup } from "./key-options";
-import "./key.css";
 
 /** The key or keys as an element; with nothing to press, no element. */
 export function keyPart(keys: string | readonly string[]): HTMLElement | undefined {

@@ -1017,11 +1017,6 @@ label.cat-control--row {
 .cat-tweak__send {
   flex: 1;
 }
-.cat-tweak__actions .button[aria-disabled="true"] {
-  background: var(--surface-subtle);
-  color: var(--muted);
-  cursor: default;
-}
 .cat-tweak__send[data-problem] {
   color: var(--danger-fg);
 }
