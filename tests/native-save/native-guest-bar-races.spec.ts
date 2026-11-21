@@ -38,7 +38,7 @@ async function mount(page: Page) {
     const photo = document.createElement("canvas"); photo.width = 20; photo.height = 10;
     const url = photo.toDataURL("image/png");
     const bar = createGuestEditBar({ canvas, frame, frameLink, send: message => { sent.push(message); }, me: "anna", picture: path => path === "images/current.png" ? url : undefined });
-    bar.receive({ t: "context", context: { path: "index.html", links: [], pictures: ["images/slow.png"] } });
+    bar.receive({ t: "context", context: { path: "index.html", links: [], pictures: ["images/slow.png", "images/missing.png"] } });
     const answer = (source: string) => {
       const asked = sent.filter((message): message is Extract<GuestMessage, { t: "sources" }> => message.t === "sources").at(-1);
       if (!asked) throw new Error("The guest has not asked for sources.");
@@ -75,6 +75,7 @@ test("a guest can use a thumbnail arriving after 15 seconds without reopening th
   await tile.click();
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.some(message => message.t === "want"))).toBe(true);
   await page.clock.runFor(15_001);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want" && message.paths.includes("images/slow.png")).length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.picture());
   await expect(tile.locator("img")).toHaveAttribute("src", /^blob:/);
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
@@ -89,6 +90,21 @@ test("a guest can use a thumbnail arriving after 15 seconds without reopening th
     window.guestBarRace.bar.receive({ t: "answer", to: "anna", ask: change.ask, done: true });
   });
   await expect(picker).toHaveCount(0);
+  // The other tile never answers. Use must release its pending read and retry timer too.
+  const requests = await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want").length);
+  await page.clock.runFor(30_001);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want").length)).toBe(requests);
+  // Cancel releases a missing tile too, without sending another picture change.
+  await bar(page).getByRole("button", { name: "Media", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  await popup.getByRole("button", { name: "Replace", exact: true }).click();
+  await picker.getByRole("button", { name: "Choose images/missing.png", exact: true }).click();
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  const cancelled = await page.evaluate(() => window.guestBarRace.sent.length);
+  await page.clock.runFor(30_001);
+  expect(await page.evaluate(() => window.guestBarRace.sent.length)).toBe(cancelled);
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
 
