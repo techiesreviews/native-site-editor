@@ -110,7 +110,14 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
 
 test("the welcome page has the slim top bar: No projects yet, whose menu adds a project on GitHub", async ({ page, baseURL }) => {
   // TOOLS-188 new-user test: the welcome page had no bar, as the sketch has (sketch-desktop-01, sketch-phone-01).
-  await signedOutSession(page);
+  let answer = () => {};
+  await signedOutSession(page, new Promise<void>(resolve => { answer = resolve; }));
+  await page.goto(`${baseURL}/`);
+  // While the session is checked the bar is there but says nothing: a returning visitor most likely has projects.
+  await expect(page.getByText("Checking your account…")).toBeVisible();
+  await expect(page.getByRole("banner")).toBeAttached();
+  await expect(page.getByRole("button", { name: "No projects yet" })).toHaveCount(0);
+  answer();
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(`${baseURL}/`);
