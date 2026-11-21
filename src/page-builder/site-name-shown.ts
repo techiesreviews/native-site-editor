@@ -54,8 +54,10 @@ export function siteNameShownEdits(files: SiteNameFiles, name: string): Map<stri
   const whole = new RegExp(`(>\\s*)${escapeRegExp(escapeText(shown.name))}(\\s*</)`, "g");
   const asText = (text: string) => text.replace(whole, (_match, before: string, after: string) => `${before}${escapeText(wanted)}${after}`);
   // Structured data's "name" when it is exactly the old name; "<" written as < so the name cannot end the script.
-  const dataName = new RegExp(`("name"\\s*:\\s*)${escapeRegExp(JSON.stringify(shown.name))}`, "g");
-  const newDataName = JSON.stringify(wanted).replace(/</g, "\\u003c");
+  // The old name is found either way, as an earlier save wrote it escaped.
+  const asJson = (text: string) => JSON.stringify(text).replace(/</g, "\\u003c");
+  const dataName = new RegExp(`("name"\\s*:\\s*)(?:${escapeRegExp(JSON.stringify(shown.name))}|${escapeRegExp(asJson(shown.name))})`, "g");
+  const newDataName = asJson(wanted);
   const asData = (text: string) => text.replace(/(<script\b[^>]*\btype="application\/ld\+json"[^>]*>)([\s\S]*?)(<\/script>)/g,
     (_match, open: string, body: string, close: string) => `${open}${body.replace(dataName, (_name, key: string) => `${key}${newDataName}`)}${close}`);
   const read = heads(files.pages);
