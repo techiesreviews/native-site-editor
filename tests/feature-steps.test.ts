@@ -23,8 +23,9 @@ const stepsByFeature = () => fieldByFeature();
 const phoneByFeature = fieldByFeature("Phone");
 
 // What the phone layout hides (src/style.css, max-width 650px) and the step a phone user takes just before it.
+// The Inbox is not among them: it stays on the phone's bar (TOOLS-188).
 const phoneOpener = new Map([
-  ...["History", "Inbox", "Switch site", "Share a preview link", "Add a block", "Tablet", "Mobile"].map(name => [name, "Menu"] as const),
+  ...["History", "Switch site", "Share a preview link", "Add a block", "Tablet", "Mobile"].map(name => [name, "Menu"] as const),
   ...["Section", "Div", "Heading", "Paragraph"].map(name => [name, "Add a block"] as const),
 ]);
 // No phone route has these names (the phone Menu says Switch site or Share a preview link, Tablet, Mobile), so they are on wide only.
