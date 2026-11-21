@@ -80,10 +80,15 @@ test("a new site lists its setup in the Inbox, not a pill, and Save name takes i
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   const config = JSON.parse(await (await file(page, baseURL, "blank-repo", ".editor/config.json")).text());
   expect(config.site.name).toBe("Blank Studio");
+  // The page shows it too: its title, sharing title and header, as saved to GitHub (TOOLS-188).
+  const home = await (await file(page, baseURL, "blank-repo", "index.html")).text();
+  expect(home).toContain("<title>Blank Studio</title>");
+  expect(home).toContain('<meta property="og:title" content="Blank Studio">');
+  expect(home).toContain('<meta property="og:site_name" content="Blank Studio">');
 
-  // Remembered: after a reload only Connect an agent is left.
+  // Remembered: after a reload only Connect an agent is left, and the header says the new name.
   await page.reload();
-  await expect(frame(page).locator("a.site-name")).toBeVisible({ timeout: 30_000 });
+  await expect(frame(page).locator("a.site-name")).toHaveText("Blank Studio", { timeout: 30_000 });
   await openInbox(page);
   await expect(setupRows(page)).toHaveText([/Connect an agent/]);
 });
@@ -109,12 +114,26 @@ test("an empty name says so on the field, and the form keeps the keyboard", asyn
 test("Connect an agent opens the project menu with Connect to MCP lit and focused", async ({ page, baseURL }) => {
   await startBlankSite(page, baseURL);
   await openInbox(page);
+  // The Inbox is a white card, as in the sketch (TOOLS-188 new-user test: it was the tinted panel colour).
+  const [panel, card] = await inbox(page).evaluate((element) => {
+    const probe = document.createElement("div");
+    probe.style.background = "var(--surface-card)";
+    document.body.append(probe);
+    const colours = [getComputedStyle(element).backgroundColor, getComputedStyle(probe).backgroundColor];
+    probe.remove();
+    return colours;
+  });
+  expect(panel).toBe(card);
   await agentRow(page).click();
   await expect(inbox(page)).toBeHidden();
   await expect(page.locator("#repository-actions")).toBeVisible();
   const entry = page.getByRole("button", { name: "Connect to MCP" });
   await expect(entry).toHaveClass(/is-spotlit/);
   await expect(entry).toBeFocused();
+  // Lit means seen: a ring round the row, even when the click that got here leaves no focus ring.
+  expect(await entry.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
+  await entry.blur();
+  expect(await entry.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe("none");
   await page.keyboard.press("Escape");
   await expect(page.locator("#repository-actions")).toBeHidden();
   await expect(page.locator(".agent-menu__action")).not.toHaveClass(/is-spotlit/);
@@ -143,23 +162,37 @@ test("with every setup row done and nothing found, the Inbox says All done and i
   await expect.poll(() => waiting(page)).toBe(false);
 });
 
-test("on a phone the setup rows open from the Menu's Inbox, and the bar stays one row", async ({ page, baseURL }) => {
-  await page.setViewportSize({ width: 390, height: 800 });
+// 320: the narrowest phone still keeps every button of the bar on screen.
+for (const width of [390, 320]) test(`on a phone the bar keeps the Inbox button, with its dot, on one row (${width})`, async ({ page, baseURL }) => {
+  // TOOLS-188 new-user test: the phone bar had no Inbox, as the sketch has (sketch-phone-06).
+  await page.setViewportSize({ width, height: 800 });
   await startBlankSite(page, baseURL);
-  const bar = (await page.locator(".topbar").boundingBox())!;
-  expect(bar.height).toBeLessThanOrEqual(45);
-  const menu = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
-  await menu.click();
+  const menuButton = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
+  await menuButton.click();
   const sheet = page.getByRole("dialog", { name: "Menu", exact: true });
-  await expect(sheet.getByRole("button", { name: /Set up your site/ })).toHaveCount(0);
-  await sheet.getByRole("button", { name: /^Inbox/ }).click();
+  await expect(sheet.getByRole("button", { name: /Set up your site|^Inbox/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await expect.poll(() => waiting(page)).toBe(true);
+  await expect(inboxButton(page)).toBeVisible();
+  const button = (await inboxButton(page).boundingBox())!;
+  expect(button.height).toBeGreaterThanOrEqual(44);
+  expect(button.x).toBeGreaterThanOrEqual(0);
+  expect(button.x + button.width).toBeLessThanOrEqual(width);
+  const menu = (await menuButton.boundingBox())!;
+  expect(menu.x + menu.width).toBeLessThanOrEqual(width);
+  expect((await page.locator(".topbar").boundingBox())!.height).toBeLessThanOrEqual(45);
+  expect(await inboxButton(page).evaluate((element) => getComputedStyle(element, "::after").scale)).toBe("1");
+  // One dot: the Menu's button leaves it to the Inbox's.
+  expect(await menuButton.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
+  await inboxButton(page).click();
   await expect(inbox(page)).toBeVisible();
   await expect(setupRows(page)).toHaveCount(2);
   const box = (await inbox(page).boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(box.x + box.width).toBeLessThanOrEqual(width);
   await page.keyboard.press("Escape");
-  await expect(inbox(page)).toBeHidden();
+  await expect(inboxButton(page)).toBeFocused();
 });
 
 test("an ordinary repository lists no setup rows", async ({ page, baseURL }) => {

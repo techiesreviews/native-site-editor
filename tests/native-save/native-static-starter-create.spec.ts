@@ -25,10 +25,14 @@ test('Create site commits the native starter and every public page works without
   await page.getByRole('button', { name: 'Create site' }).click();
   await expect(page.getByRole('heading', { name: 'Your site is ready' })).toBeVisible({ timeout: 30_000 });
   const state = await (await page.request.get(`${baseURL}/__demo/onboarding`)).json();
-  expect(state.created).toEqual([{ name: 'native-proof', private: false, description: 'A website edited with Native Site Editor' }]);
+  expect(state.created).toEqual([{ name: 'native-proof', private: true, description: 'A website edited with Native Site Editor' }]);
   expect(state.installs).toBe(1);
   expect(state.authorizations).toBe(1);
   expect(state.starterFetches).toBe(0); // No codeload/template request.
+  // The ready page's thumbnail is the new home page itself: its components drawn without scripts (declarative shadow roots).
+  const thumbnail = page.locator('.wizard-preview__frame');
+  await expect(thumbnail).toHaveAttribute('srcdoc', /shadowrootmode/, { timeout: 30_000 });
+  await expect(page.frameLocator('.wizard-preview__frame').getByRole('heading', { name: 'A short, clear headline for the page.' })).toBeVisible();
   const head = await (await page.request.get(`${baseURL}/__demo/head?repo=native-proof`)).json();
   expect(head.commit).toMatch(/^[a-f0-9]{40}$/);
 

@@ -30,6 +30,11 @@
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
+/* Lit from the Inbox's Connect an agent (setup-checklist-controller.ts) until the menu closes. */
+.agent-menu__action.is-spotlit {
+  outline: 2px solid var(--agent-question-strong);
+  outline-offset: -2px;
+}
 .agent-menu__action::before {
   content: "";
   flex: none;

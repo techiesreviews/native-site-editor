@@ -2,16 +2,19 @@ import type { CreateChoice, WizardCreateOutcome } from "./components/setup-wizar
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
-import { nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix } from "../shared/native-project";
+import { nativeComponentCssPath, nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix, resolveNativeProject } from "../shared/native-project";
+import { startTags } from "../shared/html-source";
+import { expandComponents } from "./page-builder/thumbnail-doc";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { assetType } from "../shared/asset-types";
 import { fileInTheWay, foldersAbove } from "../shared/site-rules";
 import { dataUrlOf } from "./native-assets";
 import { withSiteSettings } from "./setup-checklist";
+import { siteNameShownEdits } from "./page-builder/site-name-shown";
 import { addUpload, uploadBytes, uploadImageType } from "./uploads";
 import type { Repository, Snapshot, StarterFile, SessionInfo } from "../shared/types";
 import type { AppStore } from "./app-store";
-import type { GuardedEdits } from "./guarded-edit";
+import type { GuardedEdits, Reads } from "./guarded-edit";
 import type { DraftScope, draftStore } from "./drafts";
 import type { createBootController } from "./controllers/boot-controller";
 import type { createRepositoryMenu } from "./components/repository-menu";
@@ -39,6 +42,8 @@ interface SetupPorts {
   readFile: (repo: string, sha: string) => Promise<string>;
   readBlob: (repo: string, sha: string, path?: string) => Promise<Blob>;
   branchText: (path: string) => Promise<{ text: string } | undefined>;
+  /** Every text file of the site read into the editor (src/pages-and-files-host.ts); a problem to show, else undefined. */
+  readSite: () => Promise<string | undefined>;
   draftScope: () => DraftScope | undefined;
   draftStore: typeof draftStore;
   pathNow: (path: string) => "file" | "folder" | "deleted" | undefined;
@@ -122,7 +127,28 @@ export function createSetupActions(ports: SetupPorts) {
       const home = (await ports.readFiles(repo.fullName, [homeSha]))[homeSha];
       if (typeof home !== "string") return undefined;
       const body = nativePageBody(home);
-      if (/<[a-z][a-z\d]*-[a-z\d-]*[\s/>]/i.test(home.slice(body.start, body.end))) return undefined;
+      // Components (the Starter's header, hero and cards): their templates and styles, then the ones they use, round by round.
+      const resolved = resolveNativeProject(byPath.keys());
+      const site = resolved.ok ? resolved.site : { routes: {}, components: {} };
+      const isComponent = (tag: string) => Object.hasOwn(site.components, tag);
+      // A custom element that is not one of the site's components is drawn by a script: no preview.
+      if (startTags(home.slice(body.start, body.end)).some((tag) => tag.name.includes("-") && !isComponent(tag.name))) return undefined;
+      const sources: Record<string, string> = {};
+      const componentStyles: Record<string, string> = {};
+      let using = [home.slice(body.start, body.end)];
+      for (let round = 0; round < 12 && using.length; round++) {
+        const tags = [...new Set(using.flatMap((source) => startTags(source).map((tag) => tag.name)))].filter((tag) => isComponent(tag) && !(site.components[tag] in sources));
+        const paths: string[] = [];
+        for (const tag of tags) {
+          const css = nativeComponentCssPath(site.components[tag]);
+          if (byPath.has(css)) componentStyles[tag] = css;
+          paths.push(site.components[tag], ...(byPath.has(css) ? [css] : []));
+        }
+        const contents = paths.length ? await ports.readFiles(repo.fullName, paths.map((path) => byPath.get(path)!)) : {};
+        for (const path of paths) sources[path] = contents[byPath.get(path)!] ?? "";
+        using = tags.map((tag) => sources[site.components[tag]]);
+      }
+      const templates = Object.values(site.components).filter((path) => path in sources).map((path) => sources[path]);
       // Stylesheets: the linked ones, then every file they import, round by round.
       const sheets: Record<string, string> = {};
       const linked = nativePageStylesheets(home, "index.html");
@@ -147,10 +173,11 @@ export function createSetupActions(ports: SetupPorts) {
           if (path) wanted.add(path);
           return undefined;
         });
-      for (const match of home.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) {
-        const path = imagePath("index.html", match[1]);
-        if (path) wanted.add(path);
-      }
+      for (const source of [home, ...templates])
+        for (const match of source.matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)) {
+          const path = imagePath("index.html", match[1]);
+          if (path) wanted.add(path);
+        }
       const images = new Map<string, string>();
       for (const path of [...wanted].slice(0, 12)) {
         images.set(path, await dataUrlOf(await ports.readBlob(repo.fullName, byPath.get(path)!, path), assetType(path)!));
@@ -161,14 +188,17 @@ export function createSetupActions(ports: SetupPorts) {
           return path ? images.get(path) : undefined;
         }))
         .join("\n");
-      let html = home.replace(/<script\b[\s\S]*?<\/script>/gi, "");
+      // Each component as a declarative shadow root, as the site's loader draws it (src/page-builder/thumbnail-doc.ts).
+      const inputs = { site, sources, componentStyles, assets: Object.fromEntries(images), route: "/" };
+      let html = expandComponents(home, inputs, [css]).replace(/<script\b[\s\S]*?<\/script>/gi, "");
       for (const tag of home.match(/<link\b[^>]*>/gi) ?? []) if (/rel\s*=\s*["']?stylesheet/i.test(tag)) html = html.replace(tag, "");
       html = html.replace(/(<img\b[^>]*?\bsrc\s*=\s*["'])([^"']+)(["'])/gi, (whole, before: string, url: string, after: string) => {
         const path = imagePath("index.html", url);
         const data = path ? images.get(path) : undefined;
         return data ? `${before}${data}${after}` : whole;
       });
-      const style = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`;
+      // No script defines the components here, so a site's "hide until defined" rule would hide them for good.
+      const style = `<style>${css.replace(/<\/style/gi, "<\\/style")}</style><style>:not(:defined){visibility:visible!important}</style>`;
       return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, () => `${style}</head>`) : `${style}${html}`;
     } catch {
       return undefined;
@@ -221,15 +251,38 @@ export function createSetupActions(ports: SetupPorts) {
         return error instanceof Error ? error.message : `${NATIVE_CONFIG_PATH} could not be read.`;
       }
     }
+    // A new name also shows where the pages show the old one (titles, header, eyebrow): every page
+    // and template is read first. When they cannot be, nothing is set, so the old name is not left
+    // on the pages behind a done row; Save name stays to try again.
+    if (change.name !== undefined) {
+      // The port answers a failed read with its message (nativeSiteReadForCreate); a thrown error counts the same.
+      const unread = await ports.readSite().then(problem => problem !== undefined, () => true);
+      if (!since.holds()) return changed;
+      if (unread) return "The site's pages could not be read, so the name was not set. Try again.";
+    }
     const what = change.name !== undefined ? "name" : "address";
     const done = `Site ${what} set as a draft. Publish to keep it.`, undone = `Undid setting the site ${what}.`;
     const outcome = await ports.guardedEdits.run(r => {
       const text = r.source(NATIVE_CONFIG_PATH), next = withSiteSettings(text, change);
       if ("error" in next) return { refuse: next.error };
-      return text === undefined ? { creates: [{ path: NATIVE_CONFIG_PATH, content: next.text }], done, undone }
-        : { edits: new Map([[NATIVE_CONFIG_PATH, next.text]]), done, undone };
+      const edits = change.name === undefined ? new Map<string, string>() : shownNameEdits(r, change.name);
+      if (text !== undefined) edits.set(NATIVE_CONFIG_PATH, next.text);
+      return { ...text === undefined ? { creates: [{ path: NATIVE_CONFIG_PATH, content: next.text }] } : {}, edits, done, undone };
     }, { since });
     return outcome.ok ? outcome.message : outcome.reason === "stale" ? changed : outcome.message;
+  }
+
+  /** The site's pages and templates that show its old name, with `name` in its place (src/page-builder/site-name-shown.ts). */
+  function shownNameEdits(r: Reads, name: string): Map<string, string> {
+    const site = r.site();
+    if (!site) return new Map();
+    const read = (paths: Iterable<string>) => new Map([...new Set(paths)].flatMap(path => {
+      const source = r.source(path);
+      return source === undefined ? [] : [[path, source] as const];
+    }));
+    // The home page first: with no shared title ending, its og:site_name is the old name.
+    const routes = Object.entries(site.routes).sort(([a], [b]) => (a === "/" ? -1 : b === "/" ? 1 : 0)).map(([, path]) => path);
+    return siteNameShownEdits({ pages: read(routes), templates: read(Object.values(site.components)) }, name);
   }
 
   // A starting point's files as drafts: the files of `point` (the blank page,

@@ -11,6 +11,9 @@ const PAGE_ADDRESS = /^[a-z0-9][a-z0-9-]{0,79}$/;
 /** The one refusal of a new page address, also for a typed URL part no page can have. */
 export const PAGE_ADDRESS_RULE = "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.";
 
+/** What sets a site's name off in a page title ("About · Larkspur Studio"): a new page's title takes the home page's, and the Pages tab and Name your site find the name by it. */
+export const TITLE_SEPARATORS = [" · ", " | ", " — ", " – ", " - ", " :: ", " • "];
+
 /** Why `slug` cannot be a new page's address (the last part of its URL), or nothing. */
 export function pageAddressProblem(slug: string): string | undefined {
   return PAGE_ADDRESS.test(slug) ? undefined : PAGE_ADDRESS_RULE;

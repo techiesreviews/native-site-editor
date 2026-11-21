@@ -10,7 +10,7 @@ function deferred<T>() {
 }
 function fixture() {
   let login: string | undefined = "lex", owner = "/owner/setup", count = 0, hint: Connection | undefined = "installed";
-  let mounts = 0, focuses = 0, destroys = 0, writes = 0, clears = 0, exits = 0;
+  let mounts = 0, focuses = 0, destroys = 0, writes = 0, clears = 0, exits = 0, releases = 0;
   const loads: ReturnType<typeof deferred<Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>>>[] = [];
   const connection = deferred<Connection>();
   const options: SetupWizardOptions[] = [];
@@ -21,10 +21,10 @@ function fixture() {
     connectionHint: () => hint, connection: () => connection.promise, readMemory: () => undefined,
     writeMemory: change => { writes++; return { step: "connect", ...change, at: 0 }; }, clearMemory: () => { clears++; },
     loadWizard: () => { const load = deferred<Awaited<ReturnType<SetupEntryPorts["loadWizard"]>>>(); loads.push(load); return load.promise; },
-    append: () => { mounts++; }, onExit: () => { exits++; },
+    append: () => { mounts++; return () => { releases++; }; }, onExit: () => { exits++; },
     actions: { loadOwners: async () => [], create: async () => ({ ok: false, message: "Unused" }), findRepository: async () => undefined, agentPrompt: () => "", finish: (repo, made) => { finished.push([repo.id, made]); } },
   });
-  return { controller, options, finished, loads, connection, load: (index = 0) => loads[index].resolve(module), counters: () => ({ mounts, focuses, destroys, writes, clears, exits }), login: (value: string | undefined) => { login = value; }, repositories: () => { count = 1; }, noHint: () => { hint = undefined; }, owner: (value: string) => { owner = value; } };
+  return { controller, options, finished, loads, connection, load: (index = 0) => loads[index].resolve(module), counters: () => ({ mounts, focuses, destroys, writes, clears, exits, releases }), login: (value: string | undefined) => { login = value; }, repositories: () => { count = 1; }, noHint: () => { hint = undefined; }, owner: (value: string) => { owner = value; } };
 }
 
 test("same account restart shares loading and mounts/focuses exactly once", async () => {
@@ -34,6 +34,20 @@ test("same account restart shares loading and mounts/focuses exactly once", asyn
   assert.equal(f.loads.length, 1);
   assert.equal(f.counters().mounts, 1); assert.equal(f.counters().focuses, 1);
   f.controller.remove(); assert.equal(f.counters().destroys, 1);
+});
+
+// TOOLS-188 new-user test: the editor bar behind the wizard still took clicks. Mounting covers it; every way out gives it back, once.
+test("the editor behind the wizard is given back when the wizard goes, by remove, exit or owner exit", async () => {
+  const f = fixture(), first = f.controller.open(); f.load(); await first;
+  assert.equal(f.counters().releases, 0);
+  f.controller.remove(); f.controller.remove();
+  assert.equal(f.counters().releases, 1);
+  const second = f.controller.open(); f.load(1); await second;
+  f.options[1].exit();
+  assert.equal(f.counters().releases, 2);
+  const owner = fixture(); owner.login(undefined); const pending = owner.controller.openOwner("/owner/setup"); owner.load(); await pending;
+  owner.options[0].exit();
+  assert.equal(owner.counters().releases, 1);
 });
 
 test("the wizard's finish reaches the editor with whether the wizard made the site", async () => {

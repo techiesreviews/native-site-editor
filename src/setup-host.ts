@@ -82,15 +82,30 @@ export function createSetupHost(ports: SetupHostPorts) {
   ) {
     ports.closeWorkspace();
     ports.app.className = "login-page";
+    const info = ports.info;
+    // Where the card's button leads, offered by the bar's menu too.
+    const way = mode !== "ready" && mode !== "expired" ? undefined
+      : info?.configured ? EDITOR_LOGIN
+      : info?.ownerSetupOpen && info.ownerSetupUrl ? info.ownerSetupUrl
+      : undefined;
     // One layout for every state, so nothing jumps when the answer arrives: the
     // loading and automatic states keep the card's size and hide what is below.
+    const checking = mode === "loading" || mode === "auto";
+    // The slim top bar of the approved sketch (TOOLS-188, components/welcome-bar.ts). While the session is still
+    // checked it stays empty, and hidden from screen readers so they meet no empty banner: a returning visitor most
+    // likely has projects. Then its menu loads, so only a signed-out visitor fetches it.
     ports.app.innerHTML = `
+    <header class="welcome-bar" id="welcome-bar" aria-hidden="true"></header>
     <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", mode !== "loading" && mode !== "auto")}
       <div id="notice" class="login-notice" role="alert" hidden></div>
     </main>
   `;
+    if (!checking) {
+      const bar = ports.element("welcome-bar");
+      // A page drawn again meanwhile has a bar of its own; a bar that could not load stays empty, as the card offers the same way in.
+      import("./components/welcome-bar").then(({ fillWelcomeBar }) => { if (bar.isConnected) fillWelcomeBar(bar, way); }, () => {});
+    }
     const action = ports.element("login-action");
-    const info = ports.info;
     if (mode === "loading" || mode === "auto") {
       const loading = node("p", "login-state login-busy");
       loading.setAttribute("role", "status");
@@ -112,7 +127,7 @@ export function createSetupHost(ports: SetupHostPorts) {
       // One button for everyone: the Worker decides where the sign-in leads
       // (the editor, GitHub's install page for an account without the App, or
       // the Setup wizard for a first site), so there is no choice to make here.
-      action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
+      action.append(link("Continue with GitHub", EDITOR_LOGIN, "button primary login-button login-signin"));
     } else if (info?.ownerSetupOpen && info.ownerSetupUrl) {
       // A fresh self-hosted editor (Deploy to Cloudflare): its owner has one
       // thing left to do, which the Setup wizard's Connect step explains and
@@ -219,7 +234,13 @@ export function createSetupHost(ports: SetupHostPorts) {
     writeMemory: change => writeWizard(localStorage, change),
     clearMemory: () => clearWizard(localStorage),
     loadWizard: () => ports.loadWizard(),
-    append: root => document.body.append(root),
+    append: root => {
+      document.body.append(root);
+      // The editor behind the full-screen wizard takes no clicks, keys or screen-reader focus until it goes.
+      const behind = [...(document.body.children as HTMLCollectionOf<HTMLElement>)].filter(element => element !== root && !element.inert);
+      for (const element of behind) element.inert = true;
+      return () => { for (const element of behind) element.inert = false; };
+    },
     actions: {
       loadOwners: () => ports.api<OwnerInstallation[]>("owners"),
       create: createSiteInWizard,

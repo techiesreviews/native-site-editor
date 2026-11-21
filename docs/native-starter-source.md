@@ -36,7 +36,13 @@ the site loader fetches component templates and CSS without a build step.
 Each file is stored as
 `files/<path>.asset` so asset HTML handling cannot redirect or rewrite it.
 `manifest.json` lists every file with its size and SHA-256, and carries
-`.editor/config.json` inline. The worker checks the manifest (version, safe
+`.editor/config.json` inline. `starter.pack` holds the same files back to
+back in manifest order; the worker reads only `manifest.json` and
+`starter.pack`, because Create site reads the Starter in the same Worker
+request that commits it, and Cloudflare's Workers Free plan allows 50
+subrequests per request (one fetch per file stopped the first commit after
+`index.html`). The browser still loads single `files/<path>.asset` files.
+The worker checks the manifest (version, safe
 unique paths, counts and sizes) and every file's size and checksum, then
 prepares the files like the template's (site name in the settings, test host
 and noindex taken out). Damage is an error; there is no fallback to the
@@ -45,5 +51,7 @@ template.
 To move to a new starter version, add a new `v<sha>` folder from the
 starter's tracked website files (everything except `.assetsignore`,
 `CLAUDE.md`, `.gitignore`, `README.md`, `wrangler.jsonc` and `.github/`;
-`.editor/config.json` and `.nojekyll` go inline in the manifest), remove the old folder and
+`.editor/config.json` and `.nojekyll` go inline in the manifest), write its
+pack with `node scripts/native-starter-pack.mjs public/native-static-starter/v<sha>`
+(a unit test fails while the pack and the files differ), remove the old folder and
 update `NATIVE_STARTER_VERSION`.

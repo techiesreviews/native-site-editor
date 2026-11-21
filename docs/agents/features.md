@@ -33,7 +33,7 @@ its number unused.
 
 ### F-setup-01 Sign in with GitHub
 - Try: Open the editor signed out and press Continue with GitHub.
-- Good: A short loading state, then the welcome page "Where does your site live?" with one card, On GitHub, and its one button (TOOLS-188); back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
+- Good: A short loading state, then the welcome page "Where does your site live?" with one card, On GitHub, and its one button, under a slim top bar whose **No projects yet** menu offers On GitHub too (TOOLS-188); back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
 - Files: `src/setup-host.ts`, `src/auto-signin.ts`, `src/sign-in-words.ts`, `shared/sign-in-error.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`
@@ -73,8 +73,8 @@ its number unused.
 
 ### F-setup-06 Setup in the Inbox
 - Try: Finish the wizard and open the Inbox.
-- Good: Name your site (Setup) and Connect an agent (Setup · Optional) sit at the top and light the Inbox dot; Save name in the row's own form writes the site name as a draft and the row goes; with nothing left the Inbox says All done. No Setup pill in the top bar (TOOLS-188). A site opened from Use a site you have gets no setup rows; another site starts the name form afresh.
-- Files: `src/inbox/inbox-setup.ts`, `src/inbox/inbox.ts`, `src/controllers/setup-checklist-controller.ts`, `src/setup-checklist.ts`
+- Good: Name your site (Setup) and Connect an agent (Setup · Optional) sit at the top and light the Inbox dot; Save name in the row's own form writes the site name as a draft, puts it in the page titles, sharing tags, structured data, header brand and home eyebrow in the same undo step, and the row goes (pages that cannot be read: nothing set, the row says so); with nothing left the Inbox says All done. No Setup pill in the top bar (TOOLS-188). A site opened from Use a site you have gets no setup rows; another site starts the name form afresh.
+- Files: `src/inbox/inbox-setup.ts`, `src/inbox/inbox.ts`, `src/controllers/setup-checklist-controller.ts`, `src/setup-checklist.ts`, `src/setup-actions.ts`, `src/page-builder/site-name-shown.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-checklist.spec.ts`
 - Steps: none yet (needs a site the wizard made)
@@ -1280,9 +1280,9 @@ its number unused.
 - Steps: none yet (the real starter has nothing waiting)
 
 ### F-inbox-05 The Inbox on a phone
-- Try: At 390 px, with something waiting, look at the bar's Menu button, open the Menu and tap Inbox.
-- Good: The tray button stays off the phone's bar; the Menu button wears the orange dot instead, and the Menu's Inbox row wears it too. Tapping the row closes the Menu and opens the Inbox panel within the screen, its rows and Decorative 44 px targets (U6); closing it brings the keyboard back to the Menu button.
-- Files: `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
+- Try: At 390 px, with something waiting, look at the bar, open the Menu, close it and tap the bar's Inbox button.
+- Good: The tray button stays on the phone's one-row bar as a 44 px target with the orange dot, as in the approved sketch (TOOLS-188); the Menu button has no dot and the Menu no Inbox row. Tapping the tray opens the Inbox panel within the screen, its rows and Decorative 44 px targets (U6); closing it brings the keyboard back to the tray.
+- Files: `src/style.css`, `src/inbox/inbox.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-menu-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`
 - Steps: none yet (phone only; a feature try also runs at 1280 px, where the Menu is not shown)

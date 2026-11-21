@@ -1,6 +1,7 @@
 import { waitForConnection } from "./mcp-prompt";
 import { discardAllChanges, publishButton, showPublish } from "./publish";
 import { expect, test, type Page } from "@playwright/test";
+import { sampleContrast, type Pixel } from "./tone-contrast";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // New-user flows in the real editor UI, against the fake GitHub's onboarding
@@ -105,6 +106,71 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
   await expect(page.getByText(/New to GitHub\?/)).toHaveCount(0);
   await expect(page.getByText("What happens next?")).toHaveCount(0);
   await expect(page.locator(".login-card details")).toHaveCount(0);
+});
+
+test("the welcome page has the slim top bar: No projects yet, whose menu adds a project on GitHub", async ({ page, baseURL }) => {
+  // TOOLS-188 new-user test: the welcome page had no bar, as the sketch has (sketch-desktop-01, sketch-phone-01).
+  let answer = () => {};
+  await signedOutSession(page, new Promise<void>(resolve => { answer = resolve; }));
+  await page.goto(`${baseURL}/`);
+  // While the session is checked the bar is there but says nothing: a returning visitor most likely has projects.
+  await expect(page.getByText("Checking your account…")).toBeVisible();
+  await expect(page.locator(".welcome-bar")).toBeAttached();
+  await expect(page.getByRole("banner")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "No projects yet" })).toHaveCount(0);
+  answer();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`${baseURL}/`);
+    await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+    const bar = page.getByRole("banner");
+    const projects = bar.getByRole("button", { name: "No projects yet" });
+    await expect(projects).toBeVisible();
+    const box = (await bar.boundingBox())!;
+    expect(box.y).toBe(0);
+    expect(box.height).toBeLessThanOrEqual(45);
+    expect((await projects.boundingBox())!.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 28);
+    // Alone on the bar, the words are never cut short.
+    expect(await projects.locator(".repository-menu__name").evaluate((name) => name.scrollWidth <= name.clientWidth)).toBe(true);
+    await projects.click();
+    const menu = page.getByRole("dialog", { name: "Projects" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByText("Add project")).toBeVisible();
+    const item = menu.getByRole("link", { name: "On GitHub" });
+    await expect(item).toHaveAttribute("href", "/auth/login");
+    // The GitHub mark starts the row, beside its words.
+    const row = (await item.boundingBox())!, mark = (await item.locator("svg").boundingBox())!;
+    expect(mark.x - row.x).toBeLessThanOrEqual(12);
+    const at = (await menu.boundingBox())!;
+    expect(at.x).toBeGreaterThanOrEqual(0);
+    expect(at.x + at.width).toBeLessThanOrEqual(width);
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+  }
+});
+
+test("the welcome pill's words are readable in light and dark", async ({ page, baseURL }) => {
+  // TOOLS-188 new-user test: in dark mode the pill's blue words sat on a near-black pill (20b-phone-welcome-dark).
+  await signedOutSession(page);
+  await page.goto(`${baseURL}/`);
+  const pill = page.getByText("Welcome to Native Site Editor");
+  await expect(pill).toBeVisible();
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const colours = await pill.evaluate(element => {
+      const style = getComputedStyle(element);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d")!;
+      return [style.color, style.backgroundColor].map(colour => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = colour;
+        context.fillRect(0, 0, 1, 1);
+        return { colour, rgba: Array.from(context.getImageData(0, 0, 1, 1).data).map(channel => channel / 255) };
+      });
+    });
+    expect(sampleContrast({ foreground: colours[0] as Pixel, backgrounds: [colours[1] as Pixel] }).ratio, `${scheme} pill contrast`).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test("a valid session skips the sign-in screen: the editor opens with no button", async ({ page, baseURL }) => {

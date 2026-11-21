@@ -1,7 +1,7 @@
 // The site's name that page titles share at their end ("Fern & Kettle · Larkspur Studio"):
 // the Pages tab leaves it off its rows, as site builders show page names rather than titles.
 
-import { TITLE_SEPARATORS } from "../native-create";
+import { TITLE_SEPARATORS } from "../../shared/site-rules";
 
 const SEPARATOR = new RegExp(TITLE_SEPARATORS.map((separator) => separator.replace(/[|]/g, "\\$&")).join("|"), "g");
 

@@ -112,7 +112,9 @@ function fieldOf(root: FakeElement, hintId: string) {
   const type = (value: string) => { input.value = value; input.dispatchEvent(new FakeEvent("input")); };
   const commit = () => input.dispatchEvent(new FakeEvent("change"));
   const invalid = () => [input.getAttribute("aria-invalid"), hint.classList.contains("is-error")];
-  return { hint, input, owner, type, commit, invalid };
+  // Where the repository will live, inside the field, before the name.
+  const prefix = root.all().find((el) => el.id === `${hintId}-prefix`)!;
+  return { hint, input, owner, prefix, type, commit, invalid };
 }
 
 function wizard(more: Partial<WizardOptions> = {}) {
@@ -136,7 +138,8 @@ test("setup wizard: Create your site is the name, Starter or Blank, Public or Pr
   const tiles = root.all().filter((el) => el.localName === "label" && el.classList.contains("wizard-tile"));
   const tile = (el: FakeElement) => el.all().find((child) => child.localName === "input")!;
   assert.deepEqual(tiles.map((el) => [tile(el).name, tile(el).value, tile(el).checked]), [
-    ["point", "starter", true], ["point", "blank", false], ["visibility", "public", true], ["visibility", "private", false],
+    // A first site starts Private (TOOLS-188): nothing is shown to the world until the owner says so.
+    ["point", "starter", true], ["point", "blank", false], ["visibility", "public", false], ["visibility", "private", true],
   ]);
   const text = root.textContent;
   for (const explainer of ["Free hosting needs Public.", "Pages, components and styles", "Anyone can see the files."])
@@ -202,9 +205,14 @@ test("setup wizard: the name field remembers what is typed, normalises on change
   await tick();
   const field = fieldOf(root, "wizard-name-hint");
   assert.equal(field.input.value, "kept-name");
-  assert.equal(field.input.getAttribute("aria-describedby"), "wizard-name-hint");
+  assert.equal(field.input.getAttribute("aria-describedby"), "wizard-name-hint-prefix wizard-name-hint");
   assert.deepEqual(field.invalid(), ["false", false]);
-  assert.equal(field.hint.textContent, "github.com/lex/kept-name");
+  // TOOLS-188 sketch: the owner's address sits inside the field, before the name; the hint is for problems only.
+  assert.equal(field.prefix.textContent, "github.com/lex/");
+  // A long owner is cut short in the field; the whole address shows on hover.
+  assert.equal(field.prefix.getAttribute("title"), "github.com/lex/");
+  assert.equal(field.input.parentElement, field.prefix.parentElement);
+  assert.equal(field.hint.textContent, "");
 
   field.type("bad/name");
   assert.deepEqual(remembered.at(-1), { name: "bad/name" });
@@ -212,7 +220,7 @@ test("setup wizard: the name field remembers what is typed, normalises on change
 
   field.type("");
   assert.deepEqual(field.invalid(), ["false", false]);
-  assert.equal(field.hint.textContent, "github.com/lex/…");
+  assert.equal(field.hint.textContent, "");
 
   field.owner.value = "techies";
   field.owner.dispatchEvent(new FakeEvent("change"));
@@ -220,7 +228,9 @@ test("setup wizard: the name field remembers what is typed, normalises on change
   field.type("My New Site");
   field.commit();
   assert.equal(field.input.value, "My-New-Site");
-  assert.equal(field.hint.textContent, "github.com/techies/My-New-Site");
+  assert.equal(field.prefix.textContent, "github.com/techies/");
+  assert.equal(field.prefix.getAttribute("title"), "github.com/techies/");
+  assert.equal(field.hint.textContent, "");
   assert.deepEqual(field.invalid(), ["false", false]);
 
   // The tidied name is the one the wizard keeps: to Use a site you have and back, the step is rebuilt with it.

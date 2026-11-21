@@ -1,1 +1,1 @@
-{"screen":"inbox","name":"F-inbox-07","steps":["on phone click exactly \"Menu\"","click exactly \"Inbox\"","wait for \"Fix all with AI: no agent connected\"","record open 600","click exactly \"Picture without a description, Site header · changes 6 pages\"","record spot 1500"]}
+{"screen":"inbox","name":"F-inbox-07","steps":["click exactly \"Inbox\"","wait for \"Fix all with AI: no agent connected\"","record open 600","click exactly \"Picture without a description, Site header · changes 6 pages\"","record spot 1500"]}

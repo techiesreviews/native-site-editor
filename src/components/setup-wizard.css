@@ -123,6 +123,11 @@
 .wizard-tile:has(:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
 /* A tile with only its label (Public, Private) is still a finger's height on touch. */
 @media (hover: none), (pointer: coarse) { .wizard-tile { min-block-size: var(--size-touch); } }
+/* Phone widths and touch screens: every button is a full touch target. */
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  .wizard-foot .button, .wizard__panel .button { min-block-size: var(--size-touch); }
+  .wizard__exit { width: var(--size-touch); height: var(--size-touch); }
+}
 .wizard-tile__label { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 20px; padding-inline: 4px; font-weight: 600; }
 .wizard-tile__label .icon { margin-inline: 0; color: var(--primary); opacity: 0; transition: opacity var(--dur-hover) ease-out; }
 .wizard-tile:has(:checked) .wizard-tile__label .icon { opacity: 1; }

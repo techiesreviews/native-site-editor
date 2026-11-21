@@ -551,7 +551,8 @@ dd {
     gap: var(--space-4xs);
     padding-inline: var(--space-4xs) var(--space-3xs);
   }
-  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, #inbox-button),
+  /* The Inbox stays on the bar with its dot, as in the approved sketch (TOOLS-188). */
+  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history),
   #repository-menu::after,
   .workspace :is(.block-rail, .canvas-bar:not(.canvas-bar--component)) {
     display: none;
@@ -626,7 +627,24 @@ dd {
 #app.login-page {
   min-height: 100dvh;
   display: grid;
+  grid-template-rows: auto 1fr;
   background: var(--background);
+}
+/* The slim top bar over the login page (TOOLS-188): the project menu's place, with no project yet. */
+.welcome-bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--size-touch);
+  padding-inline: var(--space-xs);
+  border-block-end: 1px solid var(--line);
+  background: var(--surface);
+}
+/* The project menu's trigger (repository-menu.css, slim) and panel. Alone on the bar, its words need not give way to other buttons. */
+.welcome-bar .repository-menu__trigger {
+  max-width: 100%;
+}
+.welcome-bar .repository-menu__popover {
+  position-anchor: --repository-menu;
 }
 /* The welcome page: "Where does your site live?" with one card per place (GitHub
    for now). The same page signed out (the login page) and for a signed-in
@@ -651,7 +669,8 @@ dd {
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
   background: var(--surface);
-  color: var(--primary);
+  /* The link blue, readable on the pill in both themes (the action blue is too dark on a dark pill). */
+  color: var(--link);
   font-size: var(--type-small);
   font-weight: 600;
 }

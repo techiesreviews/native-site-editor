@@ -1,10 +1,10 @@
 /* The Inbox (src/inbox/inbox.ts; mock-up 05 v2, TOOLS-222), loaded with its list: the dots and the panel. */
-/* An orange dot while something waits, never a number (data-inbox-waiting). On a phone the button leaves the bar
-   for the Menu, whose button wears the dot, and its Inbox row (top-bar-phone.css). */
-.topbar :is(#inbox-button, #topbar-menu) {
+/* An orange dot while something waits, never a number (data-inbox-waiting). A phone's bar keeps the button too
+   (TOOLS-188), so the dot is only ever here. */
+#inbox-button {
   position: relative;
 }
-.topbar :is(#inbox-button, #topbar-menu)::after {
+#inbox-button::after {
   content: "";
   position: absolute;
   inset-block-start: 4px;
@@ -17,9 +17,9 @@
   scale: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .topbar :is(#inbox-button, #topbar-menu)::after { transition: scale var(--dur-menu) var(--ease-out); }
+  #inbox-button::after { transition: scale var(--dur-menu) var(--ease-out); }
 }
-:root[data-inbox-waiting] .topbar :is(#inbox-button, #topbar-menu)::after {
+:root[data-inbox-waiting] #inbox-button::after {
   scale: 1;
 }
 .inbox {
@@ -31,9 +31,10 @@
   overflow: auto;
   margin: 0;
   padding: var(--space-3xs);
-  border: 0;
+  /* A white card, as in the sketch (TOOLS-188). */
+  border: 1px solid var(--line);
   border-radius: var(--radius-panel);
-  background: var(--panel-surface);
+  background: var(--surface-card);
   color: var(--text);
   box-shadow: var(--shadow);
 }
@@ -104,6 +105,11 @@
     --btn-font-weight: 400;
   }
   .inbox__ai.button { --btn-font-weight: 500; }
+  /* The card is the quiet tone's own surface, so the manual fixes take the subtle one to stand out on it (TOOLS-188). */
+  .inbox__act.button.secondary {
+    --btn-background: var(--surface-subtle);
+    --btn-hover-background: linear-gradient(var(--hover) 0 0), var(--surface-subtle);
+  }
   /* Busy or unavailable: the part's plain disabled look (it keeps the keyboard, so it is aria-disabled, not disabled). */
   .inbox__act.button[aria-disabled="true"] {
     --btn-background: var(--btn-disabled-background, var(--surface-subtle));

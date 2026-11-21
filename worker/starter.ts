@@ -129,7 +129,9 @@ export async function starterFiles(siteName: string, fetcher: typeof fetch = fet
  * is stored as `files/<path>.asset` so asset HTML handling cannot redirect
  * or rewrite it; the manifest lists every file with its size and SHA-256,
  * and small dot files (`.editor/config.json`) inline, so serving them does
- * not depend on dot paths.
+ * not depend on dot paths. The worker reads every file from `starter.pack`
+ * (scripts/native-starter-pack.mjs), the files back to back in manifest
+ * order, so the whole Starter is two ASSETS fetches.
  */
 const NATIVE_STARTER_BASE = `/native-static-starter/${NATIVE_STARTER_VERSION}/`;
 const NATIVE_MAX_FILES = 100;
@@ -185,7 +187,7 @@ export function parseNativeManifest(value: unknown): NativeManifest {
   return { version: manifest.version!, files, inline };
 }
 
-async function readAsset(assets: AssetFetcher, path: string): Promise<Uint8Array> {
+async function readAsset(assets: AssetFetcher, path: string, limit = NATIVE_MAX_FILE_BYTES): Promise<Uint8Array> {
   // Fixed internal namespace: the host never comes from input, and paths are checked first.
   const url = new URL(path, `https://assets.invalid${NATIVE_STARTER_BASE}`);
   if (!url.pathname.startsWith(NATIVE_STARTER_BASE)) throw broken("unsafe path");
@@ -193,7 +195,7 @@ async function readAsset(assets: AssetFetcher, path: string): Promise<Uint8Array
     throw new HttpError(502, "The native starter site could not be read. Try again, or start from a blank page.");
   });
   if (response.status !== 200 || !response.body) throw broken(`${path} is missing`);
-  return readAll(response.body, NATIVE_MAX_FILE_BYTES);
+  return readAll(response.body, limit);
 }
 
 const hex = (bytes: ArrayBuffer) => Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -207,11 +209,15 @@ export async function nativeStarterFiles(siteName: string, assets: AssetFetcher)
     throw error instanceof HttpError ? error : broken("manifest is not JSON");
   }
   const manifest = parseNativeManifest(raw);
+  // One fetch for every file: Create site reads the Starter in the same Worker
+  // request that commits it, within the Workers Free plan's 50 subrequests.
+  const pack = await readAsset(assets, "starter.pack", NATIVE_MAX_TOTAL_BYTES);
+  if (pack.length !== manifest.files.reduce((total, entry) => total + entry.size, 0)) throw broken("starter.pack does not match the manifest");
+  let offset = 0;
   const files: StarterFile[] = await Promise.all(
     manifest.files.map(async (entry) => {
-      const bytes = await readAsset(assets, `files/${entry.path}.asset`);
-      if (bytes.length !== entry.size || hex(await crypto.subtle.digest("SHA-256", bytes)) !== entry.sha256)
-        throw broken(`${entry.path} does not match the manifest`);
+      const bytes = pack.slice(offset, (offset += entry.size));
+      if (hex(await crypto.subtle.digest("SHA-256", bytes)) !== entry.sha256) throw broken(`${entry.path} does not match the manifest`);
       return starterFile(entry.path, bytes);
     }),
   );

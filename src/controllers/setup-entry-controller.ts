@@ -11,7 +11,8 @@ export interface SetupEntryPorts {
   writeMemory(change: Partial<WizardMemory>): WizardMemory;
   clearMemory(): void;
   loadWizard(): Promise<{ createSetupWizard: typeof createSetupWizard }>;
-  append(root: HTMLElement): void;
+  /** Shows the wizard over the editor, which takes no input while it is open; returns what gives the editor back. */
+  append(root: HTMLElement): () => void;
   actions: Pick<SetupWizardOptions, "loadOwners" | "create" | "findRepository" | "listRepositories" | "accessUrl" | "loadPreview" | "agentPrompt" | "finish">;
   onExit(): void;
 }
@@ -19,6 +20,7 @@ export interface SetupEntryPorts {
 /** Full-screen setup presentation; repository transactions remain in the host. */
 export function createSetupEntryController(ports: SetupEntryPorts) {
   let wizard: ReturnType<typeof createSetupWizard> | undefined;
+  let release: (() => void) | undefined;
   let dismissed = false;
   let mounts = 0;
   let pending: { key: string; promise: Promise<void> } | undefined;
@@ -28,6 +30,8 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
     pending = undefined;
     wizard?.destroy();
     wizard = undefined;
+    release?.();
+    release = undefined;
   }
   function complete() {
     remove();
@@ -68,7 +72,7 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
         finish: (repo, made) => { if (mount === mounts) ports.actions.finish(repo, made); },
         exit: () => { if (mount === mounts) close(); },
       });
-      ports.append(wizard.root);
+      release = ports.append(wizard.root);
       wizard.focus();
     });
   }
@@ -85,7 +89,7 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
         remember: () => {}, finish: () => {},
         exit: () => { if (mount === mounts) { remove(); dismissed = true; } },
       });
-      ports.append(wizard.root);
+      release = ports.append(wizard.root);
       wizard.focus();
     });
   }

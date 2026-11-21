@@ -177,7 +177,7 @@ const lazyLoaders = createLazyLoaders({
     get waitingForRepositories() { return setup.waitingForRepositories; }, set waitingForRepositories(value) { setup.waitingForRepositories = value; },
     get repositorySelect() { return workspace.repositorySelect; }, get repositoryMenu() { return workspace.repositoryMenu; },
     boot, appStore, guardedEdits, nativeBaseSources: runtime.base.sources, repositoryIndex, setupController,
-    api, readFiles, readFile, readBlob, branchText, draftScope, draftStore, pathNow,
+    api, readFiles, readFile, readBlob, branchText, readSite: () => nativeSiteReadForCreate(), draftScope, draftStore, pathNow,
     rememberStartingPoint, rememberPartialStart, rememberRepositories, repositoryOptions,
     chooseRepository, forgetPartialStart, removeFinishStarter, loadSnapshot, announce, errorMessage,
   }),
