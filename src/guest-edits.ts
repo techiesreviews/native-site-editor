@@ -165,12 +165,18 @@ async function canvasThumbnail(url: string): Promise<string | undefined> {
 
 export function createGuestEdits(ports: GuestEditsPorts): GuestEditHandlers {
   const thumbnail = ports.thumbnail ?? canvasThumbnail;
+  // The page's text sizes, read again only when a stylesheet changed (each render Lex's tab mirrors asks for them).
+  let scale: { sheets: string[]; sizes: ReturnType<typeof textSizeScale> } | undefined;
+  const sizesOf = (sheets: string[]) => {
+    if (!scale || scale.sheets.length !== sheets.length || scale.sheets.some((sheet, at) => sheet !== sheets[at])) scale = { sheets, sizes: textSizeScale(sheets) };
+    return scale.sizes;
+  };
   return {
     context() {
       const site = ports.site();
       const links = site ? nativeLinkSuggestions(Object.keys(site.routes), route => ports.routeTitle(route), nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH))) : [];
       const sources = ports.sources();
-      const sizes = textSizeScale(ports.styles().map(sheet => sources[sheet] ?? ports.source(sheet) ?? ""));
+      const sizes = sizesOf(ports.styles().map(sheet => sources[sheet] ?? ports.source(sheet) ?? ""));
       return { links, pictures: ports.pictures().slice(0, GUEST_PICTURE_CHOICES), sizes };
     },
     sources(path) {

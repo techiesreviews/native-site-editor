@@ -425,7 +425,11 @@
   font: inherit;
   font-weight: 400;
 }
+/* A long reason stays on one short line; its whole text is in the title. */
 .edit-bar__warning {
+  max-inline-size: min(28ch, 60vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--warning-fg);
   font-weight: 600;
 }

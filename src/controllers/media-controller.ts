@@ -12,6 +12,7 @@ import { mediaAttribute, mediaExistingAlt } from "../page-builder/media-attribut
 import { startTags } from "../../shared/html-source";
 import type { EditBarControl } from "../components/edit-bar";
 import { locateNativeElementRange } from "../native-source-location";
+import { guestReason } from "../guest-changes";
 import type { TreeEntry } from "../../shared/types";
 
 export interface MediaWorkspaceSnapshot {
@@ -276,7 +277,7 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     // only, since Lex's notice bar is for his own work.
     try { await loadPopups(); return await popups!.apply(target, change, proof); } catch (error) {
       console.error(error);
-      return error instanceof Error && error.message ? error.message : false;
+      return guestReason(error) ?? false;
     }
   }
 

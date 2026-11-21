@@ -6,7 +6,7 @@ import { forEachAwait } from "./support/await-race";
 import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type GuestMessage, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
 import { createGuestAsks, GUEST_NO_ANSWER } from "../src/guest-asks";
-import type { GuestChange } from "../src/guest-changes";
+import { GUEST_REASON_CHARS, type GuestChange } from "../src/guest-changes";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
 import type { LivePeer, LiveRoom, LiveRoomOptions } from "../src/live-room";
@@ -312,6 +312,32 @@ test("a guest's change made on a render this tab no longer keeps, or on another 
   await settle();
   assert.deepEqual(changed, ["<p>0</p>"], "written against the page of the render the guest named");
   assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done]), [[1, false], [2, false], [3, false], [4, true]]);
+  (await session.started).stop();
+});
+
+test("a guest hears why a change was not written: another page, the words it was refused with (cut short), never a technical error's", async () => {
+  const room = heard();
+  const shown = rendering();
+  const outcomes: (() => Promise<true | string>)[] = [
+    async () => "x".repeat(500),
+    async () => { throw new Error("The picture is too large to crop."); },
+    async () => { throw new TypeError("Failed to fetch"); },
+  ];
+  const session = await fakeSession({ ...shown, guestTextEdit: async () => true, refresh() {},
+    ...guestEdits({ change: () => outcomes.shift()!() }) }, () => true, { send: room.send });
+  await session.started;
+  anna(session);
+  await settle();
+  const picture = { kind: "picture", path: "index.html", node: [0], file: "images/a.jpg" };
+  await session.deliver("p1", "guest", { t: "change", change: { ...picture, path: "about.html" }, ask: 1, seen: 1 });
+  for (const ask of [2, 3, 4]) await session.deliver("p1", "guest", { t: "change", change: picture, ask, seen: 1 });
+  await settle();
+  assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done, message.why]), [
+    [1, false, "Lex's editor is on another page now."],
+    [2, false, "x".repeat(GUEST_REASON_CHARS)],
+    [3, false, "The picture is too large to crop."],
+    [4, false, undefined],
+  ]);
   (await session.started).stop();
 });
 

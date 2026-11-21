@@ -53,6 +53,15 @@ export async function loadNativeAssetRequests(options: NativeAssetLoaderOptions)
   }
 }
 
+/** A data URL's bytes, base64 or written out (as UTF-8); nothing when `url` is not one. */
+export function blobOfDataUrl(url: string): Blob | undefined {
+  const comma = url.indexOf(","), head = url.slice(0, comma);
+  if (!url.startsWith("data:") || comma < 0) return undefined;
+  const type = /^data:([^;,]*)/.exec(head)?.[1] ?? "", body = url.slice(comma + 1);
+  const bytes = head.endsWith(";base64") ? Uint8Array.from(atob(body), (char) => char.charCodeAt(0)) : new TextEncoder().encode(decodeURIComponent(body));
+  return new Blob([bytes], { type });
+}
+
 /** `blob` as a data URL of media type `type` (the sandboxed preview can show neither the editor's blob: URLs nor, without the session cookie, `/api/blob`). */
 export async function dataUrlOf(blob: Blob, type: string): Promise<string> {
   const typed = blob.type === type ? blob : new Blob([blob], { type });

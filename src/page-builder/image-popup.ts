@@ -31,6 +31,7 @@ import { isPictureSpot } from "./looping-video";
 import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "./media-spot-pick";
 import { PLACEHOLDER_IMAGE_PATH } from "./native-elements";
 import { mediaKind } from "./media-library-filter";
+import { guestReason } from "../guest-changes";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
 export interface ImagePopupHost extends MediaPopupHost {
@@ -194,7 +195,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     else close();
   };
   /** Why a guest's change was not written, as the write said it; false when it gave no words. */
-  const reason = (error: unknown) => error instanceof Error && error.message ? error.message : false as const;
+  const reason = (error: unknown) => guestReason(error) ?? false as const;
   async function done(): Promise<boolean | string> {
     if (state.busy) return false;
     // A guest's popup writes nothing itself: Lex's tab writes what changed as his own change.
