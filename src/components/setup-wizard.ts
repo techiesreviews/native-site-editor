@@ -110,7 +110,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
     name: memory?.name ?? DEFAULT_REPOSITORY_NAME,
     owner: memory?.owner ?? "",
     point: (memory?.point ?? "starter") as StartingPoint,
-    visibility: (memory?.visibility ?? "public") as "public" | "private",
+    visibility: (memory?.visibility ?? "private") as "public" | "private",
     repo: memory?.repo,
     /** Step 2: make a new repository, or open one the account has. */
     mode: "new" as "new" | "existing",
@@ -341,7 +341,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
     } = createRepositoryNameField({
       value: state.name,
       hintId: "wizard-name-hint",
-      preview: (name) => `github.com/${ownerName()}/${name || "…"}`,
+      prefix: () => `github.com/${ownerName()}/`,
       normalised: () => {
         state.name = nameInput.value;
       },

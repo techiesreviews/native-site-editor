@@ -115,7 +115,7 @@ test("the wizard's Owner picker creates the repository in the organisation", asy
   await expect(owner.locator("option")).toHaveText(["native-demo-user", "demo-org (organisation)"]);
   await owner.selectOption("demo-org");
   await page.getByLabel("Repository name").fill("team-site");
-  await expect(page.locator("#wizard-name-hint")).toHaveText("github.com/demo-org/team-site");
+  await expect(page.locator("#wizard-name-hint-prefix")).toHaveText("github.com/demo-org/");
   await page.getByRole("radio", { name: "Blank page" }).check();
   await page.getByRole("button", { name: "Create site" }).click();
   await ready(page);
@@ -172,7 +172,7 @@ test("when the editor is installed only on an organisation, it is the owner and 
   await expect(owner.locator("option")).toHaveText(["demo-org (organisation)"]);
   await expect(owner).toBeDisabled();
   await page.getByLabel("Repository name").fill("team-site");
-  await expect(page.locator("#wizard-name-hint")).toHaveText("github.com/demo-org/team-site");
+  await expect(page.locator("#wizard-name-hint-prefix")).toHaveText("github.com/demo-org/");
   await page.getByRole("button", { name: "Create site" }).click();
   await ready(page);
   const done = await state(page, baseURL);
@@ -187,16 +187,17 @@ test("the copied agent prompt names the selected organisation, in its instructio
   await page.getByLabel("Repository name").fill("team-site");
   await page.getByRole("button", { name: "Do this with an agent" }).click();
   await page.getByRole("button", { name: "Copy agent prompt" }).click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create demo-org/team-site --public");
+  // A first site starts Private, so the command makes a private repository.
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create demo-org/team-site --private");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  expect(prompt).toContain("gh repo create demo-org/team-site --public");
+  expect(prompt).toContain("gh repo create demo-org/team-site --private");
   expect(prompt).toContain("team-site in my GitHub organisation demo-org");
   expect(prompt).not.toContain("on my GitHub account");
   // The personal account keeps the plain command.
   await page.getByLabel("Owner").selectOption("native-demo-user");
   await page.getByRole("button", { name: "Copy agent prompt" }).click();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create team-site --public");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("gh repo create team-site --private");
   const own = await page.evaluate(() => navigator.clipboard.readText());
-  expect(own).toContain("gh repo create team-site --public");
+  expect(own).toContain("gh repo create team-site --private");
   expect(own).toContain("on my GitHub account");
 });
