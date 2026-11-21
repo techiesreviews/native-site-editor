@@ -173,8 +173,6 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     code: () => rowButton("code", "Code", handOver(() => openSheet(() => find("#code-split")?.scrollIntoView({ block: "nearest" })))),
     screen: screenSize,
     history: () => rowButton("clock-counter-clockwise", "History", handOver(() => history()?.click())),
-    // The bar's Inbox button stays off a phone's bar: its panel opens from here (TOOLS-222).
-    inbox: () => rowButton("tray", "Inbox", handOver(() => find("#inbox")?.showPopover())),
     share: () => rowButton("shareNetwork", "Share a preview link", handOver(projectMenu)),
     settings: () => rowButton("gear", "Site settings", handOver(() => void ports.page.siteSettings())),
     switch: () => rowButton("arrowsLeftRight", "Switch site", handOver(projectMenu)),
@@ -236,15 +234,15 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     body.scrollTop = 0;
   }
 
-  // The project menu, History, the Inbox and the setup checklist hand focus back to their own buttons, which a phone's bar
-  // leaves out: focus comes back to the Menu they were opened from instead of being lost.
+  // The project menu and History hand focus back to their own buttons, which a phone's bar leaves out: focus comes back
+  // to the Menu they were opened from instead of being lost.
   const handBack = (event: Event) => {
     if (!trigger.isConnected) {
       document.removeEventListener("toggle", handBack, true);
       return;
     }
     const panel = event.target as HTMLElement;
-    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes", "inbox"].includes(panel.id)) return;
+    if ((event as ToggleEvent).newState !== "closed" || !["repository-actions", "changes"].includes(panel.id)) return;
     queueMicrotask(() => {
       if ((document.activeElement === document.body || !document.activeElement) && getComputedStyle(trigger).display !== "none") trigger.focus();
     });

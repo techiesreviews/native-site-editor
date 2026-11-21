@@ -250,18 +250,18 @@ test.describe("new checks (TOOLS-253)", () => {
 test.describe("phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
-  test("the Inbox leaves the bar for the Menu: the Menu wears the dot and its Inbox row opens the panel", async ({ page, baseURL }) => {
+  test("the Inbox stays on the bar with its dot, and the Menu has no Inbox row (TOOLS-188)", async ({ page, baseURL }) => {
     await open(page, baseURL);
-    await expect(inboxButton(page)).toBeHidden();
+    await expect.poll(() => dot(page, "#inbox-button")).toBe(true);
+    expect(await dot(page, "#topbar-menu")).toBe(false);
     const menu = banner(page).getByRole("button", { name: "Menu", exact: true });
-    await expect.poll(() => dot(page, "#topbar-menu")).toBe(true);
     await menu.click();
     const sheet = page.getByRole("dialog", { name: "Menu", exact: true });
-    const row = sheet.getByRole("button", { name: "Inbox", exact: true });
-    await expect(row).toBeVisible();
-    expect(await dot(page, '.top-bar-menu__row[data-row="inbox"] .top-bar-menu__label')).toBe(true);
-    await row.click();
+    await expect(sheet.getByRole("button", { name: "Share a preview link" })).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Inbox", exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
+    await inboxButton(page).click();
     await expect(inbox(page)).toBeVisible();
     await expect(picture(page)).toBeVisible();
     // Touch targets of 44 px (U6).
@@ -274,8 +274,7 @@ test.describe("phone", () => {
 
   test("the new rows' strips fit the phone's panel, with 44 px actions (TOOLS-253)", async ({ page, baseURL }) => {
     await seed(page, baseURL);
-    await banner(page).getByRole("button", { name: "Menu", exact: true }).click();
-    await page.getByRole("dialog", { name: "Menu", exact: true }).getByRole("button", { name: "Inbox", exact: true }).click();
+    await inboxButton(page).click();
     await expect(inbox(page)).toBeVisible();
     const box = (await inbox(page).boundingBox())!;
     for (const action of await inbox(page).locator(".inbox__act").all()) {

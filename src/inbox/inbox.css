@@ -1,10 +1,10 @@
 /* The Inbox (src/inbox/inbox.ts; mock-up 05 v2, TOOLS-222), loaded with its list: the dots and the panel. */
-/* An orange dot while something waits, never a number (data-inbox-waiting). On a phone the button leaves the bar
-   for the Menu, whose button wears the dot, and its Inbox row (top-bar-phone.css). */
-.topbar :is(#inbox-button, #topbar-menu) {
+/* An orange dot while something waits, never a number (data-inbox-waiting). A phone's bar keeps the button too
+   (TOOLS-188), so the dot is only ever here. */
+#inbox-button {
   position: relative;
 }
-.topbar :is(#inbox-button, #topbar-menu)::after {
+#inbox-button::after {
   content: "";
   position: absolute;
   inset-block-start: 4px;
@@ -17,9 +17,9 @@
   scale: 0;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .topbar :is(#inbox-button, #topbar-menu)::after { transition: scale var(--dur-menu) var(--ease-out); }
+  #inbox-button::after { transition: scale var(--dur-menu) var(--ease-out); }
 }
-:root[data-inbox-waiting] .topbar :is(#inbox-button, #topbar-menu)::after {
+:root[data-inbox-waiting] #inbox-button::after {
   scale: 1;
 }
 .inbox {
