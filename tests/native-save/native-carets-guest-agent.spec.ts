@@ -150,7 +150,10 @@ test("a guest on Lex's edit link and Lex see each other's carets: on both pages,
     await expect(lexAtAnna).toBeVisible({ timeout: 20_000 });
     await expect(lexAtAnna.locator(".live-caret__mark b")).toHaveText("N");
     await expect.poll(() => caretInside(lexAtAnna, anna.frame.locator(".hero .lead")), { timeout: 10_000 }).toBe(true);
-    // Hover opens his full name.
+    // Hover opens his full name. Anna first clicks a heading further down: her edit bar, under her heading until then
+    // (its text row, as Lex's, stands over the line below it), moves there.
+    await clickOnText(anna.frame.locator(".filler h2").first());
+    await expect(anna.page.getByRole("combobox", { name: "Heading level" })).toHaveValue("h2");
     await lexAtAnna.locator(".live-caret__mark").hover();
     await expect(lexAtAnna.locator(".live-caret__name")).toHaveText("native-demo-user");
     // Anna's own caret is not drawn on her page.

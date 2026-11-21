@@ -11,6 +11,10 @@ import { editorMounted, storedDraft } from "./drafts";
 // Default fixture group: the real Worker routes (worker/app.ts `/api/live/share`, `/api/live/guest`) and relay.
 const pageErrors: string[] = [];
 const heading = "A native browser preview";
+// A guest's page whose photo reads the test holds back (a big photo on a slow phone).
+declare global {
+  interface Window { holdReads?: boolean; releaseReads?: () => void }
+}
 
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/source-editor.ts")).getMountedSource("index.html") ?? "");
 
@@ -321,7 +325,10 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   const why = benBar.locator(".edit-bar__warning");
   await expect(why).toHaveText("The picture changed before your change arrived.", { timeout: 20_000 });
   // Read out too, and the docked bar stays inside his phone's screen.
-  await expect(ben.page.getByRole("status").filter({ hasText: "The picture changed before your change arrived." })).toHaveCount(1);
+  const said = ben.page.getByRole("status").filter({ hasText: "The picture changed before your change arrived." });
+  await expect(said).toHaveCount(1);
+  // Heard, never shown: it takes no room from his page.
+  expect(await said.evaluate((line) => line.getBoundingClientRect().height)).toBeLessThanOrEqual(1);
   await expect(why).toHaveAccessibleName("The picture changed before your change arrived. (dismiss)");
   expect(await benBar.evaluate((bar) => bar.scrollWidth <= window.innerWidth)).toBe(true);
   await why.click();
@@ -380,6 +387,16 @@ test("guests change a heading's level, a paragraph's text size and bold from the
   const start = await source(lex);
   const link = await share(lex);
   const anna = await guest(browser);
+  // Her session socket, through a route that can hold back what Lex's tab sends her (his answers) for a while.
+  let holding = false;
+  const heldBack: (string | Buffer)[] = [];
+  let toAnna: ((message: string | Buffer) => void) | undefined;
+  await anna.page.routeWebSocket(/\/api\/live\/guest/, (socket) => {
+    const server = socket.connectToServer();
+    socket.onMessage((message) => server.send(message));
+    server.onMessage((message) => { if (holding) heldBack.push(message); else socket.send(message); });
+    toAnna = (message) => socket.send(message);
+  });
   const annaFrame = await joins(anna, link, "Anna");
   const bar = guestBar(anna.page);
 
@@ -405,19 +422,39 @@ test("guests change a heading's level, a paragraph's text size and bold from the
   await expect(bar.getByRole("combobox", { name: "Text size" })).toHaveValue("l", { timeout: 20_000 });
   const bold = bar.getByRole("button", { name: "Bold", exact: true });
   await expect(bold).toHaveAttribute("aria-pressed", "false");
+  // While Lex's answer is held back, the bar shows her Bold at once and its text controls wait: nothing else is sent.
+  holding = true;
   await bold.click();
   await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('style="font-size: 1.25rem"><strong>Edit plain HTML');
+  await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-disabled", "true");
+  const waiting = bar.getByRole("combobox", { name: "Text size" });
+  await expect(waiting).toHaveAttribute("aria-disabled", "true");
+  // A pick there anyway (Playwright refuses to pick in an aria-disabled select; a mouse can).
+  await waiting.evaluate((select: HTMLSelectElement) => {
+    select.value = "default";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(bar.getByRole("combobox", { name: "Text size" })).toHaveValue("l");
+  holding = false;
+  heldBack.splice(0).forEach((message) => toAnna!(message));
   await expect(lead.locator("strong")).toHaveCount(1, { timeout: 20_000 });
   await expect(bar.getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+  await expect(bar.getByRole("combobox", { name: "Text size" })).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  expect(await source(lex)).toContain('style="font-size: 1.25rem"><strong>Edit plain HTML');
+  // The next change, made at once, names a page that has her Bold: it is written, not refused.
+  await bar.getByRole("combobox", { name: "Text size" }).selectOption("default");
+  await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('<p class="lead" data-key="hero-lead"><strong>Edit plain HTML');
+  await expect(bar.locator(".edit-bar__warning")).toHaveCount(0);
 
   // Still no Save, publish, files, settings or agents, and no editor API reached.
   for (const name of [/save/i, /publish/i, /settings/i, /files/i, /agent/i, /connect/i])
     await expect(anna.page.getByRole("button", { name })).toHaveCount(0);
   expect([...new Set(anna.calls)]).toEqual(["/api/live/guest"]);
 
-  // Lex's Undo takes the three back, one step each, to the page he shared.
+  // Lex's Undo takes the four back, one step each, to the page he shared.
   const undo = lex.getByRole("banner").getByRole("button", { name: "Undo", exact: true });
-  for (let step = 0; step < 3; step++) {
+  for (let step = 0; step < 4; step++) {
     const before = await source(lex);
     await undo.click();
     await expect.poll(() => source(lex), { timeout: 10_000, message: `Undo ${step + 1} changed the page` }).not.toBe(before);
@@ -425,6 +462,60 @@ test("guests change a heading's level, a paragraph's text size and bold from the
   expect(await source(lex)).toBe(start);
   await expect(annaFrame.locator(".hero h1")).toHaveText(heading, { timeout: 20_000 });
   await expect(annaFrame.locator(".hero p.lead strong")).toHaveCount(0);
+
+  await anna.context.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test("a guest's photo Cancelled while it is read is never sent, and the session ending closes her picker", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(150_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  lex.on("pageerror", (error) => pageErrors.push(error.message));
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  const start = await source(lex);
+  const link = await share(lex);
+  const anna = await guest(browser);
+  // Her photo's read waits while the test holds it, as a big photo's would on a slow phone.
+  await anna.page.addInitScript(() => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- called below with its own reader as `this`
+    const read = FileReader.prototype.readAsDataURL;
+    FileReader.prototype.readAsDataURL = function (this: FileReader, blob: Blob) {
+      if (!window.holdReads) return read.call(this, blob);
+      const before = window.releaseReads;
+      window.releaseReads = () => { before?.(); read.call(this, blob); };
+    };
+  });
+  const annaFrame = await joins(anna, link, "Anna");
+  await annaFrame.locator(".hero-image").click();
+  const picker = await openChooser(anna.page);
+  await picker.locator(".media-library__upload-input").setInputFiles({ name: "late-quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(anna.page), "base64") });
+  await expect(picker.locator(".media-library__chosen-name")).toHaveText("late-quarters.jpg", { timeout: 30_000 });
+  const use = picker.getByRole("button", { name: "Use image", exact: true });
+  await expect(use).toBeEnabled({ timeout: 60_000 });
+  await anna.page.evaluate(() => { window.holdReads = true; });
+  await use.click();
+  await expect.poll(() => anna.page.evaluate(() => Boolean(window.releaseReads))).toBe(true);
+  // Cancel while it is read: once read, nothing reaches Lex's page.
+  await picker.getByRole("contentinfo").getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await anna.page.evaluate(() => {
+    window.holdReads = false;
+    window.releaseReads!();
+  });
+  // fixed-wait: nothing on either page shows a change that was never sent; an upload sent would have landed by now.
+  await anna.page.waitForTimeout(3_000);
+  expect(await source(lex)).toBe(start);
+
+  // Lex stops sharing while her picker is open: the picker closes, and her page says the link has ended.
+  await annaFrame.locator(".hero-image").click();
+  await openChooser(anna.page);
+  await lex.locator(".repository-menu__trigger").click();
+  await editRow(lex).click();
+  await expect(ended(anna.page)).toBeVisible({ timeout: 15_000 });
+  await expect(chooser(anna.page)).toHaveCount(0);
+  await lex.keyboard.press("Escape");
+  expect(await source(lex)).toBe(start);
 
   await anna.context.close();
   expect(pageErrors).toEqual([]);
