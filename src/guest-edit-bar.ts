@@ -347,10 +347,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
   function textControls(at: Selected): EditBarControl[] {
-    const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead() || textStale();
+    const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead() || selectedSeen !== seen;
     // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
-      if (sending?.key === key(at) || typingAhead() || textStale()) { render(); return; }
+      if (sending?.key === key(at) || typingAhead() || selectedSeen !== seen || next.kind !== "heading" && textStale()) { render(); return; }
       const mine: NonNullable<typeof sending> = { key: key(at), ...next.kind === "heading" ? { level: next.level } : {} };
       sending = mine;
       if (shown && text?.key === key(at)) text = { ...text, ...shown };
@@ -382,10 +382,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (state?.size !== undefined && scale) {
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting, onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting: waiting || textStale(), onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
     }
     if (state?.bold !== undefined) controls.push({
-      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting,
+      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting: waiting || textStale(),
       className: "edit-bar__format edit-bar__format--strong",
       onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
     });
@@ -453,9 +453,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     render();
     clearTimeout(reread);
     if (!next || next.tag === "img" || context?.path !== next.path) return;
-    // A new selection is read at once (and a settled change); the same one, re-reported after a render, once renders
-    // pause (typing).
-    if (moved || shown) void readText(next);
+    // Refresh a stale text state at once once our typing catches up; other refreshes wait for typing to pause.
+    if (moved || shown || !typingAhead() && textStale()) void readText(next);
     else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
   }
 
