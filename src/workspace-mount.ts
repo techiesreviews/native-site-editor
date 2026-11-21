@@ -133,7 +133,7 @@ export interface WorkspaceMountPorts {
   notices: Pick<Notices, "errorMessage" | "announce">;
   session: Pick<Session, "begin" | "nextLoad" | "draftScope" | "shownScope">;
   view: Pick<View, "fileGeneration" | "setCurrentPage">;
-  preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind" | "nativeRouteInfo">;
+  preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind" | "nativeRouteInfo" | "nativePageStyles">;
   textIndex: Pick<TextIndex, "noteNativePainted">;
   /** Media's host (src/controllers/media-host.ts); its pictures, reader and image popup also serve session guests' edit bars (TOOLS-185). */
   media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage" | "guestImage" | "workspaceContext">;

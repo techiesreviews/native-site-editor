@@ -27,7 +27,10 @@ import { b64u, sessionWire } from "./live-wire";
 // The wire and the room key's encoding live in src/live-wire.ts, which preview links' pages share without this module.
 export { importSessionKey, randomId, sessionWire } from "./live-wire";
 import type { GuestContext, GuestEditHandlers, GuestTextEdit, MirrorMessage, NativePreview } from "./components/native-preview";
-import { guestPicturePath, readGuestChange, type GuestChange, type GuestPageChange } from "./guest-changes";
+import { GUEST_REASON_CHARS, guestPicturePath, readGuestChange, type GuestChange, type GuestPageChange } from "./guest-changes";
+
+/** Why a guest's change was not written when Lex's editor shows another page than the one it was made on. */
+const GUEST_OTHER_PAGE = "Lex's editor is on another page now.";
 import type { PageTextCaret } from "./components/page-caret-port";
 import type { SessionCaret } from "./live-session-carets";
 
@@ -36,14 +39,14 @@ export const LIVE_SESSION_PATH = "/live";
 /** Lex's tab to guests: the page on show (its components and stylesheets only when they changed), each guest's typing
  * written so far (its frame's numbering) and each guest's colour, by guest id; and everyone's carets in the page's text
  * (TOOLS-219, src/live-session-carets.ts). For the edit bar (TOOLS-185): the page's pictures and links before a render
- * that changed them, and to one guest (`to`) whether their change was written, the page's sources and thumbnails.
+ * that changed them, and to one guest (`to`) whether their change was written (and why not), the page's sources and thumbnails.
  * `got` (TOOLS-385): one part of that guest's message in parts arrived, so their wait for its answer starts again. */
 export type HostMessage =
   | { t: "render"; payload: Extract<MirrorMessage, { kind: "render" }>["payload"]; typed: Record<string, number>; colours: Record<string, string>; n: number }
   | { t: "assets"; assets: Extract<MirrorMessage, { kind: "assets" }>["assets"] }
   | { t: "carets"; carets: SessionCaret[] }
   | { t: "context"; context: GuestContext }
-  | { t: "answer"; to: string; ask: number; done: boolean }
+  | { t: "answer"; to: string; ask: number; done: boolean; why?: string }
   | { t: "sources"; to: string; ask: number; sources: Record<string, string> }
   | { t: "pictures"; to: string; pictures: Record<string, string> }
   | { t: "got"; to: string };
@@ -222,19 +225,24 @@ export async function startSharing(ports: SharePorts) {
       if (!done) preview?.refresh();
     });
   };
-  // A picture, link or crop change is written in turn with the typing, as this tab's own change (its Undo here);
-  // the guest hears whether it was written. Anything the rules do not know is dropped unanswered. A change made on a
-  // render this tab no longer keeps, or on another page, is not written.
+  // A picture, link, crop, heading, size or bold change is written in turn with the typing, as this tab's own change
+  // (its Undo here); the guest hears whether it was written, and why not. Anything the rules do not know is dropped
+  // unanswered. A change made on a render this tab no longer keeps, or on another page, is not written.
   const changeWritten = (message: Extract<GuestMessage, { t: "change" }>, sender: Sender) => {
     const from = guestOf(sender), change = readGuestChange(message.change), ask = message.ask;
     if (!from || !change || !Number.isInteger(ask) || !Number.isInteger(message.seen)) return;
+    const answer = (done: boolean, why?: string) => {
+      if (ended || !ports.holds()) return;
+      wire.send({ t: "answer", to: from.id, ask, done, ...why && !done ? { why: why.slice(0, GUEST_REASON_CHARS) } : {} } satisfies HostMessage);
+    };
     writing = writing.then(async () => {
       if (ended || !ports.holds()) return;
       const holds = change.kind === "upload" ? heldRender.get(from.id) : undefined;
       const seen = shown.get(message.seen) ?? holds?.get(message.seen);
       holds?.delete(message.seen);
       const refused = () => wire.send({ t: "answer", to: from.id, ask, done: false } satisfies HostMessage);
-      if (!seen || seen.path !== change.path) { refused(); return; }
+      if (!seen) { refused(); return; }
+      if (seen.path !== change.path) { answer(false, GUEST_OTHER_PAGE); return; }
       let held: GuestPageChange;
       if (change.kind === "upload") {
         let bytes: Uint8Array;
@@ -242,9 +250,11 @@ export async function startSharing(ports: SharePorts) {
         held = { kind: "upload", path: change.path, node: change.node, file: new File([bytes as Uint8Array<ArrayBuffer>], change.name, { type: change.type }) };
       } else held = change;
       // Written only to the page still on show, once the edits have loaded.
-      const done = ports.preview()?.guestShown?.()?.path === change.path
-        && await loadEdits().then((loaded) => !ended && ports.holds() && (loaded?.change(held, seen.source) ?? false)).catch(() => false);
-      if (!ended && ports.holds()) wire.send({ t: "answer", to: from.id, ask, done } satisfies HostMessage);
+      if (ports.preview()?.guestShown?.()?.path !== change.path) { answer(false, GUEST_OTHER_PAGE); return; }
+      const written = await loadEdits()
+        .then((loaded) => !ended && ports.holds() && loaded ? loaded.change(held, seen.source) : undefined)
+        .catch((error: unknown) => error instanceof Error && error.message ? error.message : undefined);
+      answer(written === true, typeof written === "string" ? written : undefined);
     });
   };
   // The image popup on a guest's page reads the page's sources as Lex's tab holds them, when it opens.

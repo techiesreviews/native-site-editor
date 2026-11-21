@@ -17,6 +17,11 @@
 import { startTagAttribute, type StartTag } from "./native-source-location";
 import { setAttributesEdit, type RangeEdit } from "./native-structure";
 
+// Page containers (and slot) carry no text of their own: no Text size on them, nor on components.
+const CONTAINERS = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
+/** Whether the bar offers Text size on this element: one that carries text itself, not a container or component. */
+export const textSizeable = (tag: string) => !tag.includes("-") && !CONTAINERS.has(tag);
+
 export interface TextSize {
   // What the select holds: the class name, the variable name, or the scale step.
   value: string;

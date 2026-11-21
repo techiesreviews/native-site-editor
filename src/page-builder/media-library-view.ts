@@ -299,7 +299,8 @@ export function createMediaLibraryView(
     if (chosen && !heldFile(chosen) && !onlineVideo(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
     drawLibraryGrid(shell, library, { kind, collection: viewing, selected, observers, tiles, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
       alive: () => alive, bytes: path => cache.get(path), stamp, objectUrl: blob => cache.objectUrl(blob), sync: () => busyLock.sync(),
-      details: path => void details(path), records: () => adapter.usage?.records(), usage,
+      details: path => { if (!options.chooseOnly) void details(path); }, records: () => adapter.usage?.records(),
+      usage: path => { if (!options.chooseOnly) usage(path); },
       recover, restoreFocus: !sheet.focus,
       choose: path => { chosen = path; paintChoice(); },
       online: key => void onlineDetails(key),
@@ -342,7 +343,7 @@ export function createMediaLibraryView(
     name.textContent = file ? `${basename(file)}${note ? ` · ${note}` : ""}` : "";
     // Use says what it places: "Use image", "Use video", "Use audio" or "Use file"; plain "Use" until a pick (slice 113).
     use.textContent = file ? `Use ${chosenNoun(file)}` : "Use";
-    thumb.replaceChildren(); details.hidden = !chosen || Boolean(held);
+    thumb.replaceChildren(); details.hidden = !chosen || Boolean(held) || Boolean(options.chooseOnly);
     use.disabled = !chosen;
     if (!chosen) return;
     const path = chosen;
@@ -482,7 +483,7 @@ export function createMediaLibraryView(
     more.open(shell.filter, [
       { label: "All collections", section: "Collections", checked: !viewing, run: choose(() => { viewing = ""; }) },
       ...(library?.collections ?? []).map(name => ({ label: name, section: "Collections", checked: viewing === name, run: choose(() => { viewing = name; }) })),
-      { label: "Manage collections…", section: "Collections", run: () => { if (library) showManageCollections(sheet, collectionHost); } },
+      ...options.chooseOnly ? [] : [{ label: "Manage collections…", section: "Collections", run: () => { if (library) showManageCollections(sheet, collectionHost); } }],
       // A picker shows only files that fit the place; Add → Media's (every kind) can narrow to one.
       ...modal && options.accept ? [] : MEDIA_KIND_CHOICES.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: choose(() => { kind = value; }) })),
       ...([["grid", "Grid"], ["list", "List"]] as const).map(([value, label]) => ({ label, section: "View", checked: layout === value, run: choose(() => { layout = value; }) })),

@@ -1,33 +1,37 @@
 // A synced session guest's edit bar (TOOLS-185): the editor's own bar over the guest's copy of the page,
-// by the selection on a computer and docked at the foot on a phone. On a picture it offers Replace (the
-// site's pictures, or one the guest uploads) and Focus and crop (the editor's image popup); on a link, its
-// address. Text is still edited in place, as before. Nothing here writes: each change goes to Lex's tab
-// (src/live-session.ts), which writes it as his own unsaved change, and the next render shows it. Save,
-// publish, files, settings and agents do not exist on this page.
-import { createEditBar, type EditBarControl, type PicturesControl, type SelectionRect } from "./components/edit-bar";
-import { createPicturesPanel } from "./components/edit-bar-pictures";
+// by the selection on a computer and docked at the foot on a phone. On a picture it offers the editor's Media
+// button: the image popup (shape, focus and crop), whose Replace opens the editor's Media picker with the site's
+// pictures and the guest's own; on a link, its address; on text, the editor's heading level, text size and bold.
+// Text is still edited in place, as before. Nothing here writes: each change goes to Lex's tab
+// (src/live-session.ts), which writes it as his own unsaved change, and the next render shows it. A change his
+// tab refused shows why on the bar. Save, publish, files, settings and agents do not exist on this page.
+import { createEditBar, type EditBarControl, type SelectionRect } from "./components/edit-bar";
 import type { createPreviewLink } from "./components/preview-link";
 import type { GuestContext } from "./components/native-preview";
 import type { MediaControllerPorts } from "./controllers/media-controller";
 import type { ImagePopupHost } from "./page-builder/image-popup";
+import type { MediaPickerHost } from "./page-builder/media-picker";
+import type { TextSizeScale } from "./native-text-size";
 import { createGuestAsks } from "./guest-asks";
-import { GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange } from "./guest-changes";
-import { guestPhotoTypes } from "../shared/media-kinds";
+import { GUEST_NOT_KEPT, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange, type GuestHeadingLevel } from "./guest-changes";
 import { nativeKindLabel } from "./native-structure";
+import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
 import { GUEST_PICTURES_MAX, type GuestMessage, type HostMessage } from "./live-session";
 
 type FrameLink = ReturnType<typeof createPreviewLink>;
 type Target = { path: string; node: number[] };
 interface Selected extends Target { tag: string; link: string | undefined; rect: SelectionRect }
 
-/** Photos only: a drawing (SVG) can carry a script (src/guest-changes.ts). */
-const ACCEPT = [...new Set(Object.values(guestPhotoTypes))].join(",");
+/** The picker lists the site's pictures as Lex's Replace does; a guest may add photos only, as a drawing (SVG) can
+ * carry a script (src/guest-changes.ts), so another added file is refused when it is used. */
+const ACCEPT = "image/*";
+const NOT_A_PHOTO = "Only a photo can be added here.";
 const SOURCES_MS = 10_000;
 const MEASURE_MS = 8_000;
 const WANT_MS = 15_000;
+const LEVELS: GuestHeadingLevel[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
 
 const key = (target: Target | undefined) => target ? `${target.path}#${target.node.join(".")}` : "";
-const fileName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 function base64(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -38,13 +42,37 @@ function base64(file: File) {
   });
 }
 
-/** The picture's start tag at `target` in these sources, as written (a crop is made on that tag). */
-async function pictureTagAt(files: Record<string, string> | undefined, target: Target) {
+/** A picture sent as a data: address, as bytes: the page may not fetch data: or blob: addresses (public/_headers). */
+function dataBlob(url: string) {
+  const comma = url.indexOf(","), head = url.slice(0, comma);
+  if (!url.startsWith("data:") || comma < 0) return undefined;
+  const type = /^data:([^;,]*)/.exec(head)?.[1] ?? "";
+  const body = url.slice(comma + 1);
+  const text = head.endsWith(";base64") ? atob(body) : decodeURIComponent(body);
+  return new Blob([Uint8Array.from(text, (char) => char.charCodeAt(0))], { type });
+}
+
+/** The text sizes Lex's tab sent, as far as they are well formed (a message is never trusted as typed). */
+function sizesOf(context: GuestContext | undefined): TextSizeScale | undefined {
+  const scale = context?.sizes;
+  const fine = scale && ["class", "variable", "inline"].includes(scale.kind) && Array.isArray(scale.sizes)
+    && scale.sizes.every((size) => typeof size?.value === "string" && typeof size.label === "string");
+  return fine ? scale : undefined;
+}
+
+/** The element at `target` in these sources, with its source. */
+async function elementAt(files: Record<string, string> | undefined, target: Target) {
   const source = files?.[target.path];
   if (source === undefined) return undefined;
   const { locateNativeElementRange } = await import("./native-source-location");
   const range = locateNativeElementRange(source, target.node);
-  return range?.tag.name === "img" ? source.slice(range.tag.start, range.tag.end) : undefined;
+  return range && { source, range };
+}
+
+/** The picture's start tag at `target` in these sources, as written (a crop is made on that tag). */
+async function pictureTagAt(files: Record<string, string> | undefined, target: Target) {
+  const found = await elementAt(files, target);
+  return found?.range.tag.name === "img" ? found.source.slice(found.range.tag.start, found.range.tag.end) : undefined;
 }
 
 /** The site picture an image of `path` shows, read from the page's source as the image popup reads it. */
@@ -71,45 +99,41 @@ export interface GuestEditBarOptions {
 
 export function createGuestEditBar(options: GuestEditBarOptions) {
   const { canvas, frame, frameLink, send, me } = options;
-  const bar = createEditBar(canvas, frame, undefined, undefined, (dy) => frameLink.send({ type: "scroll-by", dy }), createPicturesPanel);
+  const bar = createEditBar(canvas, frame, undefined, undefined, (dy) => frameLink.send({ type: "scroll-by", dy }));
   let context: GuestContext | undefined;
   let selected: Selected | undefined;
   let closed = false;
-  // The site pictures' small copies, and when those not yet come were asked for.
+  // The site pictures' small copies, when those not yet come were asked for, and the picker's tiles waiting for them.
   const thumbnails = new Map<string, string>();
   const wanted = new Map<string, number>();
+  const waiting = new Map<string, Set<(url: string | undefined) => void>>();
   // Each request waiting for its answer from Lex's tab, by number.
   const asks = createGuestAsks(send);
   // The address typed into the link's field, sent when the field closes (one Undo step for Lex).
   let draft: string | undefined;
-  // The picture the selected image shows (its tile is ticked), once read.
-  let current: string | undefined;
-  let crop: { cancel(): void } | undefined;
-  let cropOpening = false;
+  let popup: { cancel(): void } | undefined;
+  let popupOpening = false;
   // The number of the last render from Lex's tab, and of the one the selection was last reported on: a change names
   // the render it was made on, so Lex's tab can refuse it when that element has moved since.
   let seen = 0;
   let selectedSeen = 0;
-  // Why a picture change was refused, for the picture panel it opens; and why the link's address was not changed.
+  // Why the last change on the selected element was not written, shown on the bar until the next one or another selection.
   let refused: string | undefined;
-  let refusedLater: string | undefined;
-  let linkRefused: string | undefined;
+  // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
+  let text: { key: string; size?: string; bold?: boolean } | undefined;
+  let reading = 0;
 
   // How long each change waits is the asks' (src/guest-asks.ts): a slow upload that keeps arriving is waited for.
   const write = (change: GuestChange, on = selectedSeen) => asks.change(change, on);
   const sources = () => asks.ask<Record<string, string>>((ask) => ({ t: "sources", ask }), SOURCES_MS);
   /** The selected element still is `target`, on the page Lex shows. */
   const still = (target: Target) => !closed && key(selected) === key(target) && context?.path === target.path;
-  /** A refused picture change: the picture panel opens on it saying why (once Focus and crop is closed, if it is open). */
-  const refuse = (target: Target, reason: string | undefined) => {
-    if (!reason || closed || key(selected) !== key(target)) return;
-    if (crop || cropOpening) { refusedLater = reason; return; }
+  /** A change's answer for `target`: why it was not written shows on the bar; a written one clears the last refusal. */
+  const answered = (target: Target, reason: string | undefined) => {
+    if (closed || key(selected) !== key(target) || reason === refused) return;
     refused = reason;
-    render(true);
-    refused = undefined;
+    render();
   };
-  // Lex's tab refuses a guest's change once the page changed after the guest saw it (his typing too).
-  const NOT_KEPT = "The page changed meanwhile. Try again.";
 
   // A small copy asked for and never come (none could be made, or the message was lost) is asked for again later.
   function want(paths: string[]) {
@@ -121,47 +145,73 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       send({ t: "want", paths: batch });
     }
   }
+  /** A site picture's small copy, asked for when not come yet; nothing when none comes in time. */
+  function thumbnail(path: string) {
+    const known = thumbnails.get(path);
+    if (known) return Promise.resolve<string | undefined>(known);
+    return new Promise<string | undefined>((resolve) => {
+      const list = waiting.get(path) ?? new Set();
+      waiting.set(path, list);
+      const done = (url: string | undefined) => { clearTimeout(timer); list.delete(done); resolve(url); };
+      const timer = setTimeout(() => done(undefined), WANT_MS);
+      list.add(done);
+      want([path]);
+    });
+  }
 
   async function upload(target: Target, file: File | undefined, on = selectedSeen): Promise<string | undefined> {
     if (!file) return undefined;
-    if (!guestPhoto(file.name, file.type)) return "That file is not a picture";
-    if (file.size > GUEST_UPLOAD_BYTES) return `That picture is over ${GUEST_UPLOAD_BYTES / 1024 / 1024} MB`;
+    if (!guestPhoto(file.name, file.type)) return NOT_A_PHOTO;
+    if (file.size > GUEST_UPLOAD_BYTES) return `That picture is over ${GUEST_UPLOAD_BYTES / 1024 / 1024} MB.`;
     // Lex's tab keeps the render the upload names while its bytes travel.
     send({ t: "hold", seen: on });
     const data = await base64(file);
-    return await write({ kind: "upload", ...target, name: file.name, type: file.type, data }, on) ? undefined : "That picture could not be added";
+    return await write({ kind: "upload", ...target, name: file.name, type: file.type, data }, on);
   }
 
-  function picturesControl(target: Target, open: boolean): PicturesControl {
-    const pictures = context?.pictures ?? [], names = pictures.map(fileName);
-    // A name two pictures share is told apart by its folder.
-    const shared = new Set(names.filter((name, at) => names.indexOf(name) !== at));
-    return {
-      kind: "pictures", label: "Replace", ariaLabel: "Replace the picture", title: "Site pictures", current, open, refused,
-      items: pictures.map((path, at) => ({ value: path, label: shared.has(names[at]) ? path : names[at], url: thumbnails.get(path) })),
-      upload: { label: "Upload…", accept: ACCEPT, onFiles: (files) => upload(target, files[0]) },
-      onOpen: () => {
-        want(context?.pictures ?? []);
-        void sources().then((files) => files && pictureAt(files, target)).then((path) => {
-          if (path === current || !still(target)) return;
-          current = path;
-          render();
-        }).catch(() => undefined);
+  // The Media picker lent the site's pictures as Lex's tab offers them, read-only: a guest's choice is the only thing
+  // that reaches the site, as their change. A file added in the picker stays on this page until it is chosen.
+  const NO_ACCESS = "Only Lex can change the site's media.";
+  const library: MediaPickerHost = {
+    load: async () => ({ key: "guest", collections: [], items: (context?.pictures ?? []).map((path) => ({ path })), metadata: {}, usage: {} }),
+    blob: async (path) => {
+      const held = options.picture(path), url = held?.startsWith("data:") ? held : await thumbnail(path);
+      const blob = url && dataBlob(url);
+      if (!blob) throw new Error("That picture could not be shown.");
+      return blob;
+    },
+    metadata: () => Promise.reject(new Error(NO_ACCESS)),
+    collections: () => Promise.reject(new Error(NO_ACCESS)),
+    rename: () => Promise.reject(new Error(NO_ACCESS)),
+    remove: () => Promise.reject(new Error(NO_ACCESS)),
+    import: async () => [],
+    openPage: () => Promise.reject(new Error(NO_ACCESS)),
+  };
+
+  /** The image popup's Replace: the editor's Media picker, under the same place words as Lex's. Use sends the choice
+   * (a site picture, or the guest's file as an upload) and closes once Lex's tab wrote it; else it stays open saying why. */
+  async function replace(target: Target, place: string) {
+    if (!still(target)) return;
+    want(context?.pictures ?? []);
+    const { openMediaPicker } = await import("./page-builder/media-picker");
+    if (!still(target)) return;
+    await openMediaPicker({
+      adapter: library, accept: ACCEPT, place, chooseOnly: true,
+      onPick: async (image, cancelled, held) => {
+        // The change names the render the choice was made on.
+        const on = selectedSeen, file = held?.chosen?.()?.request.file;
+        if (!still(target)) throw new Error(GUEST_NOT_KEPT);
+        if (!file) {
+          // The picture already there is no change.
+          const now = await sources().then((files) => files && pictureAt(files, target)).catch(() => undefined);
+          if (now === image.path) return;
+        }
+        if (cancelled()) return;
+        const reason = file ? await upload(target, file, on) : await write({ kind: "picture", ...target, file: image.path }, on);
+        if (reason) throw new Error(reason);
+        answered(target, undefined);
       },
-      onPick: (file) => {
-        // Someone may have replaced the picture since the tick was read: a pick of the ticked one reads it again first.
-        // The change names the render the pick was made on, noted before that wait.
-        // A reread that gets no answer sends nothing and says to try again; the answer becomes the tick.
-        const on = selectedSeen, ticked = file === current;
-        const shown = ticked ? sources().then((files) => files && pictureAt(files, target)).catch(() => undefined) : Promise.resolve(current);
-        void shown.then((now) => {
-          if (closed || file === now) return;
-          if (ticked && !now) { refuse(target, NOT_KEPT); return; }
-          if (ticked && still(target)) current = now;
-          return write({ kind: "picture", ...target, file }, on).then((done) => refuse(target, done ? undefined : NOT_KEPT));
-        });
-      },
-    };
+    });
   }
 
   // The image popup lent what a guest's page has: the sources Lex's tab sends, the frame's measurements and
@@ -184,10 +234,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     return { firstScreen: false, large: false, images: [], boxes: answer.report.facts.map(({ viewport, width, height, fit }) => ({ viewport, width, height, fit })) };
   }
 
-  async function openCrop(target: Target) {
-    if (crop) { crop.cancel(); return; }
-    if (cropOpening) return;
-    cropOpening = true;
+  /** The Media button, as on Lex's bar: the image popup on the picture, or (pressed again) closing it. */
+  async function openPopup(target: Target) {
+    if (popup) { popup.cancel(); return; }
+    if (popupOpening) return;
+    popupOpening = true;
+    refused = undefined;
     render();
     try {
       // The render is noted before the sources are asked for, so they are never older than the render the crop names.
@@ -212,76 +264,121 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       const session = await openImagePopup({
         ports, host, target, live,
         workspaceContext: () => Promise.reject(new Error("A guest has no files.")),
-        load: () => Promise.reject(new Error("A guest has no media picker.")),
+        load: () => Promise.reject(new Error("A guest has no media library.")),
         closed: () => {
-          crop = undefined;
-          const later = refusedLater;
-          refusedLater = undefined;
-          if (later) refuse(target, later);
-          else if (!closed) render();
+          popup = undefined;
+          if (!closed) render();
         },
         guest: {
           write: (edit, recrop) => {
-            void proof().then((on) => closed ? true : write({ kind: "crop", ...target, edit, recrop }, on))
-              .then((done) => refuse(target, done ? undefined : NOT_KEPT));
+            void proof().then((on) => closed ? undefined : write({ kind: "crop", ...target, edit, recrop }, on))
+              .then((reason) => answered(target, reason));
           },
-          replace: () => { if (still(target)) render(true); },
+          replace: (place) => { void replace(target, place); },
         },
       });
-      if (session && still(target)) crop = session;
+      if (session && still(target)) popup = session;
       else session?.cancel();
     } finally {
-      cropOpening = false;
+      popupOpening = false;
       if (!closed) render();
     }
   }
 
-  function render(openPictures = false) {
+  /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
+  async function readText(target: Selected) {
+    const ticket = ++reading;
+    const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
+      sources().catch(() => undefined), import("./native-text-size"), import("./whole-wrapper"),
+    ]);
+    const found = await elementAt(files, target);
+    if (ticket !== reading || !still(target)) return;
+    const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
+    if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
+    text = {
+      key: key(target),
+      size: scale && textSizeable(tag) ? currentTextSize(found.source, found.range.tag, scale) : undefined,
+      bold: TEXT_LINE_TAGS.has(tag) ? Boolean(wholeWrapper(found.source.slice(found.range.tag.end, close.start), ["strong", "b"])) : undefined,
+    };
+    render();
+  }
+
+  /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
+  function textControls(at: Selected): EditBarControl[] {
+    const controls: EditBarControl[] = [];
+    const change = (next: GuestChange) => { void write(next).then((reason) => answered(at, reason)); };
+    if (/^h[1-6]$/.test(at.tag)) controls.push({
+      kind: "select", label: "Heading level",
+      options: LEVELS.map((level) => ({ label: level.toUpperCase(), value: level })),
+      value: at.tag,
+      onChange: (value) => change({ kind: "heading", ...at, level: value as GuestHeadingLevel }),
+    });
+    const state = text?.key === key(at) ? text : undefined, scale = sizesOf(context);
+    if (state?.size !== undefined && scale) {
+      const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
+      if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, onChange: (size) => change({ kind: "size", ...at, size }) });
+    }
+    if (state?.bold !== undefined) controls.push({
+      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold,
+      className: "edit-bar__format edit-bar__format--strong",
+      onPress: () => change({ kind: "bold", ...at, on: !state.bold }),
+    });
+    return controls;
+  }
+
+  function render() {
     const at = selected;
     if (!at || closed) { bar.hide(); return; }
     const controls: EditBarControl[] = [];
     // Only the page Lex shows takes changes (he may have moved on to another).
-    if (context?.path === at.path && at.tag === "img") {
-      controls.push(picturesControl(at, openPictures), {
-        kind: "button", label: "Focus and crop", leading: "image", className: "edit-bar__media", expanded: Boolean(crop) || cropOpening,
-        onPress: () => { void openCrop(at); },
+    const here = context?.path === at.path;
+    if (here && at.tag === "img") {
+      controls.push({
+        kind: "button", label: "Media", leading: "image", className: "edit-bar__media", names: true,
+        title: "Picture: shape, focus and Replace", expanded: Boolean(popup) || popupOpening,
+        onPress: () => { void openPopup(at); },
       });
-    } else if (context?.path === at.path && at.tag === "a") {
+    } else if (here && context && at.tag === "a") {
       const value = draft ?? at.link ?? "";
       controls.push({
-        kind: "address", label: "Address", icon: "link", value, warning: linkRefused ?? (value.trim() ? undefined : "No address"),
+        kind: "address", label: "Address", icon: "link", value, warning: refused ?? (value.trim() ? undefined : "No address"),
         placeholder: "A page, or https://…", suggestions: context.links,
-        onInput: (next) => { draft = next; linkRefused = undefined; },
+        onInput: (next) => { draft = next; refused = undefined; },
         onClose: () => {
           const href = draft;
           draft = undefined;
           if (href === undefined || href.trim() === (at.link ?? "")) return;
-          void write({ kind: "link", ...at, href: href.trim() }).then((done) => {
-            if (done || closed || key(selected) !== key(at)) return;
-            draft ??= href;
-            linkRefused = "Not changed, try again";
-            render();
+          void write({ kind: "link", ...at, href: href.trim() }).then((reason) => {
+            if (reason && !closed && key(selected) === key(at)) draft ??= href;
+            answered(at, reason);
           });
         },
       });
     }
+    if (here && at.tag !== "img") controls.push(...textControls(at));
+    // Why the last change was not written, on the bar itself (a link says it on its address); pressing it hides it.
+    if (refused && at.tag !== "a") controls.push({
+      kind: "button", label: refused, title: refused, className: "edit-bar__warning",
+      onPress: () => { refused = undefined; render(); },
+    });
     bar.show({ kind: nativeKindLabel(at.tag), controls }, at.rect);
   }
 
   function select(next: Selected | undefined) {
     if (key(next) !== key(selected)) {
       // What was open on the last selection is kept first (the popup's crop, a typed address), then the bar moves.
-      crop?.cancel();
+      popup?.cancel();
       bar.hide();
       draft = undefined;
-      current = undefined;
-      linkRefused = undefined;
-      refusedLater = undefined;
+      refused = undefined;
+      text = undefined;
     }
     // The runtime reports the selection again after each render it draws: its node is that render's.
     selected = next;
     selectedSeen = seen;
     render();
+    if (next && next.tag !== "img" && context?.path === next.path) void readText(next);
   }
 
   const stops = [
@@ -294,15 +391,15 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       selected.rect = message.rect;
       bar.move(message.rect);
     }),
-    // A double-click on a picture opens its focus and crop, as in the editor.
+    // A double-click on a picture opens its image popup, as in the editor.
     frameLink.on("image-edit", (message) => {
-      if (key(selected) === key(message) && context?.path === message.path) void openCrop(selected!);
+      if (key(selected) === key(message) && context?.path === message.path) void openPopup(selected!);
     }),
-    // A file dropped on a picture replaces it; a refused one opens the picture panel saying why.
+    // A file dropped on a picture replaces it; a refused one says why on the bar.
     frameLink.on("image-drop", (message) => {
       if (context?.path !== message.path) return;
       const target = { path: message.path, node: [...message.node] };
-      void upload(target, message.files[0], seen).catch(() => "That picture could not be added").then((reason) => refuse(target, reason));
+      void upload(target, message.files[0], seen).catch(() => "That picture could not be added.").then((reason) => answered(target, reason));
     }),
   ];
 
@@ -315,26 +412,32 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         return false;
       }
       if (message.t === "context") {
+        const moved = context?.path !== message.context?.path;
         context = message.context;
         render();
-      } else if (message.t === "answer" || message.t === "sources") {
-        if (message.to === me) asks.answer(message.ask, message.t === "answer" ? message.done : message.sources);
+        if (moved && selected && selected.tag !== "img") void readText(selected);
+      } else if (message.t === "answer") {
+        if (message.to === me) asks.answer(message.ask, { done: message.done, why: message.why });
+      } else if (message.t === "sources") {
+        if (message.to === me) asks.answer(message.ask, message.sources);
       } else if (message.t === "got") {
         if (message.to === me) asks.heard();
       } else if (message.t === "pictures") {
         if (message.to !== me || !message.pictures || typeof message.pictures !== "object") return true;
         for (const [path, url] of Object.entries(message.pictures)) {
           wanted.delete(path);
-          if (typeof url === "string" && url.startsWith("data:image/")) thumbnails.set(path, url);
+          if (typeof url !== "string" || !url.startsWith("data:image/")) continue;
+          thumbnails.set(path, url);
+          for (const done of [...waiting.get(path) ?? []]) done(url);
+          waiting.delete(path);
         }
-        if (selected?.tag === "img") render();
       } else return false;
       return true;
     },
     close() {
       closed = true;
       stops.forEach((stop) => stop());
-      crop?.cancel();
+      popup?.cancel();
       asks.close();
       bar.destroy();
     },
