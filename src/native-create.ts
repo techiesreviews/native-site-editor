@@ -8,7 +8,7 @@ import { creationBinaryFiles } from "../shared/media-kinds";
 // page's document made from the home page's. It has no DOM and no I/O;
 // whether a path is already taken is the caller's to say.
 import { rootRoute } from "../shared/site-path-prefix";
-import { PAGE_ADDRESS_RULE } from "../shared/site-rules";
+import { PAGE_ADDRESS_RULE, TITLE_SEPARATORS } from "../shared/site-rules";
 import { asciiLower, startTagAttribute, startTags } from "../shared/html-source";
 import { nativePageHead, nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
 
@@ -103,9 +103,6 @@ const MINIMAL_PAGE = `<!doctype html>
 </body>
 </html>
 `;
-
-// What sets a site's name off in a title: "About · Larkspur Studio".
-export const TITLE_SEPARATORS = [" · ", " | ", " — ", " – ", " - ", " :: ", " • "];
 
 /**
  * A new page's title in the form the home page's has: with the home page

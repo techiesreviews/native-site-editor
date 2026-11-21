@@ -11,8 +11,8 @@
 // uses change: a sentence that mentions the name (the footer's "Larkspur
 // Studio, Frome, Somerset.") is the owner's to rewrite.
 
+import { TITLE_SEPARATORS } from "../../shared/site-rules";
 import { sharedTitleEnding } from "../components/page-title-ending";
-import { TITLE_SEPARATORS } from "../native-create";
 import { decodeText, escapeText, readHeadSettings, upsertHeadTag } from "./site-head";
 
 export interface SiteNameFiles {

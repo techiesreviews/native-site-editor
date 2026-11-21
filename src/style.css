@@ -639,17 +639,9 @@ dd {
   border-block-end: 1px solid var(--line);
   background: var(--surface);
 }
-/* The project menu's trigger and panel (repository-menu.css), slim as on the editor's bar: a tap target on touch.
-   Alone on the bar, its words need not give way to other buttons. */
+/* The project menu's trigger (repository-menu.css, slim) and panel. Alone on the bar, its words need not give way to other buttons. */
 .welcome-bar .repository-menu__trigger {
   max-width: 100%;
-  min-block-size: max(var(--size-compact), var(--size-tap));
-  padding-block: 0;
-  font-size: var(--type-base);
-}
-.welcome-bar .repository-menu__trigger:disabled {
-  background: transparent;
-  cursor: default;
 }
 .welcome-bar .repository-menu__popover {
   position-anchor: --repository-menu;
