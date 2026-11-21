@@ -24,9 +24,11 @@
       caret-color: var(--inline-field-caret-color, var(--primary));
       transition: background-color var(--inline-field-duration) var(--ease-out), box-shadow var(--inline-field-duration) var(--ease-out);
     }
-    &:hover:not(:disabled, [readonly], :focus) {
-      background-color: var(--inline-field-hover-background, var(--hover));
-      box-shadow: inset 0 -1px 0 var(--inline-field-line-color);
+    @media (hover: hover) and (pointer: fine) {
+      &:hover:not(:disabled, [readonly], :focus) {
+        background-color: var(--inline-field-hover-background, var(--hover));
+        box-shadow: inset 0 -1px 0 var(--inline-field-line-color);
+      }
     }
     &:focus:not([readonly]) {
       outline: none;

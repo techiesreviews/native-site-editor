@@ -279,7 +279,7 @@ const ATOMS: Part[] = [
     css: "src/ui/icon-button/icon-button.css",
     defaults: { icon: "undo", label: "Undo", pressed: false },
     controls: [choice("icon", "Icon", ICON_NAMES), text("label", "Label"), toggle("pressed", "Pressed")],
-    rows: [{ label: "Plain", values: { pressed: false } }, { label: "Pressed", values: { pressed: true } }],
+    rows: [{ label: "Plain", values: { pressed: false } }, { label: "Toggled on", values: { pressed: true } }],
     columns: states("normal", "hover", "pressed", "focus", "disabled"),
     async render(values, state) {
       const [{ iconButton }, { icon }] = await Promise.all([import("../ui/icon-button/icon-button"), import("../icons")]);

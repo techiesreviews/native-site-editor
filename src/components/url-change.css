@@ -12,7 +12,6 @@
   font-family: var(--font-mono);
   font-size: var(--type-small);
 }
-.url-change__input[readonly] { border-style: dashed; }
 .url-change__details { display: flex; flex-direction: column; gap: 4px; }
 .url-change__details[hidden], .url-change__keep[hidden] { display: none; }
 .url-change__message { margin: 0; font-size: var(--type-small); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }

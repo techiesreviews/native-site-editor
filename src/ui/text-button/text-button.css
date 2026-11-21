@@ -5,7 +5,8 @@
    a hook there. Disabled fades, as every bare button does (src/style.css). Classes: `text-button` (the base size:
    underlines on hover or press), `text-button text-button--compact` (smaller words in a padded box that fills on
    hover or press, for a panel row), `text-button text-button--underlined` (underlined at rest too, for words among
-   plain text that must read as a link). */
+   plain text that must read as a link), and `text-link` (an inline link keeping the surrounding font size and no
+   padding). */
 @layer tokens, elements, components;
 
 @layer components {
