@@ -157,9 +157,10 @@ test("with every setup row done and nothing found, the Inbox says All done and i
   await expect.poll(() => waiting(page)).toBe(false);
 });
 
-test("on a phone the bar keeps the Inbox button, with its dot, on one row", async ({ page, baseURL }) => {
+// 320: the narrowest phone still keeps every button of the bar on screen.
+for (const width of [390, 320]) test(`on a phone the bar keeps the Inbox button, with its dot, on one row (${width})`, async ({ page, baseURL }) => {
   // TOOLS-188 new-user test: the phone bar had no Inbox, as the sketch has (sketch-phone-06).
-  await page.setViewportSize({ width: 390, height: 800 });
+  await page.setViewportSize({ width, height: 800 });
   await startBlankSite(page, baseURL);
   const menuButton = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
   await menuButton.click();
@@ -171,7 +172,9 @@ test("on a phone the bar keeps the Inbox button, with its dot, on one row", asyn
   await expect(inboxButton(page)).toBeVisible();
   const button = (await inboxButton(page).boundingBox())!;
   expect(button.height).toBeGreaterThanOrEqual(44);
-  expect(button.x + button.width).toBeLessThanOrEqual(390);
+  expect(button.x).toBeGreaterThanOrEqual(0);
+  expect(button.x + button.width).toBeLessThanOrEqual(width);
+  expect((await menuButton.boundingBox())!.x + (await menuButton.boundingBox())!.width).toBeLessThanOrEqual(width);
   expect((await page.locator(".topbar").boundingBox())!.height).toBeLessThanOrEqual(45);
   expect(await inboxButton(page).evaluate((element) => getComputedStyle(element, "::after").scale)).toBe("1");
   // One dot: the Menu's button leaves it to the Inbox's.
@@ -181,7 +184,7 @@ test("on a phone the bar keeps the Inbox button, with its dot, on one row", asyn
   await expect(setupRows(page)).toHaveCount(2);
   const box = (await inbox(page).boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  expect(box.x + box.width).toBeLessThanOrEqual(width);
   await page.keyboard.press("Escape");
   await expect(inboxButton(page)).toBeFocused();
 });
