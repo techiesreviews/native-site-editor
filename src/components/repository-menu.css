@@ -47,9 +47,20 @@
   color: var(--muted);
 }
 
-.repository-menu__trigger:hover,
+.repository-menu__trigger:hover:enabled,
 .repository-menu__trigger[aria-expanded="true"] {
   background: var(--hover);
+}
+/* With no project to open yet (the welcome bar, TOOLS-188), the trigger stays plain text. */
+.repository-menu__trigger:disabled {
+  background: transparent;
+  cursor: default;
+}
+/* Slim, as on a bar of its own: a tap target on touch, in body-size words. */
+.repository-menu__trigger--slim {
+  min-block-size: max(var(--size-compact), var(--size-tap));
+  padding-block: 0;
+  font-size: var(--type-base);
 }
 
 /* A letter tile per repository, with a hue from its name. */
