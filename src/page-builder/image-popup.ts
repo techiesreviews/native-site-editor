@@ -55,8 +55,8 @@ export interface ImagePopupOptions {
   live(): boolean;
   closed(): void;
   /** On a synced session's guest page (TOOLS-185): closing hands the focus and crop to Lex's tab instead of writing
-   * them, and Replace opens the guest's own picture panel. */
-  guest?: { write(edit: PopupEdit, recrop: boolean): void; replace(): void };
+   * them, and Replace opens the guest's own picker, under the same `place` words as Lex's. */
+  guest?: { write(edit: PopupEdit, recrop: boolean): void; replace(place: string): void };
   /** On Lex's tab, a guest's change written with no window: their focus and crop, or another picture for the place. */
   apply?: ImagePopupApply;
 }
@@ -193,7 +193,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
       sameBytes: ports.source(target.path) === source, viewingVersion: ports.viewingVersion() })) void done();
     else close();
   };
-  async function done(): Promise<boolean> {
+  /** Why a guest's change was not written, as the write said it; false when it gave no words. */
+  const reason = (error: unknown) => error instanceof Error && error.message ? error.message : false as const;
+  async function done(): Promise<boolean | string> {
     if (state.busy) return false;
     // A guest's popup writes nothing itself: Lex's tab writes what changed as his own change.
     if (options.guest) {
@@ -226,14 +228,14 @@ export async function openImagePopup(options: ImagePopupOptions) {
     } catch (error) {
       state.busy = false;
       close();
-      // A guest's refused change is told to the guest (the answer), not on Lex's notice bar.
+      // A guest's refused change is told to the guest (the answer, with why), not on Lex's notice bar.
       if (!options.apply) ports.error(error);
-      return false;
+      return options.apply ? reason(error) : false;
     }
   }
   // Another picture for the place with no window (a guest's choice, TOOLS-185), placed as Replace places it.
   // An upload is held as the picker holds a file added in it: the file and the place are one Undo step.
-  async function place(choice: { file: string } | { upload: File; folder: string }) {
+  async function place(choice: { file: string } | { upload: File; folder: string }): Promise<boolean | string> {
     // The proof is taken before the first await and checked again (with the guest's own) when the place is written.
     const proofStamp = pin ? ports.stamp() : stamp;
     const picture = "file" in choice ? await loadPicture(host, choice.file) : undefined;
@@ -249,13 +251,14 @@ export async function openImagePopup(options: ImagePopupOptions) {
       const cancelled = () => (stopped ||= !options.live());
       await placeMediaImage(ports, workspaceContext, target, image, { stamp: proofStamp, epoch, source: source!, expected, initialAlt: mediaExistingAlt(expected) }, cancelled, held, frame);
       return !stopped;
-    } catch {
-      // Refused (the page changed, not a photo): the guest is told by the answer, Lex's notice bar stays clear.
-      return false;
+    } catch (error) {
+      // Refused (the page changed, not a photo): the guest is told by the answer, with why; Lex's notice bar stays clear.
+      return reason(error);
     } finally { close(); }
   }
   async function replace() {
-    if (options.guest) { close(); options.guest.replace(); return; }
+    const words = mediaExistingAlt(expected)?.trim(), placeWords = `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`;
+    if (options.guest) { close(); options.guest.replace(placeWords); return; }
     const { openMediaPicker } = await options.load();
     if (closed) return;
     // A picture spot (a slotted image) keeps its own rule below, even as the placeholder: a picture or a looping video.
@@ -287,9 +290,8 @@ export async function openImagePopup(options: ImagePopupOptions) {
         } }).catch((error: unknown) => ports.error(error));
       return;
     }
-    const words = mediaExistingAlt(expected)?.trim();
     // A picture spot also takes a video, which loops silently there (slice 119).
-    await openMediaPicker({ accept: spot ? SPOT_ACCEPT : "image/*", chosenNote: spot ? spotNote : undefined, report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`,
+    await openMediaPicker({ accept: spot ? SPOT_ACCEPT : "image/*", chosenNote: spot ? spotNote : undefined, report: ports, place: placeWords,
       onPick: async (image, cancelled, held) => {
         if (spot && pickedVideo(image, held)) await placeSpotVideo(ports, workspaceContext, target, image, proof, cancelled, held);
         else await placeMediaImage(ports, workspaceContext, target, image, imageProof, cancelled, held, frame);

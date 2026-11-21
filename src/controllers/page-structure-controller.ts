@@ -4,7 +4,7 @@ import { pageRemovable, selectionAfterRemove } from "../page-builder/remove";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
-import { textSizeScale, currentTextSize, textSizeEdit } from "../native-text-size";
+import { textSizeScale, currentTextSize, textSizeEdit, textSizeable } from "../native-text-size";
 import { sourceText, startTagAttribute, textRangeInSource, type StartTag, type ElementRange } from "../../shared/html-source";
 import { nativeLinkSuggestions } from "../native-pages";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "../page-builder/native-element-fields";
@@ -235,9 +235,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         },
       });
     }
-    // Text size is for elements that carry text themselves, not page containers or components.
-    const containers = new Set(["main", "section", "header", "footer", "nav", "article", "aside", "slot"]);
-    const textual = range?.close && !selection.tag.includes("-") && !containers.has(selection.tag);
+    const textual = range?.close && textSizeable(selection.tag);
     if (range && textual && ports.runtime.site) {
       // The site's own sizes (classes, else variables) when its stylesheets define them (`src/native-text-size.ts`).
       const sources = ports.runtime.sources();

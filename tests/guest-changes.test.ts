@@ -50,6 +50,17 @@ test("the guest's bar offers the upload Lex's tab takes: the same photo check on
   assert.equal(guestPhoto("photo.heic", "image/heic"), false, "not a type Lex's tab takes");
 });
 
+test("a guest's heading level, text size and bold are the host bar's own choices, nothing else", () => {
+  for (const level of ["h1", "h2", "h6"]) assert.deepEqual(readGuestChange({ kind: "heading", ...at, level }), { kind: "heading", ...at, level });
+  for (const level of ["h7", "H2", "p", "div", "h2 onclick", 2]) assert.equal(readGuestChange({ kind: "heading", ...at, level }), undefined, String(level));
+  for (const size of ["default", "text-large", "--text-l", "2xl", "fs-body_small"]) assert.deepEqual(readGuestChange({ kind: "size", ...at, size }), { kind: "size", ...at, size });
+  for (const size of ["", "1rem; color: red", "a b", "x\"y", "x".repeat(81), 12]) assert.equal(readGuestChange({ kind: "size", ...at, size }), undefined, String(size));
+  assert.deepEqual(readGuestChange({ kind: "bold", ...at, on: true, extra: 1 }), { kind: "bold", ...at, on: true });
+  assert.deepEqual(readGuestChange({ kind: "bold", ...at, on: false }), { kind: "bold", ...at, on: false });
+  assert.equal(readGuestChange({ kind: "bold", ...at, on: "yes" }), undefined);
+  assert.equal(readGuestChange({ kind: "bold", ...at }), undefined, "it says whether bold goes on or off");
+});
+
 test("a guest's focus and crop is rebuilt from the popup's known shapes and ranges, nothing extra kept", () => {
   assert.deepEqual(readGuestChange({ kind: "crop", ...at, edit: { ...crop, extra: "x" }, recrop: false }), { kind: "crop", ...at, edit: crop, recrop: false });
   assert.equal(readGuestChange({ kind: "crop", ...at, edit: crop }), undefined, "it says which picture the crop was made on");

@@ -5,7 +5,7 @@ import { mock, test } from "node:test";
 import { forEachAwait } from "./support/await-race";
 import { GUEST_RENDERS_KEPT, readSessionLink, sessionWire, startSharing, type GuestMessage, type SharePorts } from "../src/live-session";
 import { createShareControl, type ShareState } from "../src/share-control";
-import { createGuestAsks } from "../src/guest-asks";
+import { createGuestAsks, GUEST_NO_ANSWER } from "../src/guest-asks";
 import type { GuestChange } from "../src/guest-changes";
 import { shareWorkspace } from "../src/workspace-shares";
 import type { SessionChange, WorkspaceScope } from "../src/workspace-session";
@@ -447,10 +447,10 @@ test("a guest's upload on a slow link is waited for as each of its parts arrives
     asks.heard();
   }
   t.mock.timers.tick(50_000);
-  asks.answer(1, true);
-  asks.answer(2, true);
+  asks.answer(1, { done: true });
+  asks.answer(2, { done: true });
   await settled();
-  assert.deepEqual(results, [["upload", true], ["link", true]]);
+  assert.deepEqual(results, [["upload", undefined], ["link", undefined]], "written: no reason");
   // Nothing arrives: an upload gives up once one part's time is over, any other change sent with no upload waiting
   // after a minute.
   void asks.change(link, 4).then((done) => results.push(["lost link", done]));
@@ -460,13 +460,13 @@ test("a guest's upload on a slow link is waited for as each of its parts arrives
   assert.equal(results.length, 2, "both still wait a second before a minute is over");
   t.mock.timers.tick(1_000);
   await settled();
-  assert.deepEqual(results.slice(2), [["lost link", false]]);
+  assert.deepEqual(results.slice(2), [["lost link", GUEST_NO_ANSWER]]);
   t.mock.timers.tick(119_000);
   await settled();
   assert.equal(results.length, 3, "the upload still waits a second before one part's time is over");
   t.mock.timers.tick(1_000);
   await settled();
-  assert.deepEqual(results.slice(2), [["lost link", false], ["lost upload", false]]);
+  assert.deepEqual(results.slice(2), [["lost link", GUEST_NO_ANSWER], ["lost upload", GUEST_NO_ANSWER]]);
 });
 
 test("a guest's upload reaches the page as a file with its name, type and bytes", async () => {
