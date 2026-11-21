@@ -162,7 +162,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       send({ t: "want", paths: batch });
     }
   }
-  /** A site picture's small copy, asked for when not come yet; nothing when none comes in time. */
+  /** Keep a tile's read open for a late copy; retry a lost request until the picker closes. */
   function thumbnail(path: string) {
     const known = thumbnails.get(path);
     if (known) return Promise.resolve<string | undefined>(known);
@@ -175,10 +175,15 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         if (!list.size && waiting.get(path) === list) waiting.delete(path);
         resolve(url);
       };
-      const timer = setTimeout(() => done(undefined), WANT_MS);
+      const retry = () => { want([path]); timer = setTimeout(retry, WANT_MS); };
+      let timer = setTimeout(retry, WANT_MS);
       list.add(done);
       want([path]);
     });
+  }
+
+  function stopThumbnails() {
+    for (const list of [...waiting.values()]) for (const done of [...list]) done(undefined);
   }
 
   /** Sends `file` for `target`, unless `cancelled` (the picker's Cancel) turned true while it was read, or `gone` (the
@@ -227,6 +232,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (!still(target)) return;
     await openMediaPicker({
       adapter: library, accept: ACCEPT, place, chooseOnly: true,
+      onClose: stopThumbnails,
       onPick: async (image, cancelled, held) => {
         // The change names the render the choice was made on.
         const on = selectedSeen, file = held?.chosen?.()?.request.file;
@@ -319,13 +325,13 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
-    const ticket = ++reading;
+    const ticket = ++reading, on = seen;
     const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
       sources().catch(() => undefined), import("./native-text-size"), import("./whole-wrapper"),
     ]);
     const found = await elementAt(files, target);
     // A change on its way shows on the bar until it is answered, and the sources are read again then.
-    if (ticket !== reading || !still(target) || sending?.key === key(target)) return;
+    if (ticket !== reading || on !== seen || !still(target) || sending?.key === key(target)) return;
     const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
     if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
     text = {
@@ -526,7 +532,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       clearTimeout(sending?.timer);
       clearTimeout(typedTimer);
       // Tiles still waiting for a small copy get none.
-      for (const list of [...waiting.values()]) for (const done of [...list]) done(undefined);
+      stopThumbnails();
       status.remove();
       stops.forEach((stop) => stop());
       popup?.cancel();
