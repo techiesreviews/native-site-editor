@@ -174,7 +174,8 @@ for (const width of [390, 320]) test(`on a phone the bar keeps the Inbox button,
   expect(button.height).toBeGreaterThanOrEqual(44);
   expect(button.x).toBeGreaterThanOrEqual(0);
   expect(button.x + button.width).toBeLessThanOrEqual(width);
-  expect((await menuButton.boundingBox())!.x + (await menuButton.boundingBox())!.width).toBeLessThanOrEqual(width);
+  const menu = (await menuButton.boundingBox())!;
+  expect(menu.x + menu.width).toBeLessThanOrEqual(width);
   expect((await page.locator(".topbar").boundingBox())!.height).toBeLessThanOrEqual(45);
   expect(await inboxButton(page).evaluate((element) => getComputedStyle(element, "::after").scale)).toBe("1");
   // One dot: the Menu's button leaves it to the Inbox's.

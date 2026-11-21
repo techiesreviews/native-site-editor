@@ -115,7 +115,8 @@ test("the welcome page has the slim top bar: No projects yet, whose menu adds a 
   await page.goto(`${baseURL}/`);
   // While the session is checked the bar is there but says nothing: a returning visitor most likely has projects.
   await expect(page.getByText("Checking your account…")).toBeVisible();
-  await expect(page.getByRole("banner")).toBeAttached();
+  await expect(page.locator(".welcome-bar")).toBeAttached();
+  await expect(page.getByRole("banner")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "No projects yet" })).toHaveCount(0);
   answer();
   for (const width of [1280, 390]) {
