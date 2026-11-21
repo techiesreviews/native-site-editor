@@ -8,10 +8,11 @@ import { assetType } from "../shared/asset-types";
 import { fileInTheWay, foldersAbove } from "../shared/site-rules";
 import { dataUrlOf } from "./native-assets";
 import { withSiteSettings } from "./setup-checklist";
+import { siteNameShownEdits } from "./page-builder/site-name-shown";
 import { addUpload, uploadBytes, uploadImageType } from "./uploads";
 import type { Repository, Snapshot, StarterFile, SessionInfo } from "../shared/types";
 import type { AppStore } from "./app-store";
-import type { GuardedEdits } from "./guarded-edit";
+import type { GuardedEdits, Reads } from "./guarded-edit";
 import type { DraftScope, draftStore } from "./drafts";
 import type { createBootController } from "./controllers/boot-controller";
 import type { createRepositoryMenu } from "./components/repository-menu";
@@ -39,6 +40,8 @@ interface SetupPorts {
   readFile: (repo: string, sha: string) => Promise<string>;
   readBlob: (repo: string, sha: string, path?: string) => Promise<Blob>;
   branchText: (path: string) => Promise<{ text: string } | undefined>;
+  /** Every text file of the site read into the editor (src/pages-and-files-host.ts); a problem to show, else undefined. */
+  readSite: () => Promise<string | undefined>;
   draftScope: () => DraftScope | undefined;
   draftStore: typeof draftStore;
   pathNow: (path: string) => "file" | "folder" | "deleted" | undefined;
@@ -221,15 +224,35 @@ export function createSetupActions(ports: SetupPorts) {
         return error instanceof Error ? error.message : `${NATIVE_CONFIG_PATH} could not be read.`;
       }
     }
+    // A new name also shows where the pages show the old one (titles, header, eyebrow): every page
+    // and template is read first. A file that could not be read keeps its text; the name is still set.
+    if (change.name !== undefined) {
+      await ports.readSite().catch(() => undefined);
+      if (!since.holds()) return changed;
+    }
     const what = change.name !== undefined ? "name" : "address";
     const done = `Site ${what} set as a draft. Publish to keep it.`, undone = `Undid setting the site ${what}.`;
     const outcome = await ports.guardedEdits.run(r => {
       const text = r.source(NATIVE_CONFIG_PATH), next = withSiteSettings(text, change);
       if ("error" in next) return { refuse: next.error };
-      return text === undefined ? { creates: [{ path: NATIVE_CONFIG_PATH, content: next.text }], done, undone }
-        : { edits: new Map([[NATIVE_CONFIG_PATH, next.text]]), done, undone };
+      const edits = change.name === undefined ? new Map<string, string>() : shownNameEdits(r, change.name);
+      if (text !== undefined) edits.set(NATIVE_CONFIG_PATH, next.text);
+      return { ...text === undefined ? { creates: [{ path: NATIVE_CONFIG_PATH, content: next.text }] } : {}, edits, done, undone };
     }, { since });
     return outcome.ok ? outcome.message : outcome.reason === "stale" ? changed : outcome.message;
+  }
+
+  /** The site's pages and templates that show its old name, with `name` in its place (src/page-builder/site-name-shown.ts). */
+  function shownNameEdits(r: Reads, name: string): Map<string, string> {
+    const site = r.site();
+    if (!site) return new Map();
+    const read = (paths: Iterable<string>) => new Map([...new Set(paths)].flatMap(path => {
+      const source = r.source(path);
+      return source === undefined ? [] : [[path, source] as const];
+    }));
+    // The home page first: with no shared title ending, its og:site_name is the old name.
+    const routes = Object.entries(site.routes).sort(([a], [b]) => (a === "/" ? -1 : b === "/" ? 1 : 0)).map(([, path]) => path);
+    return siteNameShownEdits({ pages: read(routes), templates: read(Object.values(site.components)) }, name);
   }
 
   // A starting point's files as drafts: the files of `point` (the blank page,
