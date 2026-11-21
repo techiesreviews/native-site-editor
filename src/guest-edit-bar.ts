@@ -241,13 +241,14 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         if (!file) {
           // The picture already there is no change.
           const now = await sources().then((files) => files && pictureAt(files, target)).catch(() => undefined);
-          if (now === image.path) return;
+          if (now === image.path) { stopThumbnails(); return; }
         }
         if (cancelled()) return;
         check();
         const reason = file ? await upload(target, file, on, cancelled, stale) : await write({ kind: "picture", ...target, file: image.path }, on);
         if (reason) throw new Error(reason);
         answered(target, undefined);
+        stopThumbnails();
       },
     });
   }
