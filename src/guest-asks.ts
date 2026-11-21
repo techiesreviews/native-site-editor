@@ -6,7 +6,7 @@ import { GUEST_NOT_KEPT, GUEST_REASON_CHARS, type GuestChange } from "./guest-ch
 import type { GuestMessage } from "./live-session";
 
 /** Why a guest's change was not written when Lex's tab never answered (gone, or the session ended). */
-export const GUEST_NO_ANSWER = "No answer from Lex's editor. Try again.";
+export const GUEST_NO_ANSWER = "No answer from the site owner's editor. Try again.";
 
 /** How long a change of one part waits for Lex's tab to write it. */
 const ANSWER_MS = 60_000;

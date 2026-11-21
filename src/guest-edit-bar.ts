@@ -199,7 +199,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   // The Media picker lent the site's pictures as Lex's tab offers them, read-only: a guest's choice is the only thing
   // that reaches the site, as their change. A file added in the picker stays on this page until it is chosen.
-  const NO_ACCESS = "Only Lex can change the site's media.";
+  const NO_ACCESS = "Only the site owner can change the site's media.";
   const library: MediaPickerHost = {
     load: async () => ({ key: "guest", collections: [], items: (context?.pictures ?? []).map((path) => ({ path })), metadata: {}, usage: {} }),
     blob: async (path) => {
