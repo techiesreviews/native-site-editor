@@ -209,6 +209,8 @@ test("setup wizard: the name field remembers what is typed, normalises on change
   assert.deepEqual(field.invalid(), ["false", false]);
   // TOOLS-188 sketch: the owner's address sits inside the field, before the name; the hint is for problems only.
   assert.equal(field.prefix.textContent, "github.com/lex/");
+  // A long owner is cut short in the field; the whole address shows on hover.
+  assert.equal(field.prefix.getAttribute("title"), "github.com/lex/");
   assert.equal(field.input.parentElement, field.prefix.parentElement);
   assert.equal(field.hint.textContent, "");
 
@@ -227,6 +229,7 @@ test("setup wizard: the name field remembers what is typed, normalises on change
   field.commit();
   assert.equal(field.input.value, "My-New-Site");
   assert.equal(field.prefix.textContent, "github.com/techies/");
+  assert.equal(field.prefix.getAttribute("title"), "github.com/techies/");
   assert.equal(field.hint.textContent, "");
   assert.deepEqual(field.invalid(), ["false", false]);
 

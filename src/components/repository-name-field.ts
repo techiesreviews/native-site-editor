@@ -2,9 +2,10 @@ import { node } from "../ui/dom";
 import { repositoryNameProblem, suggestedRepositoryName } from "../../shared/starting-point";
 
 /**
- * The setup wizard's "Repository name" field: a native text input behind the
- * address the repository will have (github.com/<owner>/), shown inside the
- * field, and a described-by hint that shows GitHub's objection to the name.
+ * The setup wizard's "Repository name" field, with github.com/<owner>/ inside it.
+ *
+ * A native text input behind that address, and a described-by hint that shows
+ * GitHub's objection to the name.
  */
 export function createRepositoryNameField(options: {
   value: string;
@@ -36,6 +37,8 @@ export function createRepositoryNameField(options: {
     const problem = repositoryNameProblem(name);
     const invalid = Boolean(problem && name);
     prefix.textContent = options.prefix();
+    // A long owner is cut short in the field; the whole address shows on hover.
+    prefix.setAttribute("title", prefix.textContent);
     input.setAttribute("aria-invalid", String(invalid));
     hint.classList.toggle("is-error", invalid);
     hint.textContent = invalid ? problem! : "";
