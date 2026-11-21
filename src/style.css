@@ -627,7 +627,90 @@ dd {
 #app.login-page {
   min-height: 100dvh;
   display: grid;
+  grid-template-rows: auto 1fr;
   background: var(--background);
+}
+/* The slim top bar over the login page (TOOLS-188): the project menu's place, with no project yet. */
+.welcome-bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--size-touch);
+  padding-inline: var(--space-xs);
+  border-block-end: 1px solid var(--line);
+  background: var(--surface);
+}
+.welcome-bar__projects {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-block-size: 28px;
+  padding: var(--space-4xs) var(--space-xs) var(--space-4xs) var(--space-4xs);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.welcome-bar__projects:hover:not(:disabled) {
+  background: var(--hover);
+}
+.welcome-bar__projects:focus-visible,
+.welcome-bar__item:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.welcome-bar__projects:disabled {
+  cursor: default;
+}
+.welcome-bar__tile {
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.welcome-bar__menu {
+  position: fixed;
+  inset: calc(var(--size-touch) + var(--space-3xs)) auto auto var(--space-xs);
+  inline-size: min(260px, 100vw - 2 * var(--space-xs));
+  margin: 0;
+  padding: var(--space-3xs);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--surface-card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.welcome-bar__label {
+  margin: 0;
+  padding: var(--space-2xs) var(--space-xs) var(--space-3xs);
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.welcome-bar__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-block-size: 36px;
+  padding-inline: var(--space-xs);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+}
+.welcome-bar__item:hover {
+  background: var(--hover);
+}
+@media (max-width: 650px), (pointer: coarse) {
+  .welcome-bar__projects,
+  .welcome-bar__item {
+    min-block-size: var(--size-touch);
+  }
 }
 /* The welcome page: "Where does your site live?" with one card per place (GitHub
    for now). The same page signed out (the login page) and for a signed-in

@@ -108,6 +108,33 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
   await expect(page.locator(".login-card details")).toHaveCount(0);
 });
 
+test("the welcome page has the slim top bar: No projects yet, whose menu adds a project on GitHub", async ({ page, baseURL }) => {
+  // TOOLS-188 new-user test: the welcome page had no bar, as the sketch has (sketch-desktop-01, sketch-phone-01).
+  await signedOutSession(page);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`${baseURL}/`);
+    await expect(page.getByRole("link", { name: "Continue with GitHub" })).toBeVisible();
+    const bar = page.getByRole("banner");
+    const projects = bar.getByRole("button", { name: "No projects yet" });
+    await expect(projects).toBeVisible();
+    const box = (await bar.boundingBox())!;
+    expect(box.y).toBe(0);
+    expect(box.height).toBeLessThanOrEqual(45);
+    expect((await projects.boundingBox())!.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 28);
+    await projects.click();
+    const menu = page.getByRole("dialog", { name: "Projects" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByText("Add project")).toBeVisible();
+    await expect(menu.getByRole("link", { name: "On GitHub" })).toHaveAttribute("href", "/auth/login");
+    const at = (await menu.boundingBox())!;
+    expect(at.x).toBeGreaterThanOrEqual(0);
+    expect(at.x + at.width).toBeLessThanOrEqual(width);
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+  }
+});
+
 test("the welcome pill's words are readable in light and dark", async ({ page, baseURL }) => {
   // TOOLS-188 new-user test: in dark mode the pill's blue words sat on a near-black pill (20b-phone-welcome-dark).
   await signedOutSession(page);
