@@ -25,7 +25,7 @@ export type GuestHeadingLevel = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 /** Why a guest's change was not written when Lex's tab gave no reason: his page changed after the guest saw it. */
 export const GUEST_NOT_KEPT = "The page changed meanwhile. Try again.";
 /** Why a guest's change was not written when Lex's editor shows another page than the one it was made on. */
-export const GUEST_OTHER_PAGE = "Lex's editor is on another page now.";
+export const GUEST_OTHER_PAGE = "The site owner's editor is on another page now.";
 /** The longest reason a guest is shown. */
 export const GUEST_REASON_CHARS = 200;
 export { guestReason } from "./guest-reason";

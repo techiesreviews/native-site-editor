@@ -333,7 +333,7 @@ test("a guest hears why a change was not written: another page, the words it was
   for (const ask of [2, 3, 4]) await session.deliver("p1", "guest", { t: "change", change: picture, ask, seen: 1 });
   await settle();
   assert.deepEqual(room.messages.filter(message => message.t === "answer").map(message => [message.ask, message.done, message.why]), [
-    [1, false, "Lex's editor is on another page now."],
+    [1, false, "The site owner's editor is on another page now."],
     [2, false, "x".repeat(GUEST_REASON_CHARS)],
     [3, false, "The picture is too large to crop."],
     [4, false, undefined],
