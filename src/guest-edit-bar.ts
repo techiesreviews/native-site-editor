@@ -32,6 +32,8 @@ const MEASURE_MS = 8_000;
 const WANT_MS = 15_000;
 // Text being typed re-renders the page often: its size and bold are read again once renders pause this long.
 const REREAD_MS = 1_200;
+// A written text change waits this long at most for the render that shows it before the bar takes the next one.
+const RENDER_WAIT_MS = 2_000;
 const LEVELS: GuestHeadingLevel[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
 
 const key = (target: Target | undefined) => target ? `${target.path}#${target.node.join(".")}` : "";
@@ -106,6 +108,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let draft: string | undefined;
   let popup: { cancel(): void } | undefined;
   let popupOpening = false;
+  // Closes the Media picker as its Cancel does, once Replace has loaded it: the session's end closes it.
+  let closePicker: (() => void) | undefined;
   // The number of the last render from Lex's tab, and of the one the selection was last reported on: a change names
   // the render it was made on, so Lex's tab can refuse it when that element has moved since.
   let seen = 0;
@@ -116,12 +120,13 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let text: { key: string; size?: string; bold?: boolean } | undefined;
   let reading = 0;
   let reread: ReturnType<typeof setTimeout> | undefined;
-  // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and
-  // takes no other until Lex's tab answers.
-  let sending: string | undefined;
+  // The element whose heading level, text size or bold change is on its way, and the render it was made on: its bar
+  // shows the change at once and its text controls wait until Lex's tab refuses it, or a later render shows it
+  // written (so the next change names a page that has it).
+  let sending: { key: string; on: number; written?: boolean; timer?: ReturnType<typeof setTimeout> } | undefined;
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
-  status.className = "sr-only";
+  status.className = "live-guest__said";
   status.setAttribute("role", "status");
   canvas.append(status);
 
@@ -169,14 +174,15 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     });
   }
 
-  async function upload(target: Target, file: File | undefined, on = selectedSeen): Promise<string | undefined> {
+  /** Sends `file` for `target`, unless `cancelled` (the picker's Cancel) turned true while it was read. */
+  async function upload(target: Target, file: File | undefined, on = selectedSeen, cancelled = () => false): Promise<string | undefined> {
     if (!file) return undefined;
     if (!guestPhoto(file.name, file.type)) return NOT_A_PHOTO;
     if (file.size > GUEST_UPLOAD_BYTES) return `That picture is over ${GUEST_UPLOAD_BYTES / 1024 / 1024} MB.`;
     // Lex's tab keeps the render the upload names while its bytes travel.
     send({ t: "hold", seen: on });
     const data = await base64(file);
-    if (closed) return undefined;
+    if (closed || cancelled()) return undefined;
     if (context?.path !== target.path) return GUEST_OTHER_PAGE;
     return await write({ kind: "upload", ...target, name: file.name, type: file.type, data }, on);
   }
@@ -206,7 +212,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   async function replace(target: Target, place: string) {
     if (!still(target)) return;
     want(context?.pictures ?? []);
-    const { openMediaPicker } = await import("./page-builder/media-picker");
+    const { openMediaPicker, closeMediaPicker } = await import("./page-builder/media-picker");
+    closePicker = () => closeMediaPicker();
     if (!still(target)) return;
     await openMediaPicker({
       adapter: library, accept: ACCEPT, place, chooseOnly: true,
@@ -222,7 +229,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         }
         if (cancelled()) return;
         check();
-        const reason = file ? await upload(target, file, on) : await write({ kind: "picture", ...target, file: image.path }, on);
+        const reason = file ? await upload(target, file, on, cancelled) : await write({ kind: "picture", ...target, file: image.path }, on);
         if (reason) throw new Error(reason);
         answered(target, undefined);
       },
@@ -308,7 +315,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     ]);
     const found = await elementAt(files, target);
     // A change on its way shows on the bar until it is answered, and the sources are read again then.
-    if (ticket !== reading || !still(target) || sending === key(target)) return;
+    if (ticket !== reading || !still(target) || sending?.key === key(target)) return;
     const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
     if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
     text = {
@@ -321,23 +328,32 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
   function textControls(at: Selected): EditBarControl[] {
-    const controls: EditBarControl[] = [];
-    // One change at a time: the bar shows it at once, and Lex's sources are read again once it is answered.
+    const controls: EditBarControl[] = [], waiting = sending?.key === key(at);
+    // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
-      if (sending === key(at)) { render(); return; }
-      sending = key(at);
-      if (shown && text?.key === key(at)) {
-        text = { ...text, ...shown };
+      if (sending?.key === key(at)) { render(); return; }
+      const mine: NonNullable<typeof sending> = { key: key(at), on: selectedSeen };
+      sending = mine;
+      if (shown && text?.key === key(at)) text = { ...text, ...shown };
+      render();
+      const settle = () => {
+        if (sending !== mine) return;
+        clearTimeout(mine.timer);
+        sending = undefined;
         render();
-      }
-      void write(next).then((reason) => {
-        if (sending === key(at)) sending = undefined;
-        answered(at, reason);
         if (still(at)) void readText(selected!);
+      };
+      void write(next).then((reason) => {
+        answered(at, reason);
+        if (sending !== mine) return;
+        // Written: settled by the render that shows it (`select`), or already shown; a lost render waits no longer.
+        if (reason || selectedSeen > mine.on) { settle(); return; }
+        mine.written = true;
+        mine.timer = setTimeout(settle, RENDER_WAIT_MS);
       });
     };
     if (/^h[1-6]$/.test(at.tag)) controls.push({
-      kind: "select", label: "Heading level",
+      kind: "select", label: "Heading level", waiting,
       options: LEVELS.map((level) => ({ label: level.toUpperCase(), value: level })),
       value: at.tag,
       onChange: (value) => change({ kind: "heading", ...at, level: value as GuestHeadingLevel }),
@@ -346,10 +362,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (state?.size !== undefined && scale) {
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting, onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
     }
     if (state?.bold !== undefined) controls.push({
-      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold,
+      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting,
       className: "edit-bar__format edit-bar__format--strong",
       onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
     });
@@ -408,11 +424,18 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     // The runtime reports the selection again after each render it draws: its node is that render's.
     selected = next;
     selectedSeen = seen;
+    // A text change on its way is settled by another selection, or by the render that shows it written.
+    const shown = Boolean(!moved && sending?.written && selectedSeen > sending.on);
+    if (moved || shown) {
+      clearTimeout(sending?.timer);
+      sending = undefined;
+    }
     render();
     clearTimeout(reread);
     if (!next || next.tag === "img" || context?.path !== next.path) return;
-    // A new selection is read at once; the same one, re-reported after a render, once renders pause (typing).
-    if (moved) void readText(next);
+    // A new selection is read at once (and a settled change); the same one, re-reported after a render, once renders
+    // pause (typing).
+    if (moved || shown) void readText(next);
     else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
   }
 
@@ -472,11 +495,13 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     close() {
       closed = true;
       clearTimeout(reread);
+      clearTimeout(sending?.timer);
       // Tiles still waiting for a small copy get none.
       for (const list of [...waiting.values()]) for (const done of [...list]) done(undefined);
       status.remove();
       stops.forEach((stop) => stop());
       popup?.cancel();
+      closePicker?.();
       asks.close();
       bar.destroy();
     },

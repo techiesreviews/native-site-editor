@@ -210,6 +210,18 @@ test("a guest's bold makes the whole element's text bold or not, as the host bar
   assert.deepEqual(guestBoldPlan("index.html", line, true, text, whole, elements)(reads({ "index.html": changed })), { refuse: "The text changed before your change arrived." });
 });
 
+test("a guest's text change is refused when two lines with the same start tag swapped places, never written on the other line", () => {
+  const swapped = text.replace("<p>Daily</p><p> <strong>Open</strong> </p>", "<p> <strong>Open</strong> </p><p>Daily</p>");
+  const r = reads({ "index.html": swapped });
+  const moved = { refuse: "The text changed before your change arrived." };
+  assert.deepEqual(guestBoldPlan("index.html", line, false, text, whole, elements)(r), moved, "bold off");
+  assert.deepEqual(guestSizePlan("index.html", line, "l", text, ["styles.css"], elements)(r), moved, "text size");
+  // Step 1 is the first of two plain h2 headings.
+  const pair = text.replace("</h1>", "</h1><h2>Menu</h2><h2>Hours</h2>"), swappedPair = pair.replace("<h2>Menu</h2><h2>Hours</h2>", "<h2>Hours</h2><h2>Menu</h2>");
+  assert.deepEqual(guestHeadingPlan("index.html", line, "h3", pair, elements)(reads({ "index.html": swappedPair })), { refuse: "The heading changed before your change arrived." }, "heading");
+  assert.match(apply(pair, guestHeadingPlan("index.html", line, "h3", pair, elements)(reads({ "index.html": pair }))), /<h3>Menu<\/h3><h2>Hours<\/h2>/, "unmoved");
+});
+
 test("a guest's heading, size and bold are each one Undo step of Lex's, and a refusal says why", async () => {
   const { edits, calls, written } = fake({ locate: elements }, text);
   assert.equal(await edits.change({ kind: "heading", path: "index.html", node: heading, level: "h2" }, text), true);
