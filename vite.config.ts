@@ -10,19 +10,23 @@ import { mockups, mockupsHeaders } from "./vite-mockups.ts";
 const monaco = monacoTrim();
 const dompurify = monacoDompurify();
 
-// CATALOGUE=1 (the preview editor's build, `npm run build:preview`) adds the catalogue board, catalogue.html (atomic
-// catalogue ticket 05); production builds never contain it. It is a second build, run once the editor's is written,
-// into the same dist/ with only that page: sharing no chunk with the editor's pages, it leaves the editor's files and
-// boot exactly as without it (one build of all four pages split shared modules into new chunks, +4 KB at boot).
+// The guest page builds separately so its bar and lazy picker do not split the editor's boot modules into more chunks.
+// CATALOGUE=1 (`npm run build:preview`) then adds the catalogue board, catalogue.html (atomic catalogue ticket 05),
+// in another independent build. Both append to dist/; production builds never contain the catalogue.
 const catalogueOnly = process.env.CATALOGUE_ONLY === "1";
-function catalogue(): Plugin {
+const guestOnly = process.env.GUEST_ONLY === "1";
+function separatePages(): Plugin {
   return {
-    name: "ase-catalogue-build",
+    name: "ase-separate-pages-build",
     apply: "build",
     async closeBundle() {
-      process.env.CATALOGUE_ONLY = "1";
-      try { await viteBuild({ configFile: fileURLToPath(import.meta.url), configLoader: "runner", logLevel: "warn" }); }
-      finally { delete process.env.CATALOGUE_ONLY; }
+      // The guest's bar and picker share editor modules, but must not split those modules out of its first load.
+      // As with the catalogue, a separate build keeps each page's lazy imports within that page's own graph.
+      for (const flag of ["GUEST_ONLY", ...(process.env.CATALOGUE === "1" ? ["CATALOGUE_ONLY"] : [])]) {
+        process.env[flag] = "1";
+        try { await viteBuild({ configFile: fileURLToPath(import.meta.url), configLoader: "runner", logLevel: "warn" }); }
+        finally { delete process.env[flag]; }
+      }
     },
   };
 }
@@ -32,26 +36,23 @@ export default defineConfig({
   resolve: { alias: [{ find: /^mediabunny$/, replacement: fileURLToPath(new URL("./node_modules/mediabunny/dist/bundles/mediabunny.mjs", import.meta.url)) }] },
   // MOCKUPS=1 (`npm run build:preview`) adds the planning mock-ups at /mockups/ (/mockups/ opens the board's mock-ups,
   // /mockups/list/ leads there too); production never has them.
-  // The catalogue-only build copies public/ again, which drops the mock-ups' header rule: it adds the rule back.
-  plugins: catalogueOnly ? [monaco.plugin, dompurify.plugin, ...(process.env.MOCKUPS === "1" ? [mockupsHeaders()] : [])] : [
+  // Each extra page copies public/ again, so it adds the mock-ups' header rule back.
+  plugins: catalogueOnly || guestOnly ? [monaco.plugin, dompurify.plugin, ...(guestOnly ? [previewRuntime()] : []), ...(process.env.MOCKUPS === "1" ? [mockupsHeaders()] : [])] : [
     monaco.plugin, dompurify.plugin, previewRuntime(), pdfjsAssets(),
     ...(process.env.MOCKUPS === "1" ? [mockups(fileURLToPath(new URL(".", import.meta.url)))] : []),
-    ...(process.env.CATALOGUE === "1" ? [catalogue()] : []),
+    separatePages(),
   ],
   // Three pages: the editor, a synced session's guest page (live.html, slice 30), which loads the preview and the live room only,
   // and a preview link's page (preview-visit.html, slice 35), which the preview Worker serves on its own address.
   // The editor keeps the key index: kit preview and scripts/agents/cold.sh find its bundle as assets/index-*.js.
   // Every browser the editor supports preloads modules itself: no polyfill (with three pages it would be a chunk of its own,
   // one more request before the editor's first paint).
-  // The guest page lazily opens the editor's picture picker, Text size and Bold (TOOLS-185), so the small modules those share
-  // with the editor's first screen can no longer sit in its index chunk. One chunk for them all, not one each: each would be
-  // one more request, and smaller files gzip worse, before the editor's first paint (tests/perf/byte-budget.ts).
   build: { modulePreload: { polyfill: false }, rolldownOptions: { input: {
-    index: fileURLToPath(new URL("./index.html", import.meta.url)), live: fileURLToPath(new URL("./live.html", import.meta.url)),
+    index: fileURLToPath(new URL("./index.html", import.meta.url)),
     preview: fileURLToPath(new URL("./preview-visit.html", import.meta.url)),
-  }, output: { codeSplitting: { groups: [{ name: "shared-with-guest", includeDependenciesRecursively: false,
-    test: /\/(src\/(announce|components\/row-menu|components\/refusal-note|ui\/text-button\/[\w-]+|whole-wrapper|native-text-size)|shared\/(slotted-css|media-records-path))\.(ts|css)$/ }] } } },
-  // The catalogue's own build (see catalogue() above): only its page, added to the editor's dist/.
+  } },
+  ...(guestOnly ? { emptyOutDir: false, rolldownOptions: { input: { live: fileURLToPath(new URL("./live.html", import.meta.url)) } } } : {}),
+  // The catalogue's own build: only its page, added to the editor's dist/.
   ...(catalogueOnly ? { emptyOutDir: false, rolldownOptions: { input: { catalogue: fileURLToPath(new URL("./catalogue.html", import.meta.url)) } } } : {}) },
   // Keep light-dark() as written (src/theme.css). The CSS minifier otherwise rewrites it into a
   // prefers-color-scheme toggle, which ignores a part's inline color-scheme and adds bytes to the boot.
