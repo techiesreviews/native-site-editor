@@ -320,6 +320,10 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
   // Refused, and his bar says why on itself; pressing it clears it.
   const why = benBar.locator(".edit-bar__warning");
   await expect(why).toHaveText("The picture changed before your change arrived.", { timeout: 20_000 });
+  // Read out too, and the docked bar stays inside his phone's screen.
+  await expect(ben.page.getByRole("status").filter({ hasText: "The picture changed before your change arrived." })).toHaveCount(1);
+  await expect(why).toHaveAccessibleName("The picture changed before your change arrived. (dismiss)");
+  expect(await benBar.evaluate((bar) => bar.scrollWidth <= window.innerWidth)).toBe(true);
   await why.click();
   await expect(why).toHaveCount(0);
 
