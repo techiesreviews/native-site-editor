@@ -2,8 +2,11 @@
 // A patient question (a change, which may carry a large upload) waits again from each part Lex's tab said arrived
 // (TOOLS-385), so a slow upload that does land is never told it could not be added.
 
-import type { GuestChange } from "./guest-changes";
+import { GUEST_NOT_KEPT, GUEST_REASON_CHARS, type GuestChange } from "./guest-changes";
 import type { GuestMessage } from "./live-session";
+
+/** Why a guest's change was not written when Lex's tab never answered (gone, or the session ended). */
+export const GUEST_NO_ANSWER = "No answer from Lex's editor. Try again.";
 
 /** How long a change of one part waits for Lex's tab to write it. */
 const ANSWER_MS = 60_000;
@@ -32,15 +35,19 @@ export function createGuestAsks(send: (message: GuestMessage) => void) {
   return {
     /** Waits `ms` for the answer; or, given `part`, is patient: then `part` again from each part Lex's tab says arrived. */
     ask,
-    /** A change made on render `seen`, and whether Lex's tab wrote it. An upload's first part leaves with the bytes queued
-     * before it, so an upload, or a change sent while one still waits, has a part's time from the start; any change waits
-     * a part's time from each part that arrives, as one queued behind an upload is written only once that upload is. */
-    async change(change: GuestChange, seen: number) {
+    /** A change made on render `seen`: nothing once Lex's tab wrote it, else why not. An upload's first part leaves with
+     * the bytes queued before it, so an upload, or a change sent while one still waits, has a part's time from the start;
+     * any change waits a part's time from each part that arrives, as one queued behind an upload is written only once
+     * that upload is. */
+    async change(change: GuestChange, seen: number): Promise<string | undefined> {
       const upload = change.kind === "upload";
       if (upload) uploads++;
       try {
-        return await ask<boolean>((number) => ({ t: "change", change, ask: number, seen }),
-          upload || uploads > 0 ? PART_MS : ANSWER_MS, PART_MS) === true;
+        const answer = await ask<{ done?: unknown; why?: unknown }>((number) => ({ t: "change", change, ask: number, seen }),
+          upload || uploads > 0 ? PART_MS : ANSWER_MS, PART_MS);
+        if (answer === undefined) return GUEST_NO_ANSWER;
+        if (answer.done === true) return undefined;
+        return typeof answer.why === "string" && answer.why ? answer.why.slice(0, GUEST_REASON_CHARS) : GUEST_NOT_KEPT;
       } finally {
         if (upload) uploads--;
       }

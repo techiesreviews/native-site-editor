@@ -1,22 +1,29 @@
-// A synced session guest's edit bar on Lex's tab (TOOLS-185): what the bar offers (the site's pictures and
-// pages), the files its image popup reads, small pictures for its picture panel, and the guest's picture,
-// upload, crop and link changes written as Lex's own unsaved changes, each one Undo step of his.
+// A synced session guest's edit bar on Lex's tab (TOOLS-185): what the bar offers (the site's pictures, pages
+// and text sizes), the files its image popup reads, small pictures for its picker, and the guest's picture,
+// upload, crop, link, heading level, text size and bold changes written as Lex's own unsaved changes, each one
+// Undo step of his. A change not written says why, for the guest.
 import { withSitePrefix } from "../shared/site-path-prefix";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../shared/native-project";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records-path";
 import { setAttributeEdit } from "./native-structure";
 import { locateNativeElementRange } from "./native-source-location";
 import { nativeLinkSuggestions } from "./native-pages";
+import { textSizeEdit, textSizeScale, textSizeable } from "./native-text-size";
+import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
+import { wholeWrapper, type WholeWrapper } from "./whole-wrapper";
+import { GUEST_NOT_KEPT, type GuestHeadingLevel } from "./guest-changes";
 import type { ElementRange } from "../shared/html-source";
 import type { GuardedEdits, PlanResult, Reads, Stamp } from "./guarded-edit";
 import type { GuestEditHandlers } from "./components/native-preview";
 import type { ImagePopupApply } from "./page-builder/image-popup";
 import type { WorkspaceMountPorts } from "./workspace-mount";
 
-/** At most this many site pictures are offered to a guest's picture panel. */
+/** At most this many site pictures are offered to a guest's picker. */
 export const GUEST_PICTURE_CHOICES = 200;
 const THUMBNAIL = 240;
-type Locate = (source: string, node: number[]) => Pick<ElementRange, "tag"> | undefined;
+type Locate = (source: string, node: number[]) => (Pick<ElementRange, "tag"> & Partial<Pick<ElementRange, "close">>) | undefined;
+type Whole = (inner: string, tags: string[]) => WholeWrapper | undefined;
+const MOVED = (what: string) => `The ${what} changed before your change arrived.`;
 
 export interface GuestEditsPorts {
   site(): { routes: Record<string, string> } | undefined;
@@ -29,12 +36,17 @@ export interface GuestEditsPorts {
   /** A reader of pictures' bytes (Media's own) that leaves the page's pictures as they are, so the mirror sends guests none of them. */
   pictureReader(): Promise<(path: string) => Promise<Blob>>;
   /** The image popup's write with no window: a focus and crop, another picture, or an upload saved with its place.
-   * `proof`: the load and page the change was checked against; anything newer refuses. */
-  image(target: { path: string; node: number[] }, change: ImagePopupApply, proof: { stamp: Stamp; source: string }): Promise<boolean>;
+   * `proof`: the load and page the change was checked against; anything newer refuses. Resolves to whether it was
+   * written, or why not. */
+  image(target: { path: string; node: number[] }, change: ImagePopupApply, proof: { stamp: Stamp; source: string }): Promise<boolean | string>;
+  /** The shared stylesheets of the page on show, as the host bar's Text size reads them. */
+  styles(): string[];
   /** A small copy of a picture (a canvas on Lex's tab). */
   thumbnail?: (url: string) => Promise<string | undefined>;
   /** The element at `node` of a source (the page's own reader by default). */
   locate?: Locate;
+  /** The host bar's "the whole element is bold" (its own by default). */
+  wholeWrapper?: Whole;
 }
 
 /** Whether the `name` element at `node` of `now` is still the one a guest saw at `node` of `seen`: the same start tag,
@@ -60,9 +72,67 @@ export function guestLinkPlan(path: string, node: number[], href: string, seen: 
     const source = r.source(path);
     const tag = source === undefined ? undefined : locate(source, node)?.tag;
     if (source === undefined || tag?.name !== "a") return { refuse: "The link could not be found in the source." };
-    if (!sameGuestElement(seen, source, node, "a", locate)) return { refuse: "The link changed before the guest's change arrived." };
+    if (!sameGuestElement(seen, source, node, "a", locate)) return { refuse: MOVED("link") };
     const edit = setAttributeEdit(source, tag, "href", withSitePrefix(href, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH))));
     return { edits: new Map([[path, [edit]]]), done: "Link changed", undone: "Undid the link change" };
+  };
+}
+
+/** The element at `node` of `path` that `fits`, with its close tag, when it is still the one the guest saw on `seen`;
+ * else why not, naming it as `what`. */
+function seenElement(r: Reads, path: string, node: number[], seen: string, locate: Locate, what: string, fits: (name: string) => boolean):
+  { refuse: string } | { source: string; tag: ElementRange["tag"]; close: NonNullable<ElementRange["close"]> } {
+  const source = r.source(path);
+  const range = source === undefined ? undefined : locate(source, node);
+  if (source === undefined || !range?.close || !fits(range.tag.name)) return { refuse: `The ${what} could not be found in the source.` };
+  if (!sameGuestElement(seen, source, node, range.tag.name, locate)) return { refuse: MOVED(what) };
+  return { source, tag: range.tag, close: range.close };
+}
+
+/** The heading at `node` of `path` made a `level` heading, both its tags renamed as the host bar's Heading level does. */
+export function guestHeadingPlan(path: string, node: number[], level: GuestHeadingLevel, seen: string, locate: Locate = locateNativeElementRange) {
+  return (r: Reads): PlanResult => {
+    const found = seenElement(r, path, node, seen, locate, "heading", name => /^h[1-6]$/.test(name));
+    if ("refuse" in found) return found;
+    const { tag, close } = found;
+    if (tag.name === level) return { refuse: "That heading is that level already." };
+    const edits = [
+      { start: tag.start + 1, end: tag.nameEnd, text: level },
+      { start: close.start + 2, end: close.start + 2 + tag.name.length, text: level },
+    ];
+    return { edits: new Map([[path, edits]]), done: `Heading level ${level.toUpperCase()}`, undone: "Undid the heading level" };
+  };
+}
+
+/** The text at `node` of `path` given `size` ("default" for none) from the page's own sizes in `stylePaths`, as the host
+ * bar's Text size writes it. */
+export function guestSizePlan(path: string, node: number[], size: string, seen: string, stylePaths: string[], locate: Locate = locateNativeElementRange) {
+  return (r: Reads): PlanResult => {
+    const found = seenElement(r, path, node, seen, locate, "text", textSizeable);
+    if ("refuse" in found) return found;
+    const scale = textSizeScale(stylePaths.map(sheet => r.source(sheet) ?? ""));
+    const chosen = scale.sizes.find(item => item.value === size);
+    if (!chosen && size !== "default") return { refuse: "That size is not one of the site's." };
+    const edit = textSizeEdit(found.source, found.tag, scale, size);
+    if (!edit) return { refuse: "That text is that size already." };
+    return { edits: new Map([[path, [edit]]]), done: chosen ? `Text size ${chosen.label}` : "Default text size", undone: "Undid the text size" };
+  };
+}
+
+/** The whole text at `node` of `path` made bold or not, as the host bar's B does with no text selected. */
+export function guestBoldPlan(path: string, node: number[], on: boolean, seen: string, whole: Whole = wholeWrapper, locate: Locate = locateNativeElementRange) {
+  return (r: Reads): PlanResult => {
+    const found = seenElement(r, path, node, seen, locate, "text", name => TEXT_LINE_TAGS.has(name));
+    if ("refuse" in found) return found;
+    const { source, tag, close } = found;
+    const inner = source.slice(tag.end, close.start), wrapper = whole(inner, ["strong", "b"]);
+    if (on && wrapper) return { refuse: "That text is bold already." };
+    if (!on && !wrapper) return { refuse: "That text is not bold." };
+    const edits = (wrapper
+      ? [{ start: wrapper.open, end: wrapper.openEnd, text: "" }, { start: wrapper.closeAt, end: wrapper.closeEnd, text: "" }]
+      : [{ start: 0, end: 0, text: "<strong>" }, { start: inner.length, end: inner.length, text: "</strong>" }])
+      .map(edit => ({ ...edit, start: tag.end + edit.start, end: tag.end + edit.end }));
+    return { edits: new Map([[path, edits]]), done: on ? "Bold on" : "Bold off", undone: on ? "Undid Bold on" : "Undid Bold off" };
   };
 }
 
@@ -99,7 +169,9 @@ export function createGuestEdits(ports: GuestEditsPorts): GuestEditHandlers {
     context() {
       const site = ports.site();
       const links = site ? nativeLinkSuggestions(Object.keys(site.routes), route => ports.routeTitle(route), nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH))) : [];
-      return { links, pictures: ports.pictures().slice(0, GUEST_PICTURE_CHOICES) };
+      const sources = ports.sources();
+      const sizes = textSizeScale(ports.styles().map(sheet => sources[sheet] ?? ports.source(sheet) ?? ""));
+      return { links, pictures: ports.pictures().slice(0, GUEST_PICTURE_CHOICES), sizes };
     },
     sources(path) {
       const sources = ports.sources();
@@ -125,14 +197,24 @@ export function createGuestEdits(ports: GuestEditsPorts): GuestEditHandlers {
     // `seen`: the page as the guest's copy showed it when they made the change.
     async change(change, seen) {
       const target = { path: change.path, node: [...change.node] }, locate = ports.locate ?? locateNativeElementRange;
-      if (change.kind === "link") return (await ports.edits.run(guestLinkPlan(change.path, target.node, change.href, seen, locate), { anchor: change.path })).ok;
+      // Each plan is passed to the edits as written, so the read guard (tests/guarded-edit-reads.test.ts) sees it.
+      const written = (outcome: Awaited<ReturnType<typeof ports.edits.run>>) => outcome.ok ? true as const : outcome.message;
+      const anchor = { anchor: change.path };
+      if (change.kind === "link") return ports.edits.run(guestLinkPlan(change.path, target.node, change.href, seen, locate), anchor).then(written);
+      if (change.kind === "heading") return ports.edits.run(guestHeadingPlan(change.path, target.node, change.level, seen, locate), anchor).then(written);
+      if (change.kind === "size") return ports.edits.run(guestSizePlan(change.path, target.node, change.size, seen, ports.styles(), locate), anchor).then(written);
+      if (change.kind === "bold") return ports.edits.run(guestBoldPlan(change.path, target.node, change.on, seen, ports.wholeWrapper ?? wholeWrapper, locate), anchor).then(written);
       // The picture's change is checked against the page now, and written only on that page and load.
       const now = ports.source(change.path);
-      if (now === undefined || !sameGuestElement(seen, now, target.node, "img", locate)) return false;
+      if (now === undefined || !sameGuestElement(seen, now, target.node, "img", locate)) return MOVED("picture");
       const proof = { stamp: ports.edits.stamp(), source: now };
-      if (change.kind === "crop") return await ports.image(target, { edit: change.edit, recrop: change.recrop }, proof);
-      if (change.kind === "picture") return ports.pictures().includes(change.file) && await ports.image(target, { file: change.file }, proof);
-      return await ports.image(target, { upload: change.file, folder: guestUploadFolder(ports.pictures()) }, proof);
+      const image = async (apply: ImagePopupApply) => {
+        const written = await ports.image(target, apply, proof);
+        return written === true ? true as const : written || GUEST_NOT_KEPT;
+      };
+      if (change.kind === "crop") return image({ edit: change.edit, recrop: change.recrop });
+      if (change.kind === "picture") return ports.pictures().includes(change.file) ? image({ file: change.file }) : "That picture is not one of the site's.";
+      return image({ upload: change.file, folder: guestUploadFolder(ports.pictures()) });
     },
   };
 }
@@ -144,5 +226,6 @@ export function workspaceGuestEdits({ runtime, guardedEdits, preview, media }: P
     routeTitle: route => preview.nativeRouteInfo(route).title, pictures: () => media.nativeImagePaths(),
     pictureReader: async () => { const context = await media.mediaController.workspaceContext(); return path => context.blob(path); },
     image: (target, change, proof) => media.mediaController.guestImage(target, change, proof),
+    styles: () => preview.nativePageStyles(),
   });
 }
