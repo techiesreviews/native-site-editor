@@ -652,7 +652,8 @@ dd {
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
   background: var(--surface);
-  color: var(--primary);
+  /* The link blue, readable on the pill in both themes (the action blue is too dark on a dark pill). */
+  color: var(--link);
   font-size: var(--type-small);
   font-weight: 600;
 }
