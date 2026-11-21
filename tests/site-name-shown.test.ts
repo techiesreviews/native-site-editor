@@ -7,6 +7,7 @@ import { createDraftStore } from "../src/draft-store";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createWorkspaceSession } from "../src/workspace-session";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
+import { forEachAwait } from "./support/await-race";
 import { shownSiteName, siteNameShownEdits } from "../src/page-builder/site-name-shown";
 import { readHeadSettings } from "../src/page-builder/site-head";
 import { NATIVE_STARTER_VERSION } from "../shared/native-starter-version";
@@ -41,7 +42,15 @@ test("Name your site's name replaces the Starter's in titles, sharing tags, the 
   assert.match(edits.get("components/section-hero/section-hero.html")!, /<p class="eyebrow">Bean &amp; Leaf<\/p>/);
   // A sentence that mentions the old name is the owner's to rewrite.
   assert.ok(!edits.has("components/site-footer/site-footer.html"));
-  for (const text of edits.values()) assert.doesNotMatch(text.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, "").replace(/Larkspur Studio,|About Larkspur|Larkspur is|Larkspur Studio:/g, ""), /<title>[^<]*Larkspur|>Larkspur(?: Studio)?</);
+  for (const text of edits.values()) assert.doesNotMatch(text.replace(/Larkspur Studio,|About Larkspur|Larkspur is|Larkspur Studio:/g, ""), /<title>[^<]*Larkspur|>Larkspur(?: Studio)?<|"name": "Larkspur/);
+});
+
+test("the search engines' copy of the name (the home page's structured data) says the new name too, safely inside its script", () => {
+  const home = siteNameShownEdits(starterFiles(), "Bean </script> & \"Leaf\"").get("index.html")!;
+  const data = JSON.parse(home.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]);
+  assert.deepEqual(data["@graph"].map((node: { name: string }) => node.name), ["Bean </script> & \"Leaf\"", "Bean </script> & \"Leaf\""]);
+  // Its descriptions mention the name in a sentence: the owner's to rewrite.
+  assert.match(data["@graph"][0].description, /^Larkspur is a two-person/);
 });
 
 test("a second name replaces the first, and the same name changes nothing", () => {
@@ -63,10 +72,13 @@ const bundled = build({ entryPoints: ["src/setup-actions.ts"], bundle: true, wri
   } }],
 }).then((result) => import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`));
 
-test("saving the name from the Inbox drafts the config and the pages and header that show the name, as one step", async () => {
+type SetupPorts = Parameters<typeof createSetupActions>[0];
+
+/** The Starter's pages and templates in the memory workspace, with Save name's ports; `config` is the branch's .editor/config.json, if any. */
+function nameScenario(config: string | undefined, wrap: { branchText?: SetupPorts["branchText"]; readSite?: SetupPorts["readSite"]; unread?: string } = {}) {
   const files = starterFiles();
-  const branch: Record<string, string> = { ".editor/config.json": '{\n  "site": {\n    "name": "My site"\n  }\n}\n' };
-  for (const [path, text] of [...files.pages, ...files.templates]) branch[path] = text;
+  const branch: Record<string, string> = config === undefined ? {} : { ".editor/config.json": config };
+  for (const [path, text] of [...files.pages, ...files.templates]) if (path !== wrap.unread) branch[path] = text;
   const routes = { "/": "index.html", "/about/": "about/index.html", "/404.html": "404.html", "/work/fern-and-kettle/": "work/fern-and-kettle/index.html",
     "/work/harbour-lane-pottery/": "work/harbour-lane-pottery/index.html", "/work/meadow-row-allotments/": "work/meadow-row-allotments/index.html" };
   const components = Object.fromEntries(templatePaths.map((path) => [path.split("/")[1], path]));
@@ -74,16 +86,22 @@ test("saving the name from the Inbox drafts the config and the pages and header 
   const appStore = createAppStore(createDraftStore()), session = createWorkspaceSession();
   appStore.repository.value = { id: 1, name: "my-site", full_name: "lex/my-site", private: true, default_branch: "main", owner: { login: "lex", type: "User" } };
   appStore.snapshot.value = { branch: "main", commit: "commit", entries: [] };
-  let siteReads = 0;
+  const counts = { siteReads: 0 };
   const ports = {
     begin: () => session.begin(), appStore, guardedEdits: createGuardedEdits(workspace.workspace), nativeBaseSources: new Map<string, string>(),
-    branchText: async () => undefined, readSite: async () => { siteReads++; return undefined; },
-  } satisfies Pick<Parameters<typeof createSetupActions>[0], "begin" | "appStore" | "guardedEdits" | "nativeBaseSources" | "branchText" | "readSite">;
+    branchText: wrap.branchText ?? (async () => undefined), readSite: wrap.readSite ?? (async () => { counts.siteReads++; return undefined; }),
+  } satisfies Pick<SetupPorts, "begin" | "appStore" | "guardedEdits" | "nativeBaseSources" | "branchText" | "readSite">;
+  return { workspace, appStore, ports, counts };
+}
+
+test("saving the name from the Inbox drafts the config and the pages and header that show the name, as one step", async () => {
+  const { workspace, appStore, ports, counts } = nameScenario('{\n  "site": {\n    "name": "My site"\n  }\n}\n');
+  const siteReads = () => counts.siteReads;
   const module = await bundled;
   try {
     assert.equal(await module.createSetupActions(ports).writeSiteSettings({ name: "Bean & Leaf" }), undefined);
     assert.equal(workspace.announced.at(-1), "Site name set as a draft. Publish to keep it.");
-    assert.equal(siteReads, 1, "every page and template is read before the step is planned");
+    assert.equal(siteReads(), 1, "every page and template is read before the step is planned");
     assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "Bean & Leaf");
     assert.equal(readHeadSettings(workspace.source("index.html")!).title, "Small, editable websites for independent businesses · Bean & Leaf");
     assert.match(workspace.source("components/site-header/site-header.html")!, />Bean &amp; Leaf<\/a>/);
@@ -91,6 +109,48 @@ test("saving the name from the Inbox drafts the config and the pages and header 
     assert.ok(workspace.undo());
     assert.equal(readHeadSettings(workspace.source("index.html")!).title, "Small, editable websites for independent businesses · Larkspur Studio");
     assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "My site");
+  } finally {
+    appStore.dispose();
+  }
+});
+
+test("a switch to another site while Save name reads the config or the pages writes no draft and says the repository changed", async () => {
+  const module = await bundled;
+  const awaits = await forEachAwait(race => {
+    const scenario = nameScenario(undefined, {
+      branchText: race.port("branchText", async () => undefined),
+      readSite: race.port("readSite", async () => undefined),
+    });
+    const outcome = { message: undefined as string | undefined };
+    const done = module.createSetupActions(scenario.ports).writeSiteSettings({ name: "Bean & Leaf" })
+      .then((message: string | undefined) => { outcome.message = message; })
+      .finally(() => scenario.appStore.dispose());
+    return { ...scenario, outcome, done };
+  }, run => {
+    run.workspace.setScope("lex/other@main");
+  }, run => {
+    assert.equal(run.outcome.message, "The repository changed meanwhile. Try again.");
+    assert.equal(run.workspace.source(".editor/config.json"), undefined);
+    for (const path of [...pagePaths, ...templatePaths]) assert.equal(run.workspace.draft(path), undefined, path);
+    assert.deepEqual(run.workspace.steps(), []);
+  });
+  assert.equal(awaits, 2);
+});
+
+test("a page or template that could not be read keeps its text, and the name is still set everywhere else", async () => {
+  const header = "components/site-header/site-header.html";
+  const { workspace, appStore, ports } = nameScenario('{\n  "site": {\n    "name": "My site"\n  }\n}\n', {
+    unread: header, readSite: async () => { throw new Error("GitHub said no"); },
+  });
+  const module = await bundled;
+  try {
+    assert.equal(await module.createSetupActions(ports).writeSiteSettings({ name: "Bean & Leaf" }), undefined);
+    assert.equal(workspace.announced.at(-1), "Site name set as a draft. Publish to keep it.");
+    assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "Bean & Leaf");
+    assert.equal(readHeadSettings(workspace.source("about/index.html")!).title, "About · Bean & Leaf");
+    assert.match(workspace.source("components/section-hero/section-hero.html")!, /<p class="eyebrow">Bean &amp; Leaf<\/p>/);
+    assert.equal(workspace.source(header), undefined);
+    assert.equal(workspace.draft(header), undefined);
   } finally {
     appStore.dispose();
   }

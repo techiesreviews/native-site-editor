@@ -2,8 +2,9 @@
 // Inbox sets the name in `.editor/config.json`, and these edits put it where
 // the pages show the old one. A new site from the Starter says "Larkspur
 // Studio" in every page title ("About · Larkspur Studio"), in the sharing
-// tags, in the header's brand link ("Larkspur") and as the eyebrow over the
-// home page's headline; after naming, each says the new name.
+// tags, in the home page's structured data for search engines, in the
+// header's brand link ("Larkspur") and as the eyebrow over the home page's
+// headline; after naming, each says the new name.
 //
 // The old name is the ending the page titles share (the Pages tab leaves the
 // same ending off its rows), else the home page's og:site_name. Only exact
@@ -52,6 +53,11 @@ export function siteNameShownEdits(files: SiteNameFiles, name: string): Map<stri
   // An element whose whole text is the old name (the home page's eyebrow), as written in the source.
   const whole = new RegExp(`(>\\s*)${escapeRegExp(escapeText(shown.name))}(\\s*</)`, "g");
   const asText = (text: string) => text.replace(whole, (_match, before: string, after: string) => `${before}${escapeText(wanted)}${after}`);
+  // Structured data's "name" when it is exactly the old name; "<" written as < so the name cannot end the script.
+  const dataName = new RegExp(`("name"\\s*:\\s*)${escapeRegExp(JSON.stringify(shown.name))}`, "g");
+  const newDataName = JSON.stringify(wanted).replace(/</g, "\\u003c");
+  const asData = (text: string) => text.replace(/(<script\b[^>]*\btype="application\/ld\+json"[^>]*>)([\s\S]*?)(<\/script>)/g,
+    (_match, open: string, body: string, close: string) => `${open}${body.replace(dataName, (_name, key: string) => `${key}${newDataName}`)}${close}`);
   const read = heads(files.pages);
   for (const [path, source] of files.pages) {
     const head = read.get(path);
@@ -61,7 +67,7 @@ export function siteNameShownEdits(files: SiteNameFiles, name: string): Map<stri
         if (ending && newEnding && head[field].endsWith(ending)) next = upsertHeadTag(next, field, head[field].slice(0, -ending.length) + newEnding);
       if (head["og:site_name"].trim() === shown.name) next = upsertHeadTag(next, "og:site_name", wanted);
     }
-    next = asText(next);
+    next = asData(asText(next));
     if (next !== source) edits.set(path, next);
   }
   // The brand link shows the name or its first words ("Larkspur" for "Larkspur Studio").
