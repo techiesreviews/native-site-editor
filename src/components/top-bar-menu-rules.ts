@@ -1,8 +1,9 @@
 // The phone menu's rows (top-bar-phone.ts), pure: which of the approved rows show, in their order (Lex's phone
 // layout of 2026-11-11). A row shows only while the control it works is there. Tested in
-// tests/top-bar-menu-rules.test.ts. A site's setup waits in the Inbox (TOOLS-188), so it has no row of its own.
+// tests/top-bar-menu-rules.test.ts. A site's setup waits in the Inbox (TOOLS-188), so it has no row of its own; the
+// Inbox has none either, as its button stays on a phone's bar (TOOLS-188).
 
-export type MenuRow = "pages" | "blocks" | "structure" | "code" | "screen" | "history" | "inbox" | "share" | "settings" | "switch";
+export type MenuRow = "pages" | "blocks" | "structure" | "code" | "screen" | "history" | "share" | "settings" | "switch";
 
 export interface MenuFacts {
   /** The block rail is offered (a page on the canvas). */
@@ -25,7 +26,6 @@ export function menuRows(facts: MenuFacts): MenuRow[] {
     ["code", facts.sheet],
     ["screen", facts.devices],
     ["history", facts.history],
-    ["inbox", facts.project],
     ["share", facts.project],
     ["settings", facts.project],
     ["switch", true],

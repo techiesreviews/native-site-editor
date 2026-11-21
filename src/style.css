@@ -551,7 +551,8 @@ dd {
     gap: var(--space-4xs);
     padding-inline: var(--space-4xs) var(--space-3xs);
   }
-  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history, #inbox-button),
+  /* The Inbox stays on the bar with its dot, as in the approved sketch (TOOLS-188). */
+  .topbar :is(.repository-menu__trigger, .code-editor__redo, .code-editor__history),
   #repository-menu::after,
   .workspace :is(.block-rail, .canvas-bar:not(.canvas-bar--component)) {
     display: none;

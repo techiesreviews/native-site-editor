@@ -157,23 +157,33 @@ test("with every setup row done and nothing found, the Inbox says All done and i
   await expect.poll(() => waiting(page)).toBe(false);
 });
 
-test("on a phone the setup rows open from the Menu's Inbox, and the bar stays one row", async ({ page, baseURL }) => {
+test("on a phone the bar keeps the Inbox button, with its dot, on one row", async ({ page, baseURL }) => {
+  // TOOLS-188 new-user test: the phone bar had no Inbox, as the sketch has (sketch-phone-06).
   await page.setViewportSize({ width: 390, height: 800 });
   await startBlankSite(page, baseURL);
-  const bar = (await page.locator(".topbar").boundingBox())!;
-  expect(bar.height).toBeLessThanOrEqual(45);
-  const menu = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
-  await menu.click();
+  const menuButton = page.getByRole("banner").getByRole("button", { name: "Menu", exact: true });
+  await menuButton.click();
   const sheet = page.getByRole("dialog", { name: "Menu", exact: true });
-  await expect(sheet.getByRole("button", { name: /Set up your site/ })).toHaveCount(0);
-  await sheet.getByRole("button", { name: /^Inbox/ }).click();
+  await expect(sheet.getByRole("button", { name: /Set up your site|^Inbox/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await expect.poll(() => waiting(page)).toBe(true);
+  await expect(inboxButton(page)).toBeVisible();
+  const button = (await inboxButton(page).boundingBox())!;
+  expect(button.height).toBeGreaterThanOrEqual(44);
+  expect(button.x + button.width).toBeLessThanOrEqual(390);
+  expect((await page.locator(".topbar").boundingBox())!.height).toBeLessThanOrEqual(45);
+  expect(await inboxButton(page).evaluate((element) => getComputedStyle(element, "::after").scale)).toBe("1");
+  // One dot: the Menu's button leaves it to the Inbox's.
+  expect(await menuButton.evaluate((element) => getComputedStyle(element, "::after").content)).toBe("none");
+  await inboxButton(page).click();
   await expect(inbox(page)).toBeVisible();
   await expect(setupRows(page)).toHaveCount(2);
   const box = (await inbox(page).boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(390);
   await page.keyboard.press("Escape");
-  await expect(inbox(page)).toBeHidden();
+  await expect(inboxButton(page)).toBeFocused();
 });
 
 test("an ordinary repository lists no setup rows", async ({ page, baseURL }) => {

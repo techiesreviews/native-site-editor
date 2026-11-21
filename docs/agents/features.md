@@ -1280,9 +1280,9 @@ its number unused.
 - Steps: none yet (the real starter has nothing waiting)
 
 ### F-inbox-05 The Inbox on a phone
-- Try: At 390 px, with something waiting, look at the bar's Menu button, open the Menu and tap Inbox.
-- Good: The tray button stays off the phone's bar; the Menu button wears the orange dot instead, and the Menu's Inbox row wears it too. Tapping the row closes the Menu and opens the Inbox panel within the screen, its rows and Decorative 44 px targets (U6); closing it brings the keyboard back to the Menu button.
-- Files: `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
+- Try: At 390 px, with something waiting, look at the bar, open the Menu, close it and tap the bar's Inbox button.
+- Good: The tray button stays on the phone's one-row bar as a 44 px target with the orange dot, as in the approved sketch (TOOLS-188); the Menu button has no dot and the Menu no Inbox row. Tapping the tray opens the Inbox panel within the screen, its rows and Decorative 44 px targets (U6); closing it brings the keyboard back to the tray.
+- Files: `src/style.css`, `src/inbox/inbox.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-menu-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`
 - Steps: none yet (phone only; a feature try also runs at 1280 px, where the Menu is not shown)
