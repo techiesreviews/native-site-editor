@@ -64,6 +64,14 @@ test("a second name replaces the first, and the same name changes nothing", () =
   assert.equal(siteNameShownEdits(first, "  ").size, 0);
 });
 
+test("a first name with < in it is still replaced in the structured data by the next name", () => {
+  const files = starterFiles();
+  for (const [path, text] of siteNameShownEdits(files, "Bean <b> Leaf")) (files.pages.has(path) ? files.pages : files.templates).set(path, text);
+  const home = siteNameShownEdits(files, "Second").get("index.html")!;
+  const data = JSON.parse(home.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]);
+  assert.deepEqual(data["@graph"].map((node: { name: string }) => node.name), ["Second", "Second"]);
+});
+
 // The real writeSiteSettings, over the memory workspace (as tests/setup-actions.test.ts does).
 const bundled = build({ entryPoints: ["src/setup-actions.ts"], bundle: true, write: false, format: "esm", platform: "node", loader: { ".css": "empty" },
   plugins: [{ name: "no-dialog", setup(plugin) {
