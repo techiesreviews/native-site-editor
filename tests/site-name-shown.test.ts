@@ -11,6 +11,7 @@ import { forEachAwait } from "./support/await-race";
 import { shownSiteName, siteNameShownEdits } from "../src/page-builder/site-name-shown";
 import { readHeadSettings } from "../src/page-builder/site-head";
 import { NATIVE_STARTER_VERSION } from "../shared/native-starter-version";
+import { blankSiteFiles } from "../shared/starting-point";
 import type { createSetupActions } from "../src/setup-actions";
 
 // TOOLS-188 new-user test: Name your site in the Inbox saved the name in
@@ -64,6 +65,21 @@ test("a second name replaces the first, and the same name changes nothing", () =
   assert.equal(siteNameShownEdits(first, "  ").size, 0);
 });
 
+test("the Blank page's title and sharing title, which are only its name, become the new name", () => {
+  const blank = new Map(blankSiteFiles("My site", "").filter((file) => file.path.endsWith(".html")).map((file) => [file.path, file.content] as const));
+  const home = readHeadSettings(siteNameShownEdits({ pages: blank, templates: new Map() }, "Blank Studio").get("index.html")!);
+  assert.deepEqual([home.title, home["og:title"], home["og:site_name"]], ["Blank Studio", "Blank Studio", "Blank Studio"]);
+});
+
+test("a name with a separator in it (Bean - Leaf) is replaced whole by the next name", () => {
+  const files = starterFiles();
+  for (const [path, text] of siteNameShownEdits(files, "Bean - Leaf")) (files.pages.has(path) ? files.pages : files.templates).set(path, text);
+  assert.deepEqual(shownSiteName(files.pages), { name: "Bean - Leaf", separator: " · " });
+  const second = siteNameShownEdits(files, "Beta Works");
+  assert.equal(readHeadSettings(second.get("about/index.html")!).title, "About · Beta Works");
+  assert.match(second.get("components/site-header/site-header.html")!, />Beta Works<\/a>/);
+});
+
 test("a first name with < in it is still replaced in the structured data by the next name", () => {
   const files = starterFiles();
   for (const [path, text] of siteNameShownEdits(files, "Bean <b> Leaf")) (files.pages.has(path) ? files.pages : files.templates).set(path, text);
@@ -83,10 +99,10 @@ const bundled = build({ entryPoints: ["src/setup-actions.ts"], bundle: true, wri
 type SetupPorts = Parameters<typeof createSetupActions>[0];
 
 /** The Starter's pages and templates in the memory workspace, with Save name's ports; `config` is the branch's .editor/config.json, if any. */
-function nameScenario(config: string | undefined, wrap: { branchText?: SetupPorts["branchText"]; readSite?: SetupPorts["readSite"]; unread?: string } = {}) {
+function nameScenario(config: string | undefined, wrap: { branchText?: SetupPorts["branchText"]; readSite?: SetupPorts["readSite"] } = {}) {
   const files = starterFiles();
   const branch: Record<string, string> = config === undefined ? {} : { ".editor/config.json": config };
-  for (const [path, text] of [...files.pages, ...files.templates]) if (path !== wrap.unread) branch[path] = text;
+  for (const [path, text] of [...files.pages, ...files.templates]) branch[path] = text;
   const routes = { "/": "index.html", "/about/": "about/index.html", "/404.html": "404.html", "/work/fern-and-kettle/": "work/fern-and-kettle/index.html",
     "/work/harbour-lane-pottery/": "work/harbour-lane-pottery/index.html", "/work/meadow-row-allotments/": "work/meadow-row-allotments/index.html" };
   const components = Object.fromEntries(templatePaths.map((path) => [path.split("/")[1], path]));
@@ -145,20 +161,23 @@ test("a switch to another site while Save name reads the config or the pages wri
   assert.equal(awaits, 2);
 });
 
-test("a page or template that could not be read keeps its text, and the name is still set everywhere else", async () => {
+test("when the pages could not be read, Save name sets nothing and says so, and a try once they can be read sets the name everywhere", async () => {
   const header = "components/site-header/site-header.html";
+  const reads = { fail: true };
   const { workspace, appStore, ports } = nameScenario('{\n  "site": {\n    "name": "My site"\n  }\n}\n', {
-    unread: header, readSite: async () => { throw new Error("GitHub said no"); },
+    readSite: async () => { if (reads.fail) throw new Error("GitHub said no"); },
   });
   const module = await bundled;
   try {
-    assert.equal(await module.createSetupActions(ports).writeSiteSettings({ name: "Bean & Leaf" }), undefined);
-    assert.equal(workspace.announced.at(-1), "Site name set as a draft. Publish to keep it.");
+    const actions = module.createSetupActions(ports);
+    assert.equal(await actions.writeSiteSettings({ name: "Bean & Leaf" }), "The site's pages could not be read, so the name was not set. Try again.");
+    assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "My site");
+    for (const path of [...pagePaths, ...templatePaths]) assert.equal(workspace.draft(path), undefined, path);
+    assert.deepEqual(workspace.steps(), []);
+    reads.fail = false;
+    assert.equal(await actions.writeSiteSettings({ name: "Bean & Leaf" }), undefined);
     assert.equal(JSON.parse(workspace.source(".editor/config.json")!).site.name, "Bean & Leaf");
-    assert.equal(readHeadSettings(workspace.source("about/index.html")!).title, "About · Bean & Leaf");
-    assert.match(workspace.source("components/section-hero/section-hero.html")!, /<p class="eyebrow">Bean &amp; Leaf<\/p>/);
-    assert.equal(workspace.source(header), undefined);
-    assert.equal(workspace.draft(header), undefined);
+    assert.match(workspace.source(header)!, />Bean &amp; Leaf<\/a>/);
   } finally {
     appStore.dispose();
   }

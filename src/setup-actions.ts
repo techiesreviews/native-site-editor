@@ -252,10 +252,12 @@ export function createSetupActions(ports: SetupPorts) {
       }
     }
     // A new name also shows where the pages show the old one (titles, header, eyebrow): every page
-    // and template is read first. A file that could not be read keeps its text; the name is still set.
+    // and template is read first. When they cannot be, nothing is set, so the old name is not left
+    // on the pages behind a done row; Save name stays to try again.
     if (change.name !== undefined) {
-      await ports.readSite().catch(() => undefined);
+      const unread = await ports.readSite().then(() => false, () => true);
       if (!since.holds()) return changed;
+      if (unread) return "The site's pages could not be read, so the name was not set. Try again.";
     }
     const what = change.name !== undefined ? "name" : "address";
     const done = `Site ${what} set as a draft. Publish to keep it.`, undone = `Undid setting the site ${what}.`;
