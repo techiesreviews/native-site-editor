@@ -15,7 +15,7 @@ import "./live-guest.css";
 import { runtimeDoc } from "./components/preview-frame-doc";
 import { createPreviewLink, iframeFramePort } from "./components/preview-link";
 import { createGuestCarets, sessionCaretList } from "./components/guest-carets";
-import { createGuestEditBar } from "./guest-edit-bar";
+import type { createGuestEditBar } from "./guest-edit-bar";
 import { watchEditorTheme } from "./theme";
 import { importSessionKey, randomId, readSessionLink, sessionWire, type GuestMessage, type HostMessage, type SessionPresence } from "./live-session";
 import type { LivePeer, LiveRoom } from "./live-room";
@@ -140,6 +140,8 @@ async function enter(shared: Shared, key: CryptoKey, presence: SessionPresence, 
 async function join(shared: Shared, name: string): Promise<"in" | "ended" | "invalid" | "later"> {
   let key: CryptoKey;
   try { key = await importSessionKey(shared.key); } catch { return "invalid"; }
+  let makeEditBar: typeof createGuestEditBar;
+  try { ({ createGuestEditBar: makeEditBar } = await import("./guest-edit-bar")); } catch { return "later"; }
   const me = randomId();
   const presence: SessionPresence = { name, guest: me };
   let room: LiveRoom | undefined;
@@ -175,7 +177,7 @@ async function join(shared: Shared, name: string): Promise<"in" | "ended" | "inv
   if (!("room" in entry)) return entry.refused;
   room = entry.room;
   remember(name);
-  view = showSession(shared, name, (message) => wire.send(message satisfies GuestMessage), me);
+  view = showSession(shared, name, (message) => wire.send(message satisfies GuestMessage), me, makeEditBar);
   view.people(entry.room.peers());
   // Leaving says so at once, so Lex's list of people is right. A page brought back from the browser's cache has no
   // room any more: it says the session is over for it.
@@ -185,7 +187,7 @@ async function join(shared: Shared, name: string): Promise<"in" | "ended" | "inv
 }
 
 /** The page being edited: a top bar with the site and who is here, and the frame. */
-function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string, send: (message: GuestMessage) => void, me: string) {
+function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, name: string, send: (message: GuestMessage) => void, me: string, makeEditBar: typeof createGuestEditBar) {
   const site = shared.site || "This site";
   const bar = element("header", "live-guest__bar");
   const mark = element("span", "live-guest__mark", initialOf(site).letter);
@@ -215,7 +217,7 @@ function showSession(shared: NonNullable<ReturnType<typeof readSessionLink>>, na
   // whenever who is here changes: back after a dropped connection, Lex's tab has forgotten it.
   const carets = createGuestCarets(canvas, frame, frameLink, me);
   // The edit bar (TOOLS-185): Replace and Focus and crop on a picture, the address on a link; Lex's tab writes them.
-  const editBar = createGuestEditBar({ canvas, frame, frameLink, send, me, picture: (path) => held.get(path) });
+  const editBar = makeEditBar({ canvas, frame, frameLink, send, me, picture: (path) => held.get(path) });
   let caretTimer: ReturnType<typeof setTimeout> | undefined, caretNext: PageTextCaret | null | undefined, caretTold: PageTextCaret | null = null;
   const sendCaret = () => {
     caretTimer = undefined;
