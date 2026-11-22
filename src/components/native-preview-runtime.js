@@ -3828,9 +3828,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
   // holds each root's sheets, by the index its host carries.
   function measuringCopy(target) {
     var doc = document.implementation.createHTMLDocument("");
-    var base = doc.createElement("base");
-    base.href = document.baseURI;
-    doc.head.appendChild(base);
+    // srcdoc inherits this frame's base URL. A base element would be redundant and violate base-uri 'none'.
     var sources = [];
     function adopted(root) {
       var index = sources.length;
