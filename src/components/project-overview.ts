@@ -31,9 +31,15 @@ export function createProjectOverview(options: {
   const layout = node("div", "project-overview__layout");
   layout.setAttribute("role", "group");
   layout.setAttribute("aria-label", "Layout");
+  const layoutKey = "native-site-editor:projects-layout:v1";
   let view = "list", projects: ProjectMemory[] = [], phase: "loading" | "ready" | "error" = "loading";
+  try { if (localStorage.getItem(layoutKey) === "grid") view = "grid"; } catch { /* List is the default without browser storage. */ }
   const views = ["List", "Grid"].map(name => {
-    const control = button("", () => { view = name.toLowerCase(); draw(); });
+    const control = button("", () => {
+      view = name.toLowerCase();
+      try { localStorage.setItem(layoutKey, view); } catch { /* The choice still works for this visit. */ }
+      draw();
+    });
     control.setAttribute("aria-label", name);
     control.append(svgElement(sizedSvg(name === "List" ? listIcon : gridIcon, 14)), node("span", "project-overview__view-label", name));
     layout.append(control);
