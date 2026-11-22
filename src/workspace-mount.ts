@@ -57,7 +57,7 @@ import type { createVersionView } from "./version-view";
 import { button, node } from "./ui/dom";
 import { reported } from "./ui/report-failure";
 import { workingPart } from "./working-part";
-import { setupKeyOf, type SessionStamp } from "./workspace-session";
+import { sameBranch, setupKeyOf, type SessionStamp } from "./workspace-session";
 import type { Notices, Preview, Session, TextIndex, View } from "./host-modules";
 
 type BlockDrag = typeof import("./page-builder/block-drag");
@@ -210,7 +210,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (menu !== repositoryMenu || login !== ports.info.user?.login) return;
       if (!overview) {
         overview = module.createProjectOverviewHost({ login, menu: createRowMenu(ports.app), main: () => ports.element("main"), back: backToProjects,
-          ports, readWorkspace, select: id => { repositorySelect.value = String(id); },
+          ports, readWorkspace, sameBranch, select: id => { repositorySelect.value = String(id); },
           add: () => { if (ports.repositories.length) chooseProject(); else void ports.setup.setupEntry.open().catch(notices.errorMessage); },
         });
         ports.app.append(overview.root);

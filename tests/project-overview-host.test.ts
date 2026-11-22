@@ -4,6 +4,7 @@ import { registerHooks } from "node:module";
 import type { createProjectOverview } from "../src/components/project-overview.ts";
 import type { createProjectOverviewHost } from "../src/project-overview-host.ts";
 import { forEachAwait } from "./support/await-race.ts";
+import { sameBranch } from "../src/workspace-session.ts";
 
 type ViewOptions = Parameters<typeof createProjectOverview>[0];
 declare global { var overviewHostTest: { options?: ViewOptions; root: { isConnected: boolean; hidden: boolean } }; }
@@ -36,7 +37,7 @@ function fixture(ensureList: () => Promise<void> = async () => {}) {
   const root = { isConnected: true, hidden: false }, selected: number[] = [], chosen: unknown[] = [];
   globalThis.overviewHostTest = { root };
   const options: Parameters<typeof createProjectOverviewHost>[0] = {
-    login: "lex", menu: fake({}), main: () => fake({}), readWorkspace: () => undefined,
+    login: "lex", menu: fake({}), main: () => fake({}), readWorkspace: () => undefined, sameBranch,
     select: id => { selected.push(id); }, add() {}, back() {},
     ports: { boot: { ensureList, needsRecovery: () => false, reset() {} }, repositories: [repo],
       account: { choose: async choice => { chosen.push(choice); }, reload: async () => {}, switchTo: async () => {}, signOut: async () => {}, load: async () => {} },

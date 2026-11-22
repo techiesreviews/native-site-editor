@@ -4,6 +4,7 @@ import type { NativePreview } from "./components/native-preview";
 import type { createRowMenu } from "./components/row-menu";
 import type { WorkspaceMountPorts } from "./workspace-mount";
 import type { readWorkspace } from "./workspace-state";
+import type { sameBranch } from "./workspace-session";
 import { createProjectOverview } from "./components/project-overview";
 import { draftStore } from "./drafts";
 import { readProjects, keepProjects, keepOpenedProject, hideProject, type ProjectMemory } from "./project-memory";
@@ -17,6 +18,7 @@ export function createProjectOverviewHost(options: {
   main(): HTMLElement;
   ports: Pick<WorkspaceMountPorts, "boot" | "repositories" | "account" | "session">;
   readWorkspace: typeof readWorkspace;
+  sameBranch: typeof sameBranch;
   select(id: number): void;
   add(): void;
   back(): void;
@@ -34,7 +36,7 @@ export function createProjectOverviewHost(options: {
     options.select(repo.id);
     const previous = options.readWorkspace(login);
     await options.ports.account.choose({ repoId: repo.id, branch: project.branch,
-      ...(previous?.repoId === repo.id && previous.branch === project.branch ? { path: previous.path } : {}) });
+      ...(options.sameBranch(previous, { repoId: repo.id, branch: project.branch }) ? { path: previous?.path } : {}) });
   }
   const view = createProjectOverview({ menu: options.menu, open, add: () => options.add(), reload: () => options.ports.account.overview?.(),
     remove: project => { removed.add(project.repo.id); hideProject(localStorage, login, project.repo.id); update(); view.focus(); },
@@ -42,9 +44,9 @@ export function createProjectOverviewHost(options: {
   function update(list?: Repository[], message?: string, failed = false) {
     if (list) { listing = list; keepProjects(localStorage, login, list); phase = "ready"; message ??= ""; }
     else if (message !== undefined) phase = failed ? "error" : "loading";
-    const kept = readProjects(localStorage, login);
-    const projects = listing ? listing.map(repo => ({ ...kept.find(project => project.repo.id === repo.id), repo,
-      branch: kept.find(project => project.repo.id === repo.id)?.branch ?? repo.default_branch })) : kept;
+    const kept = new Map(readProjects(localStorage, login).map(project => [project.repo.id, project]));
+    const projects = listing ? listing.map(repo => ({ ...kept.get(repo.id), repo,
+      branch: kept.get(repo.id)?.branch ?? repo.default_branch })) : [...kept.values()];
     view.update(projects.filter(project => !removed.has(project.repo.id)), { message, phase });
   }
   let opening: HTMLElement | undefined;
