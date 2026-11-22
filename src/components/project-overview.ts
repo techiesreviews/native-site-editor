@@ -3,7 +3,10 @@ import { button, node } from "../ui/dom";
 import { projectCard } from "../ui/project-card/project-card";
 import { textButton } from "../ui/text-button/text-button";
 import { reported } from "../ui/report-failure";
-import { icon } from "../icons";
+import listIcon from "@phosphor-icons/core/regular/list.svg?raw";
+import gridIcon from "@phosphor-icons/core/regular/squares-four.svg?raw";
+import searchIcon from "@phosphor-icons/core/regular/magnifying-glass.svg?raw";
+import { sizedSvg, svgElement } from "../icons";
 import { createRowMenu } from "./row-menu";
 import type { ProjectMemory } from "../project-memory";
 import "./project-overview.css";
@@ -22,7 +25,7 @@ export function createProjectOverview(options: {
   search.placeholder = "Search projects";
   search.setAttribute("aria-label", "Search projects");
   const searchBox = node("label", "project-overview__search");
-  searchBox.append(icon("magnifying-glass", 16), search);
+  searchBox.append(svgElement(sizedSvg(searchIcon, 16)), search);
   const layout = node("div", "project-overview__layout");
   layout.setAttribute("role", "group");
   layout.setAttribute("aria-label", "Layout");
@@ -30,7 +33,7 @@ export function createProjectOverview(options: {
   const views = ["List", "Grid"].map(name => {
     const control = button("", () => { view = name.toLowerCase(); draw(); });
     control.setAttribute("aria-label", name);
-    control.append(icon(name === "List" ? "list" : "squares-four", 14), node("span", "project-overview__view-label", name));
+    control.append(svgElement(sizedSvg(name === "List" ? listIcon : gridIcon, 14)), node("span", "project-overview__view-label", name));
     layout.append(control);
     return control;
   });
@@ -77,6 +80,7 @@ export function createProjectOverview(options: {
   }
   return {
     root,
+    destroy() { menu.close(false); root.remove(); },
     update(next: ProjectMemory[], message = "") {
       projects = [...next].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0));
       state.textContent = message;

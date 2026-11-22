@@ -9,6 +9,7 @@ import code from "@phosphor-icons/core/regular/code.svg?raw";
 import deviceMobile from "@phosphor-icons/core/regular/device-mobile.svg?raw";
 import shareNetwork from "@phosphor-icons/core/regular/share-network.svg?raw";
 import arrowsLeftRight from "@phosphor-icons/core/regular/arrows-left-right.svg?raw";
+import squaresFour from "@phosphor-icons/core/regular/squares-four.svg?raw";
 import { icon, sizedSvg, svgElement, type IconName } from "../icons";
 import { node } from "../ui/dom";
 import { iconButton } from "../ui/icon-button/icon-button";
@@ -35,7 +36,7 @@ export interface TopBarPhonePorts {
 }
 
 // The rows' own icons load with this menu; the rest are the editor's (src/icons.ts).
-const lazyIcons = { file, plus, treeStructure, code, deviceMobile, shareNetwork, arrowsLeftRight };
+const lazyIcons = { file, plus, treeStructure, code, deviceMobile, shareNetwork, arrowsLeftRight, squaresFour };
 type Draw = keyof typeof lazyIcons | IconName;
 const picture = (name: Draw, size = 20) =>
   name in lazyIcons ? svgElement(sizedSvg(lazyIcons[name as keyof typeof lazyIcons], size)) : icon(name as IconName, size);
@@ -176,7 +177,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     share: () => rowButton("shareNetwork", "Share a preview link", handOver(projectMenu)),
     settings: () => rowButton("gear", "Site settings", handOver(() => void ports.page.siteSettings())),
     switch: () => rowButton("arrowsLeftRight", "Switch site", handOver(projectMenu)),
-    overview: () => rowButton("squares-four", "All projects", handOver(() => find<HTMLButtonElement>(".repository-menu__overview")?.click())),
+    overview: () => rowButton("squaresFour", "All projects", handOver(() => find<HTMLButtonElement>(".repository-menu__overview")?.click())),
   };
 
   function title(text: string, back: boolean) {
