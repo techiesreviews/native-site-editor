@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test';
 
+test('a confirmed empty account shows the approved empty state without search controls @smoke', async ({ page, baseURL }) => {
+  await page.route('**/api/repositories*', route => route.fulfill({ json: [] }));
+  await page.goto(`${baseURL}/`);
+  await expect(page.getByRole('heading', { name: 'No sites in your list', exact: true })).toBeVisible();
+  await expect(page.locator('.project-overview__bar')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Add from GitHub', exact: true })).toBeVisible();
+});
+
 test('Remove from list hides only the card and keeps the repository available @smoke', async ({ page, baseURL }) => {
   const writes: string[] = [];
   page.on('request', request => { if (request.method() !== 'GET') writes.push(request.url()); });
