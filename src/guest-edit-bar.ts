@@ -329,6 +329,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
+    if (sending?.key === key(target)) return;
     if (textReading?.key === key(target) && textReading.on === seen) { textReading.again = true; return; }
     const ticket = ++reading;
     const mine = { key: key(target), on: seen, again: false };
