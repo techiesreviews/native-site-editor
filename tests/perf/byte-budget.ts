@@ -86,6 +86,7 @@ async function main() {
     const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
     const verdict = bytes <= BUDGET ? "within" : "OVER";
     console.log(`\nByte budget: ${kb(bytes)} gzip before first preview paint (cold median of ${result.cold.length}), budget ${kb(BUDGET)}: ${verdict}.`);
+    console.log(`Exact byte budget: ${bytes} gzip bytes before first preview paint; limit ${BUDGET} bytes.`);
     if (bytes > BUDGET) {
       if (reportOnly) console.log("Report-only: not failing.");
       else process.exitCode = 1;
