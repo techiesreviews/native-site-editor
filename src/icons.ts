@@ -26,6 +26,9 @@ import file from "@phosphor-icons/core/regular/file.svg?raw";
 import fileDashed from "@phosphor-icons/core/regular/file-dashed.svg?raw";
 import folder from "@phosphor-icons/core/regular/folder.svg?raw";
 import folderOpen from "@phosphor-icons/core/regular/folder-open.svg?raw";
+import list from "@phosphor-icons/core/regular/list.svg?raw";
+import magnifyingGlass from "@phosphor-icons/core/regular/magnifying-glass.svg?raw";
+import squaresFour from "@phosphor-icons/core/regular/squares-four.svg?raw";
 import gear from "@phosphor-icons/core/regular/gear.svg?raw";
 import githubLogo from "@phosphor-icons/core/regular/github-logo.svg?raw";
 import house from "@phosphor-icons/core/regular/house.svg?raw";
@@ -74,11 +77,14 @@ const icons = {
   "link-break": linkBreak,
   "link-simple": linkSimple,
   "list-checks": listChecks,
+  list,
+  "magnifying-glass": magnifyingGlass,
   package: packageIcon,
   play,
   plus,
   redo,
   sparkle,
+  "squares-four": squaresFour,
   stop,
   trash,
   tray,

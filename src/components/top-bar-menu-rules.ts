@@ -3,7 +3,7 @@
 // tests/top-bar-menu-rules.test.ts. A site's setup waits in the Inbox (TOOLS-188), so it has no row of its own; the
 // Inbox has none either, as its button stays on a phone's bar (TOOLS-188).
 
-export type MenuRow = "pages" | "blocks" | "structure" | "code" | "screen" | "history" | "share" | "settings" | "switch";
+export type MenuRow = "pages" | "blocks" | "structure" | "code" | "screen" | "history" | "share" | "settings" | "switch" | "overview";
 
 export interface MenuFacts {
   /** The block rail is offered (a page on the canvas). */
@@ -29,6 +29,7 @@ export function menuRows(facts: MenuFacts): MenuRow[] {
     ["share", facts.project],
     ["settings", facts.project],
     ["switch", true],
+    ["overview", facts.project],
   ];
   return rows.filter(([, shown]) => shown).map(([row]) => row);
 }
