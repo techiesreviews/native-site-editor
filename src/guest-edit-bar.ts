@@ -118,7 +118,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   // Why the last change on the selected element was not written, shown on the bar until the next one or another selection.
   let refused: string | undefined;
   // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
-  let text: { key: string; on: number; size?: string; bold?: boolean } | undefined;
+  let text: { key: string; on: number; epoch: number; size?: string; bold?: boolean } | undefined;
   let reading = 0;
   let textApplied = 0;
   let textEpoch = 0;
@@ -135,7 +135,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let typedShown = 0;
   let typedTimer: ReturnType<typeof setTimeout> | undefined;
   const typingAhead = () => typedSent > typedShown;
-  const textExpired = () => Boolean(text && seen - text.on >= GUEST_RENDERS_KEPT);
+  const textWaiting = () => Boolean(text && (text.epoch !== textEpoch || seen - text.on >= GUEST_RENDERS_KEPT));
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
   status.className = "live-guest__said";
@@ -354,6 +354,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       text = {
         key: key(target),
         on,
+        epoch: mine.epoch,
         size: scale && textSizeable(tag) ? currentTextSize(found.source, found.range.tag, scale) : undefined,
         bold: TEXT_LINE_TAGS.has(tag) ? Boolean(wholeWrapper(found.source.slice(found.range.tag.end, close.start), ["strong", "b"])) : undefined,
       };
@@ -375,7 +376,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
       if (sending?.key === key(at) || typingAhead() || selectedSeen !== seen) { render(); return; }
-      if (next.kind !== "heading" && textExpired()) { render(); return; }
+      if (next.kind !== "heading" && textWaiting()) { render(); return; }
       // Bold and size depend on the sources read, not a newer render that may contain different text.
       const on = next.kind === "heading" ? selectedSeen : text?.on;
       if (on === undefined) return;
@@ -411,10 +412,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (state?.size !== undefined && scale) {
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting: waiting || textExpired(), onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting: waiting || textWaiting(), onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
     }
     if (state?.bold !== undefined) controls.push({
-      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting: waiting || textExpired(),
+      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting: waiting || textWaiting(),
       className: "edit-bar__format edit-bar__format--strong",
       onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
     });

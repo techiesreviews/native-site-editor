@@ -322,6 +322,33 @@ test("six-second text replies still refresh proofs during ongoing renders", asyn
   }
 });
 
+test("Bold waits for the read confirming the guest's preceding Text size change", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p"));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  const size = bar(page).getByRole("combobox", { name: "Text size" });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await size.selectOption("1.25rem");
+  await page.evaluate(() => {
+    const change = window.guestBarRace.sent.find(message => message.t === "change");
+    if (change?.t !== "change") throw new Error("The size change was not sent.");
+    window.guestBarRace.bar.receive({ t: "answer", to: "anna", ask: change.ask, done: true });
+  });
+  await page.clock.runFor(1);
+  await page.evaluate(() => window.guestBarRace.select("p", true));
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+  await expect(bold).toHaveAttribute("aria-disabled", "true");
+  await expect(size).toHaveAttribute("aria-disabled", "true");
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain").replace("<p>", '<p style="font-size: 1.25rem">'));
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+  await bold.click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "change").at(-1))).toMatchObject({
+    seen: 1, change: { kind: "bold", on: true },
+  });
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
 test("a cancelled picker's late change answer cannot stop a newly opened picker's thumbnails", async ({ page }) => {
   await mount(page);
   await page.evaluate(() => window.guestBarRace.select("img"));
