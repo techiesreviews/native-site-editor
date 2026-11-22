@@ -1,5 +1,29 @@
 import { test, expect } from '@playwright/test';
 
+test('Remove from list hides only the card and keeps the repository available @smoke', async ({ page, baseURL }) => {
+  const writes: string[] = [];
+  page.on('request', request => { if (request.method() !== 'GET') writes.push(request.url()); });
+  await page.goto(`${baseURL}/`);
+  const card = page.locator('.project-card').first();
+  const id = await card.locator('[data-open]').getAttribute('data-open');
+  const name = await card.locator('h1').innerText();
+  await card.getByRole('button', { name: /^Options for / }).click();
+  await page.getByRole('menuitem', { name: 'Remove from list', exact: true }).click({ timeout: 5000 });
+  await expect(page.locator(`.project-overview [data-open="${id}"]`)).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
+  await expect(page.locator(`.project-overview [data-open="${id}"]`)).toHaveCount(0);
+  await expect(page.locator(`#repository option[value="${id}"]`)).toHaveCount(1);
+  expect(writes).toEqual([]);
+  await page.locator('.repository-menu__trigger').click();
+  const exactName = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  await page.locator('.repository-menu__repo').filter({ has: page.locator('.repository-menu__repo-name').filter({ hasText: exactName }) }).click();
+  await expect(page.frameLocator('.native-preview-frame').locator('body')).toBeVisible();
+  await page.locator('.repository-menu__trigger').click();
+  await page.getByRole('button', { name: 'All projects', exact: true }).click();
+  await expect(page.locator(`.project-overview [data-open="${id}"]`)).toHaveCount(1);
+});
+
 test('a new browser distinguishes a pending and failed list from an empty account @smoke', async ({ page, baseURL }) => {
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });

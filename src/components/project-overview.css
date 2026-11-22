@@ -10,6 +10,11 @@
   min-block-size: 0;
 }
 .project-overview > * { grid-column: 2; }
+.project-overview--empty { grid-template-columns: minmax(var(--space-m), 1fr) minmax(0, 440px) minmax(var(--space-m), 1fr); padding-block: calc(var(--space-l) * 3); }
+.project-overview__empty-copy { display: grid; gap: var(--space-2xs); }
+.project-overview__empty-copy > :is(h1, p) { margin: 0; }
+.project-overview__empty-copy h1 { font-size: var(--type-heading); letter-spacing: normal; }
+.project-overview--empty .repository-menu__initial { justify-self: start; }
 .project-overview__bar { display: flex; justify-content: space-between; gap: var(--space-s); align-items: center; }
 .project-overview__search { position: relative; inline-size: min(100%, 280px); min-inline-size: 0; }
 .project-overview__search > .icon { position: absolute; inset-inline-start: var(--space-xs); inset-block-start: 50%; translate: 0 -50%; pointer-events: none; }

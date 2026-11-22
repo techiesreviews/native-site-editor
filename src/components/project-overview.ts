@@ -16,6 +16,7 @@ export function createProjectOverview(options: {
   open(project: ProjectMemory): Promise<void>;
   add(): void;
   reload(): void;
+  remove(project: ProjectMemory): void;
   unsaved(project: ProjectMemory): boolean;
 }) {
   const root = node("section", "project-overview");
@@ -59,11 +60,17 @@ export function createProjectOverview(options: {
     views.forEach(control => control.setAttribute("aria-pressed", String(control.textContent?.toLowerCase() === view)));
     const query = search.value.trim().toLowerCase();
     const filtered = projects.filter(p => `${p.repo.name} ${p.repo.full_name}`.toLowerCase().includes(query));
+    root.classList.toggle("project-overview--empty", !projects.length && phase === "ready");
     results.replaceChildren();
     if (phase === "error") results.append(button("Reload repositories", () => options.reload(), "button secondary"));
     if (!projects.length) {
       bar.hidden = true;
-      if (phase === "ready") results.append(node("h1", "", "No sites in your list"), node("p", "muted", "Pick a repository from GitHub to open it here."), button("Add from GitHub", () => options.add(), "button primary"));
+      if (phase === "ready") {
+        const brand = node("span", "repository-menu__initial", "n"), copy = node("div", "project-overview__empty-copy");
+        brand.setAttribute("aria-hidden", "true");
+        copy.append(node("h1", "", "No sites in your list"), node("p", "muted", "Pick a repository from GitHub to open it here."));
+        results.append(brand, copy, button("Add from GitHub", () => options.add(), "button primary"));
+      }
       return;
     }
     bar.hidden = false;
@@ -76,8 +83,9 @@ export function createProjectOverview(options: {
       const mode = view === "grid" ? "grid" : !query && index === 0 ? "featured" : "row";
       const open = reported(() => options.open(project));
       const card = projectCard(project, { mode, open, unsaved: options.unsaved(project), more: anchor => menu.open(anchor, [
-        { label: "Open project", run: open },
-        { label: "View on GitHub", run: () => { window.open(`https://github.com/${project.repo.full_name}`, "_blank", "noopener"); } },
+        { label: "Open", run: open },
+        { label: "Open on GitHub", run: () => { window.open(`https://github.com/${project.repo.full_name}`, "_blank", "noopener"); } },
+        { label: "Remove from list", danger: true, section: "", run: () => options.remove(project) },
       ]) });
       if (mode === "featured") results.append(card);
       else cards.append(card);
@@ -89,7 +97,7 @@ export function createProjectOverview(options: {
   }
   return {
     root,
-    focus() { (matchMedia("(pointer: fine)").matches ? search : root).focus(); },
+    focus() { (matchMedia("(pointer: fine)").matches && !bar.hidden ? search : root).focus(); },
     destroy() { menu.close(false); menu.element.remove(); root.remove(); },
     update(next: ProjectMemory[], status: { message?: string; phase: typeof phase }) {
       projects = [...next].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0));

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { keepOpenedProject, keepProjects, readProjects } from "../src/project-memory.ts";
+import { keepOpenedProject, keepProjects, readProjects, hideProject } from "../src/project-memory.ts";
 import type { Repository } from "../shared/types.ts";
 
 const repo = (id: number): Repository => ({ id, name: `site-${id}`, full_name: `lex/site-${id}`, private: true,
@@ -28,4 +28,13 @@ test("a picture over the cache limit keeps the project without the oversized pic
   const [project] = readProjects(memory, "lex");
   assert.equal(project.repo.id, 1);
   assert.equal(project.picture, undefined);
+});
+test("removing a project only hides its card until it is opened again", () => {
+  const memory = store();
+  keepProjects(memory, "lex", [repo(1)]);
+  hideProject(memory, "lex", 1);
+  keepProjects(memory, "lex", [repo(1)]);
+  assert.equal(readProjects(memory, "lex")[0].hidden, true);
+  keepOpenedProject(memory, "lex", repo(1), "main");
+  assert.equal(readProjects(memory, "lex")[0].hidden, false);
 });
