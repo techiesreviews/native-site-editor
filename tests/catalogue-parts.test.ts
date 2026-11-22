@@ -101,9 +101,9 @@ test("untraced: the one-offs count for an entry's stylesheets, in plain words", 
   const counts = { "src/components/row-menu.css": { spacing: 5, zIndex: 1 }, "src/a.css": { radii: 1 } };
   assert.deepEqual(untracedLines(["src/components/row-menu.ts", "src/components/row-menu.css"], counts), ["5 hand-typed spacings, 1 hand-typed layer in row-menu.css"]);
   assert.deepEqual(untracedLines(["src/a.css", "src/clean.css"], counts), ["1 hand-typed corner in a.css"]);
-  // The committed count names the board's molecules' stylesheets.
+  // The migrated Row menu traces its spacing and layer to tokens.
   const committed = JSON.parse(readFileSync(join(repo, "scripts/agents/one-offs.json"), "utf8")).files;
-  assert.match(untracedLines(["src/components/row-menu.css"], committed)[0] ?? "", /in row-menu\.css$/);
+  assert.deepEqual(untracedLines(["src/ui/row-menu/row-menu.css"], committed), []);
 });
 
 test("a live frame says so in its query, and a frame page reads it back", () => {

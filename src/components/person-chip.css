@@ -12,7 +12,7 @@
   border-radius: 50%;
   background: var(--person-pin);
   color: var(--person-ink);
-  box-shadow: 0 0 0 2px var(--surface-toolbar);
+  box-shadow: 0 0 0 2px var(--person-chip-ring, var(--surface-toolbar));
   font-size: var(--type-badge);
   font-weight: 700;
   cursor: default;

@@ -1,6 +1,5 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import "./row-menu.css";
 
 export interface MenuItem {
   label: string;

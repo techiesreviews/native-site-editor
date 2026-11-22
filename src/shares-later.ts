@@ -1,3 +1,4 @@
+import "./ui/share-row/share-row.css";
 // What Share to edit and Share preview load after the editor's boot (slices 30 and 35; src/workspace-shares.ts,
 // src/preview-share.ts): their state and serving, and the project menu's items, in one chunk.
 export { createShareControl } from "./share-control";

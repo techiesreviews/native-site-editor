@@ -41,7 +41,7 @@ export function createLazyLoaders(ports: LazyLoadersPorts) {
   // Consts and functions main.ts never reassigns, read once; its `let` state and later consts stay `ports.` reads.
   const { runtime, appStore, currentLoad, stampOf, loadNativeAssets, setupScope, nativeSiteReadForCreate, readMediaText, loadPagesActions } = ports;
 
-  const loadConfirmDialog = lazyModule(() => import("./components/confirm-dialog"));
+  const loadConfirmDialog = lazyModule(async () => (await Promise.all([import("./components/confirm-dialog"), import("./ui/confirm-dialog/confirm-dialog.css")]))[0]);
   const loadHistory = lazyModule(() => import("./components/commit-history"));
   // The media picker and the media workspace behind it (its batches are staged by applyMediaBatch).
   const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction"), import("../shared/media-records")]));

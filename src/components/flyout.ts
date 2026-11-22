@@ -1,4 +1,3 @@
-import "./flyout.css";
 
 // A submenu beside a dropdown (components/dropdown.ts), out of one of its
 // rows: the repository's branches, what a connected agent waits on. The

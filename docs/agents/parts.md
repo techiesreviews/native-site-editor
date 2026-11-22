@@ -46,6 +46,31 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Design board:** Atoms › Button
 - **Copies to swap:** buttons made with `node("button")` and button looks styled in screens (`node scripts/agents/copies.mjs report`).
 
+### Confirm dialog
+
+- **For:** A modal question before an action that cannot be undone: a title, notes, the action and Cancel.
+- **Use:** `createConfirmDialog(id)` from `src/components/confirm-dialog.ts`.
+- **Code:** `src/components/confirm-dialog.ts`
+- **Styles:** `src/ui/confirm-dialog/confirm-dialog.css`
+- **Tests:** `tests/editor-css-layers.test.ts`, `tests/lazy-loaders.test.ts`, `tests/pages-and-files-host.test.ts`
+- **Copies to swap:** dialogs made by hand and their backdrops (`node scripts/agents/copies.mjs report`); one Dialog part is planned.
+
+### Dropdown
+
+- **For:** A menu that opens under its button (nonmodal): opening, closing on Escape and outside click, focus, placement.
+- **Use:** `mountDropdown({ … })` from `src/components/dropdown.ts`.
+- **Code:** `src/components/dropdown.ts`
+- **Styles:** `src/ui/dropdown/dropdown.css`
+- **Tests:** `tests/editor-css-layers.test.ts`
+
+### Flyout
+
+- **For:** A submenu beside a dropdown, opened from one of its rows.
+- **Use:** `mountFlyout({ … })` from `src/components/flyout.ts`.
+- **Code:** `src/components/flyout.ts`
+- **Styles:** `src/ui/flyout/flyout.css`
+- **Tests:** `tests/editor-css-layers.test.ts`
+
 ### Icon
 
 - **For:** A Phosphor Regular icon by name, alone or standing before or after words.
@@ -99,6 +124,14 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Tests:** `src/ui/progress/progress.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Progress bar
 
+### Row menu
+
+- **For:** A menu of actions for one row (a page, a file, an element): items with an icon, a hint key, a disabled reason.
+- **Use:** `createRowMenu(host, onClose)` from `src/components/row-menu.ts`, items as `MenuItem`.
+- **Code:** `src/components/row-menu.ts`, `src/components/row-actions.ts`
+- **Styles:** `src/ui/row-menu/row-menu.css`, `src/components/row-action-overlay.css`
+- **Tests:** `tests/catalogue-parts.test.ts`, `tests/editor-css-layers.test.ts`, `tests/pages-and-files-host.test.ts`
+
 ### Section heading
 
 - **For:** Small uppercase words naming a group in a panel or menu, with an optional end slot for a count or a button.
@@ -109,6 +142,14 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Options:** `src/ui/section-heading/section-heading-options.ts`
 - **Tests:** `src/ui/section-heading/section-heading.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Section heading
+
+### Sharing row
+
+- **For:** One sharing row in the project menu (Preview link and Edit together): a status dot, label and a hover/focus copy icon.
+- **Use:** `shareRow(name, actionClass, view, press)` and `markTile(tile, which, dot)` from `src/components/share-row.ts`.
+- **Code:** `src/components/share-row.ts`
+- **Styles:** `src/ui/share-row/share-row.css`
+- **Tests:** `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts`
 
 ### Spinner
 
@@ -145,40 +186,6 @@ Behaviour or looks several screens use. Reuse them the same way.
 - **Code:** none (styles only)
 - **Styles:** `src/theme.css`, `src/tokens/framework-editor.css`, `src/elements.css`
 - **Tests:** `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts`, `tests/theme-scheme.test.ts`, `tests/theme-tokens.test.ts`
-
-### Dropdown
-
-- **For:** A menu that opens under its button (nonmodal): opening, closing on Escape and outside click, focus, placement.
-- **Use:** `mountDropdown({ … })` from `src/components/dropdown.ts`.
-- **Code:** `src/components/dropdown.ts`
-- **Styles:** `src/components/dropdown.css`
-- **Tests:** none yet
-
-### Flyout
-
-- **For:** A submenu beside a dropdown, opened from one of its rows.
-- **Use:** `mountFlyout({ … })` from `src/components/flyout.ts`.
-- **Code:** `src/components/flyout.ts`
-- **Styles:** `src/components/flyout.css`
-- **Tests:** none yet
-
-### Row menu
-
-- **For:** A menu of actions for one row (a page, a file, an element): items with an icon, a hint key, a disabled reason.
-- **Use:** `createRowMenu(host, onClose)` from `src/components/row-menu.ts`, items as `MenuItem`.
-- **Code:** `src/components/row-menu.ts`, `src/components/row-actions.ts`
-- **Styles:** `src/components/row-menu.css`, `src/components/row-action-overlay.css`
-- **Tests:** `tests/catalogue-parts.test.ts`, `tests/pages-and-files-host.test.ts`
-- **Design board:** Molecules › Row menu
-
-### Confirm dialog
-
-- **For:** A modal question before an action that cannot be undone: a title, notes, the action and Cancel.
-- **Use:** `createConfirmDialog(id)` from `src/components/confirm-dialog.ts`. Its look is the create dialog's (`src/components/create-dialog.css`).
-- **Code:** `src/components/confirm-dialog.ts`
-- **Tests:** `tests/lazy-loaders.test.ts`, `tests/pages-and-files-host.test.ts`
-- **Design board:** Molecules › Confirm dialog
-- **Copies to swap:** dialogs made by hand and their backdrops (`node scripts/agents/copies.mjs report`); one Dialog part is planned.
 
 ### Field suggestions
 
@@ -271,7 +278,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Command palette | The command palette (⌘K): one field that finds pages to open, files to open in the code pane, components to add or open, and what can be done now, with each action's shortcut. | `src/components/command-palette.ts` `src/components/command-palette.css` | none yet |
 | Commit history | The History panel (#changes in the top bar): drawn only once this file has loaded with the history. | `src/components/commit-history.ts` `src/components/commit-history.css` | `tests/history-controller.test.ts`, `tests/lazy-loaders.test.ts`, `tests/version-view.test.ts` |
 | Confetti | A short confetti burst for the wizard's last page, in the editor's accent palette. | `src/components/confetti.ts` `src/components/confetti.css` | none yet |
-| Create dialog | New file or folder. | `src/components/create-dialog.ts` `src/components/create-dialog.css` | none yet |
+| Create dialog | New file or folder: the Confirm dialog shell with kind choices, fields and the page picker. | `src/components/create-dialog.ts` `src/components/create-dialog.css` | `tests/editor-css-layers.test.ts` |
 | Edit bar | The edit bar: contextual controls anchored to the element selected in the native preview. | `src/components/edit-bar.ts` `src/components/edit-bar.css` | `tests/command-palette-controller.test.ts`, `tests/edit-bar-address-warning.test.ts`, `tests/page-structure-controller.test.ts` |
 | Edit bar placement | Where the edit bar sits around the selected element in the preview frame: pure geometry. | `src/components/edit-bar-placement.ts` | `tests/edit-bar-placement.test.ts`, `tests/rules-reveal.test.ts` |
 | Edit bar sources | The sources whose changes make the edit bar redraw its controls. | `src/components/edit-bar-sources.ts` | `tests/edit-bar-sources.test.ts` |
@@ -312,7 +319,6 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Settings preview | One preview load per picture at a time: the Social image's thumbnail and the share card ask for one picture together, and a second load of the editor's assets would leave the first without its picture. | `src/components/settings-preview.ts` | `tests/site-settings-preview.test.ts` |
 | Setup wizard | The Setup wizard: a full-screen guide for a signed-in account that has nothing to open yet, from "no site" to a site open in the editor. | `src/components/setup-wizard.ts` `src/components/setup-wizard.css` | `tests/lazy-loaders.test.ts`, `tests/repository-name-field.test.ts`, `tests/setup-entry-controller.test.ts`, `tests/setup-host.test.ts` |
 | Share menu | Edit together in the project menu, loaded on the menu's first open (src/workspace-shares.ts, src/shares-later.ts) and drawn into it (src/components/repository-menu.ts). | `src/components/share-menu.ts` | `tests/repository-menu-share.test.ts` |
-| Share row (board: Sharing row) | One sharing row in the project menu: Preview link (src/components/preview-menu.ts) and Edit together (src/components/share-menu.ts) each draw one, as Connect to MCP is drawn (src/components/agent-menu.ts): a leading… | `src/components/share-row.ts` `src/components/share-row.css` | `tests/preview-menu.test.ts` |
 | Shortcut sheet | The keyboard shortcuts sheet (?): every shortcut the editor has, by the part of the editor it works in, with the platform's keys (⌘ on a Mac, Ctrl elsewhere). | `src/components/shortcut-sheet.ts` | none yet |
 | Sidebar resize | The sidebar's width: the handle on its right edge resizes when dragged and hides or shows the sidebar when clicked. | `src/components/sidebar-resize.ts` `src/components/sidebar-resize.css` | none yet |
 | Site actions | The site beyond the editor: the Change status of the last save, shown on the Publish button (Saved → Deploying → Published or Deploy failed, read through the Worker's `/api/change-status`, so the GitHub token never… | `src/components/site-actions.ts` `src/components/site-actions.css` | `tests/finished-elsewhere.test.ts` |
@@ -417,7 +423,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Style | The editor's CSS on the Techies Framework layers: theme tokens, bare elements, then components each in a file of its own. | `src/style.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |
 | Theme | Hands the theme's colours to what cannot read CSS variables (Monaco, the preview overlay) and keeps them in step. | `src/theme.ts` | none yet |
 | Escape | Text for markup strings: the parts' option modules turn words into HTML text, so every word passes through here. | `src/ui/escape.ts` | `src/ui/escape.test.ts` |
-| Parts | The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). | `src/ui/parts.css` | `tests/editor-css-layers.test.ts` |
+| Parts | The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). | `src/ui/parts.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |
 | Report failure | Where async UI work sends a rejection nobody awaits: main.ts points this at the editor's notice bar at start-up (setErrorReporter); before that it logs. | `src/ui/report-failure.ts` | `tests/icon-button.test.ts`, `tests/report-failure.test.ts` |
 | Select options | A select's options, replaced by `values`. | `src/ui/select-options.ts` | `tests/select-options.test.ts` |
 | Uploads | Uploaded files (images and other binary files) as publishable drafts. | `src/uploads.ts` | `tests/agent-local-recovery.test.ts`, `tests/agent-media-commit.test.ts`, `tests/agent-tools-media.test.ts`, `tests/audio-prepare.test.ts`, `tests/draft-views.test.ts` and 19 more |

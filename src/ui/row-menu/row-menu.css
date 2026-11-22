@@ -1,0 +1,91 @@
+/* The Row menu component: a row's actions in Pages, Files and Page structure, and + New. Its whole look in one file
+   on the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md). Its --row-menu-* hooks hold their
+   defaults as fallbacks where read (keeping boot small); a screen may set a hook in its own unlayered CSS. */
+@layer tokens, elements, components;
+
+@layer components {
+  .pages-menu {
+    position: fixed;
+    z-index: var(--row-menu-z-index, var(--layer-popover));
+    display: flex;
+    flex-direction: column;
+    gap: var(--row-menu-gap, var(--space-4xs));
+    min-width: var(--row-menu-min-width, 170px);
+    padding: var(--row-menu-padding, var(--panel-padding));
+    border-radius: var(--row-menu-radius, var(--radius-panel));
+    background: var(--row-menu-background, var(--panel-surface));
+    color: var(--row-menu-text-color, var(--text));
+    font-size: var(--row-menu-font-size, var(--type-base));
+    box-shadow: var(--row-menu-shadow, var(--shadow));
+
+    &[hidden] {
+      display: none;
+    }
+
+    & .pages-menu__item {
+      display: flex;
+      align-items: center;
+      gap: var(--row-menu-item-gap, var(--space-m));
+      min-height: var(--row-menu-item-min-block-size, var(--size-control));
+      border: 0;
+      border-radius: var(--row-menu-item-radius, var(--radius));
+      padding: var(--row-menu-item-padding-block, var(--space-3xs)) var(--row-menu-item-padding-inline, var(--space-xs));
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+
+      &:active:not([aria-disabled="true"]),
+      &:focus-visible {
+        background: var(--row-menu-hover-background, var(--hover));
+      }
+      @media (hover: hover) and (pointer: fine) {
+        &:hover:not([aria-disabled="true"]) {
+          background: var(--row-menu-hover-background, var(--hover));
+        }
+      }
+      &:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: -2px;
+      }
+      &[aria-disabled="true"] {
+        flex-wrap: wrap;
+        background: none;
+        color: var(--row-menu-disabled-text-color, var(--muted));
+        cursor: default;
+      }
+    }
+
+    & .row-menu__shortcut {
+      margin-left: auto;
+      color: var(--row-menu-muted-color, var(--muted));
+      font-size: var(--type-small);
+    }
+
+    /* Choices (menuitemradio) in titled groups: the chosen one is checked. */
+    & .row-menu__group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--row-menu-gap, var(--space-4xs));
+    }
+
+    & .row-menu__section {
+      padding: var(--space-xs) var(--space-xs) var(--space-4xs);
+      color: var(--row-menu-muted-color, var(--muted));
+      font-size: var(--type-small);
+      font-weight: 600;
+    }
+
+    & .row-menu__check {
+      margin: 0 0 0 auto;
+      color: var(--row-menu-check-color, var(--primary));
+    }
+
+    /* A destructive item (Remove…): last, in red text, as in Apple Photos' ⋯ menu. */
+    & .row-menu__danger {
+      color: var(--row-menu-danger-color, var(--danger-fg));
+    }
+  }
+}

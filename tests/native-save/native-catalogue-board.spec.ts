@@ -70,11 +70,11 @@ test("a molecule shows its files and what it is made of, and a link flies to the
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
   await expect(options.getByRole("heading", { name: "Row menu" })).toBeVisible();
-  await expect(options.getByText("src/components/row-menu.ts · src/components/row-menu.css", { exact: true })).toBeVisible();
+  await expect(options.getByText("src/components/row-menu.ts · src/ui/row-menu/row-menu.css", { exact: true })).toBeVisible();
   const madeOf = options.getByRole("list", { name: "Made of" });
   await expect(madeOf.getByRole("button", { name: "Button" })).toBeVisible();
   await expect(madeOf.getByRole("button", { name: "Icon" })).toBeVisible();
-  await expect(madeOf.getByRole("listitem").filter({ hasText: "Untraced" })).toContainText("row-menu.css");
+  await expect(madeOf.getByRole("listitem").filter({ hasText: "Untraced" })).toHaveCount(0);
   // The card on the canvas carries the same list, and its fixed frames draw the editor's real menu, open.
   await expect(page.locator("#card-row-menu").getByRole("list", { name: "Made of" }).getByRole("button", { name: "Icon" })).toBeVisible();
   await expect(page.frameLocator('#card-row-menu .cat-half[data-theme="light"] iframe').first().locator(".row-menu")).toContainText("Rename");
@@ -286,7 +286,7 @@ test("a preview annotation on a card names its files and its stylesheet, inside 
   const sheets = await page.locator(".cat-card[data-id]").evaluateAll((cards) => cards.map((card) => [(card as HTMLElement).dataset.css ?? "", (card as HTMLElement).dataset.files ?? ""]));
   for (const [css, files] of sheets) { expect(css).toMatch(/\.css$/); expect(files.split(" ")).toContain(css); }
   const stage = page.locator("#card-row-menu .cat-live__stage iframe").contentFrame().locator(".cat-frame-stage");
-  await expect(stage).toHaveAttribute("data-files", "src/components/row-menu.ts src/components/row-menu.css");
+  await expect(stage).toHaveAttribute("data-files", "src/components/row-menu.ts src/ui/row-menu/row-menu.css");
 });
 
 test("a card dragged by its title moves, Escape puts a drag back, the arrows nudge it, and its place outlasts a reload", async ({ page, baseURL }) => {
@@ -838,84 +838,23 @@ test("after a click in a live frame, a key there and then Tab into the next card
 // only (never the state cells or the editor's own styles), per theme for colours; Reset; and "Send to agent", which
 // copies a plain-text change request and says Copied on the button. A part with its own component CSS file shows
 // that file instead (the CSS section, below).
-test("Tweak edits the live Sharing row's CSS in light and dark, resets it, and Send to agent copies the change request", async ({ page, baseURL }) => {
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+test("the Sharing row's CSS edits only its live cell and resets", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Sharing row", exact: true }).click();
   const options = page.getByRole("complementary", { name: "Options" });
-  const tweak = options.getByRole("region", { name: "Tweak" });
-  const send = tweak.getByRole("button", { name: /^(Send to agent|Copied)$/ });
-  const reset = tweak.getByRole("button", { name: "Reset" });
-  await expect(send).toBeDisabled();
-  await expect(reset).toBeDisabled();
-
-  const liveRows = page.locator('#card-share-row [data-cell="live"] .link-rows');
-  const liveRow = page.locator('#card-share-row [data-cell="live"] .link-row');
-  const liveMain = page.locator('#card-share-row [data-cell="live"] .link-row__main');
-  const stateRow = page.locator('#card-share-row .cat-half[data-theme="light"] .cat-cell .link-row').first();
-  const css = (target: typeof liveRow, property: string, pseudo?: string) =>
-    target.evaluate((element, [name, p]) => getComputedStyle(element, p).getPropertyValue(name), [property, pseudo ?? null] as const);
-
-  // The real values: a rule of the row's own and the theme tokens its rules use.
-  const rowsGap = tweak.getByRole("textbox", { name: ".link-rows { gap }", exact: true });
-  const radius = tweak.getByRole("textbox", { name: "--radius", exact: true });
-  await expect(rowsGap).toHaveValue("2px");
-  await expect(radius).toHaveValue("6px");
-  // A value that would break out of its declaration is marked and changes nothing.
-  await rowsGap.fill("1px; } body { display: none");
-  await expect(rowsGap).toHaveAttribute("aria-invalid", "true");
-  expect(await css(liveRows, "row-gap")).toBe("2px");
-  await expect(send).toBeDisabled();
-  // A slider beside a single length moves the value from the keyboard.
-  await tweak.getByRole("slider", { name: "--radius", exact: true }).press("ArrowRight");
-  await expect(radius).toHaveValue("7px");
-  await expect.poll(() => css(liveRow, "border-top-left-radius")).toBe("7px");
-  await rowsGap.fill("4px");
-  await expect(rowsGap).toHaveAttribute("aria-invalid", "false");
-  await radius.fill("12px");
-  await expect.poll(() => css(liveRow, "border-top-left-radius")).toBe("12px");
-  expect(await css(stateRow, "border-top-left-radius")).toBe("6px");
-  await expect(radius.locator("xpath=ancestor::*[@data-changed][1]")).toBeVisible();
-
-  // A colour changes only the theme on show: dark here, and light keeps its own.
-  const lightDot = await css(liveMain, "background-color", "::before");
+  await expect(options.getByRole("region", { name: "Tweak" })).toHaveCount(0);
+  const section = options.getByRole("region", { name: "CSS" });
+  const file = section.getByRole("textbox", { name: "src/ui/share-row/share-row.css", exact: true });
+  const original = await file.inputValue();
+  const live = page.locator('#card-share-row [data-cell="live"] .link-row');
+  const fixed = page.locator('#card-share-row .cat-half[data-theme="light"] .cat-cell .link-row').first();
+  await file.fill(original.replace("var(--share-row-radius, var(--radius))", "20px"));
+  await expect.poll(() => live.evaluate((row) => getComputedStyle(row).borderRadius)).toBe("20px");
+  expect(await fixed.evaluate((row) => getComputedStyle(row).borderRadius)).toBe("6px");
   await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
-  const muted = tweak.getByRole("textbox", { name: "--muted", exact: true });
-  await muted.fill("rgb(255, 0, 0)");
-  await expect.poll(() => css(liveMain, "background-color", "::before")).toBe("rgb(255, 0, 0)");
-  await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Light" }).click();
-  await expect.poll(() => css(liveMain, "background-color", "::before")).toBe(lightDot);
-  await expect(muted).not.toHaveValue("rgb(255, 0, 0)");
-  await expect(radius).toHaveValue("12px");
-
-  await expect(send).toBeEnabled();
-  await send.click();
-  await expect(send).toHaveText("Copied");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("6px → 12px");
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain("Part: Sharing row (data-part=\"share-row\")");
-  expect(copied).toContain("- .link-rows { gap }, light and dark: 2px → 4px");
-  expect(copied).toMatch(/- --radius \(theme token in src\/theme\.css, used by [^)]*\{ border-radius \}[^)]*\), light and dark: 6px → 12px/);
-  expect(copied).toMatch(/- --muted \(theme token in src\/theme\.css, used by [^)]*\), dark: \S.* → rgb\(255, 0, 0\)/);
-  expect(copied).not.toMatch(/--muted.*, light:/);
-
-  // A clipboard that refuses: the button says so for a moment, then offers itself again.
-  await page.evaluate(() => {
-    navigator.clipboard.writeText = () => Promise.reject(new Error("refused"));
-    document.execCommand = () => false;
-  });
-  await send.click();
-  const refused = tweak.getByRole("button", { name: "Couldn't copy" });
-  await expect(refused).toHaveAttribute("data-problem", "");
-  await expect(page.locator('p[role="status"]')).toHaveText("Couldn't copy the change request");
-  await expect(send).toHaveText("Send to agent");
-  await expect(send).not.toHaveAttribute("data-problem");
-
-  await reset.click();
-  await expect.poll(() => css(liveRow, "border-top-left-radius")).toBe("6px");
-  await expect(radius).toHaveValue("6px");
-  await expect(send).toBeDisabled();
-  await expect(reset).toBeDisabled();
+  await expect.poll(() => live.evaluate((row) => getComputedStyle(row).borderRadius)).toBe("20px");
+  await section.getByRole("button", { name: "Reset" }).click();
+  await expect.poll(() => live.evaluate((row) => getComputedStyle(row).borderRadius)).toBe("6px");
 });
 
 // The CSS section (Orbit TOOLS-207): a part with its own component CSS file shows that file in the right panel, in
@@ -1032,6 +971,9 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
     ["Section heading", "src/ui/section-heading/section-heading.css"],
     ["Keyboard key", "src/ui/key/key.css"],
     ["Inline field", "src/ui/inline-field/inline-field.css"],
+    ["Sharing row", "src/ui/share-row/share-row.css"],
+    ["Row menu", "src/ui/row-menu/row-menu.css"],
+    ["Confirm dialog", "src/ui/confirm-dialog/confirm-dialog.css"],
   ] as const) {
     await outline.getByRole("button", { name, exact: true }).click();
     await expect(options.getByRole("region", { name: "Tweak" })).toHaveCount(0);
@@ -1051,24 +993,28 @@ test("the Button's own CSS file edits its live cell only, resets, and Send to ag
   await expect.poll(() => liveBadge.evaluate((el) => getComputedStyle(el).paddingInlineStart)).toBe("8px");
 });
 
-test("Tweak reaches a part drawn in a live frame, and leaves its state frames as they are", async ({ page, baseURL }) => {
+test("the Row menu's CSS replaces its file in the live frame and leaves state frames unchanged", async ({ page, baseURL }) => {
   await openBoard(page, baseURL);
   await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Row menu", exact: true }).click();
   await settled(page);
-  const tweak = page.getByRole("complementary", { name: "Options" }).getByRole("region", { name: "Tweak" });
-  const corner = tweak.getByRole("textbox", { name: "--radius-panel", exact: true });
-  await expect(corner).toHaveValue("8px");
-  await corner.fill("20px");
+  const options = page.getByRole("complementary", { name: "Options" });
+  const file = options.getByRole("region", { name: "CSS" }).getByRole("textbox", { name: "src/ui/row-menu/row-menu.css", exact: true });
+  const original = await file.inputValue();
   const live = page.frameLocator('#card-row-menu [data-cell="live"] iframe');
   await live.getByRole("button", { name: "Actions" }).click();
+  // Editing replaces the stylesheet without replacing or closing the working frame.
+  const edited = original.replace("var(--row-menu-radius, var(--radius-panel))", "20px").replace(/\n\s*box-shadow: var\(--row-menu-shadow, var\(--shadow\)\);/, "");
+  await file.fill(edited);
   await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("20px");
+  expect(await live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).boxShadow)).toBe("none");
   const fixed = page.frameLocator('#card-row-menu .cat-half[data-theme="light"] iframe').first().locator(".row-menu");
   expect(await fixed.evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("8px");
-  // Dark makes the live frame anew: the edit is still there.
-  await page.getByRole("complementary", { name: "Options" }).getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
+  await options.getByRole("group", { name: "Colours" }).getByRole("button", { name: "Dark" }).click();
   await expect(page.locator('#card-row-menu [data-cell="live"] iframe')).toHaveAttribute("data-theme", "dark");
   await live.getByRole("button", { name: "Actions" }).click();
   await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("20px");
+  await options.getByRole("region", { name: "CSS" }).getByRole("button", { name: "Reset" }).click();
+  await expect.poll(() => live.locator(".row-menu").evaluate((menu) => getComputedStyle(menu).borderRadius)).toBe("8px");
 });
 
 test("the Icon's live cell puts its words on the side Place says, and draws a bare icon alone", async ({ page, baseURL }) => {

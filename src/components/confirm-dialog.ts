@@ -1,5 +1,4 @@
 import { button, node } from "../ui/dom";
-import "./create-dialog.css";
 
 /**
  * A modal confirmation inside the explorer popover (so the explorer stays

@@ -14,15 +14,20 @@ const read = (path: string) => readFileSync(join(repo, path), "utf8");
 const BUTTON = "src/ui/button/button.css";
 const ORDER = "@layer tokens, elements, components;";
 const COMPONENTS = [
-  { id: "button", path: "src/ui/button/button.css", prefix: "btn", hooks: ["min-block-size", "radius", "padding-block", "padding-inline", "background", "text-color", "font-size", "font-weight"] },
-  { id: "icon-button", path: "src/ui/icon-button/icon-button.css", prefix: "icon-btn", hooks: ["size", "radius", "background", "text-color", "hover-background", "hover-text-color"] },
-  { id: "text-button", path: "src/ui/text-button/text-button.css", prefix: "text-btn", hooks: ["min-block-size", "padding-block", "padding-inline", "radius", "text-color", "font-size", "hover-background"] },
-  { id: "badge", path: "src/ui/badge/badge.css", prefix: "badge", hooks: ["gap", "padding-inline", "radius", "font-size", "font-weight", "background", "text-color"] },
-  { id: "key", path: "src/ui/key/key.css", prefix: "key", hooks: ["padding-inline", "radius", "border-color", "background", "font-size", "font-weight", "gap"] },
-  { id: "spinner", path: "src/ui/spinner/spinner.css", prefix: "spinner", hooks: ["size", "thickness", "track-color", "color", "duration", "overlay-z-index"] },
-  { id: "progress", path: "src/ui/progress/progress.css", prefix: "progress", hooks: ["height", "radius", "track-background", "fill-background", "duration", "slide-duration"] },
-  { id: "section-heading", path: "src/ui/section-heading/section-heading.css", prefix: "section-heading", hooks: ["gap", "end-gap", "text-color", "font-size", "font-weight", "line-height"] },
-  { id: "inline-field", path: "src/ui/inline-field/inline-field.css", prefix: "inline-field", hooks: ["background", "hover-background", "line-color", "focus-line-color", "invalid-line-color", "caret-color", "duration"] },
+  { id: "button", path: "src/ui/button/button.css", prefix: "btn", board: true, hooks: ["min-block-size", "radius", "padding-block", "padding-inline", "background", "text-color", "font-size", "font-weight"] },
+  { id: "icon-button", path: "src/ui/icon-button/icon-button.css", prefix: "icon-btn", board: true, hooks: ["size", "radius", "background", "text-color", "hover-background", "hover-text-color"] },
+  { id: "text-button", path: "src/ui/text-button/text-button.css", prefix: "text-btn", board: true, hooks: ["min-block-size", "padding-block", "padding-inline", "radius", "text-color", "font-size", "hover-background"] },
+  { id: "badge", path: "src/ui/badge/badge.css", prefix: "badge", board: true, hooks: ["gap", "padding-inline", "radius", "font-size", "font-weight", "background", "text-color"] },
+  { id: "key", path: "src/ui/key/key.css", prefix: "key", board: true, hooks: ["padding-inline", "radius", "border-color", "background", "font-size", "font-weight", "gap"] },
+  { id: "spinner", path: "src/ui/spinner/spinner.css", prefix: "spinner", board: true, hooks: ["size", "thickness", "track-color", "color", "duration", "overlay-z-index"] },
+  { id: "progress", path: "src/ui/progress/progress.css", prefix: "progress", board: true, hooks: ["height", "radius", "track-background", "fill-background", "duration", "slide-duration"] },
+  { id: "section-heading", path: "src/ui/section-heading/section-heading.css", prefix: "section-heading", board: true, hooks: ["gap", "end-gap", "text-color", "font-size", "font-weight", "line-height"] },
+  { id: "inline-field", path: "src/ui/inline-field/inline-field.css", prefix: "inline-field", board: true, hooks: ["background", "hover-background", "line-color", "focus-line-color", "invalid-line-color", "caret-color", "duration"] },
+  { id: "row-menu", path: "src/ui/row-menu/row-menu.css", prefix: "row-menu", board: true, hooks: ["gap", "padding", "radius", "background", "text-color", "font-size", "shadow", "z-index", "hover-background"] },
+  { id: "dropdown", path: "src/ui/dropdown/dropdown.css", prefix: "dropdown", board: false, hooks: ["padding", "radius", "background", "text-color", "shadow", "max-height", "offset"] },
+  { id: "flyout", path: "src/ui/flyout/flyout.css", prefix: "flyout", board: false, hooks: ["width", "max-height", "padding", "radius", "background", "text-color", "shadow", "font-size", "hover-background"] },
+  { id: "share-row", path: "src/ui/share-row/share-row.css", prefix: "share-row", board: true, hooks: ["gap", "radius", "min-block-size", "surface", "hover-background", "muted-color", "action-duration"] },
+  { id: "confirm-dialog", path: "src/ui/confirm-dialog/confirm-dialog.css", prefix: "confirm-dialog", board: true, hooks: ["width", "radius", "border-color", "background", "text-color", "shadow", "backdrop", "padding", "gap"] },
 ] as const;
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -166,27 +171,37 @@ test("the editor loads used component files through parts.css; the board loads e
   const partsCss = withoutComments(read("src/ui/parts.css"));
   const styleCss = withoutComments(read("src/style.css"));
   const catalogueMain = withoutComments(read("src/catalogue/main.ts"));
-  const bootComponents = new Set(["button", "icon-button", "text-button", "inline-field"]);
+  const bootComponents = new Set(["button", "icon-button", "text-button", "inline-field", "row-menu", "dropdown", "flyout"]);
   for (const { id, path } of COMPONENTS) {
     const rel = path.replace(/^src\/ui\//, "./");
     if (bootComponents.has(id)) {
       assert.match(partsCss, new RegExp(`^@import "${rel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}";$`, "m"), `parts.css imports ${path}`);
     } else {
-      assert.doesNotMatch(partsCss, new RegExp(`/${id}\\.css`), `unused-at-boot ${id}.css stays out of parts.css until its swap slice`);
+      assert.doesNotMatch(partsCss, new RegExp(`/${id}\\.css`), `lazy or unused-at-boot ${id}.css stays out of parts.css`);
     }
     // Not through style.css or the part's own TS module: the board adds each itself, so a live cell can leave it out.
     assert.doesNotMatch(styleCss, new RegExp(`/${id}\\.css`), `style.css does not import ${id}.css`);
     assert.doesNotMatch(catalogueMain, new RegExp(`/${id}\\.css`), `catalogue/main.ts does not plain-import ${id}.css`);
-    const tsPath = `src/ui/${id}/${id}.ts`;
-    if (existsSync(join(repo, tsPath))) {
-      assert.doesNotMatch(withoutComments(read(tsPath)), new RegExp(`import\\s+["']\\./${id}\\.css["']`), `${tsPath} does not import ${id}.css`);
+    for (const tsPath of [`src/ui/${id}/${id}.ts`, `src/components/${id}.ts`]) {
+      if (existsSync(join(repo, tsPath))) {
+        assert.doesNotMatch(withoutComments(read(tsPath)), new RegExp(`import\\s+["'][^"']*(?:${id}|create-dialog)\\.css["']`), `${tsPath} does not import its own CSS`);
+      }
     }
+  }
+  assert.match(read("src/shares-later.ts"), /^import "\.\/ui\/share-row\/share-row\.css";$/m, "lazy share chunk loads share-row.css");
+  assert.match(read("src/lazy-loaders.ts"), /import\("\.\/ui\/confirm-dialog\/confirm-dialog\.css"\)/, "lazy confirm dialog loader loads confirm-dialog.css");
+  assert.match(read("src/setup-actions.ts"), /^import "\.\/ui\/confirm-dialog\/confirm-dialog\.css";$/m);
+  assert.match(read("src/page-builder/media-preparation-confirm.ts"), /^import "\.\.\/ui\/confirm-dialog\/confirm-dialog\.css";$/m);
+  assert.match(read("src/components/create-dialog.css"), /^@import "\.\.\/ui\/confirm-dialog\/confirm-dialog\.css";$/m);
+  for (const old of ["row-menu.css", "dropdown.css", "flyout.css", "share-row.css"]) {
+    assert.equal(existsSync(join(repo, `src/components/${old}`)), false, `src/components/${old} moved into src/ui/`);
   }
   assert.match(catalogueMain, /^loadComponentStyles\(\);$/m);
 });
 
 test("the design board shows each migrated component's own CSS file", () => {
-  for (const { id, path } of COMPONENTS) {
+  for (const { id, path, board } of COMPONENTS) {
+    if (!board) continue;
     const part = PARTS.find((item) => item.id === id);
     assert.ok(part && isPart(part), `${id} is on the design board`);
     assert.equal(part.css, path, `${id}.css is ${path}`);
@@ -196,8 +211,7 @@ test("the design board shows each migrated component's own CSS file", () => {
   for (const part of PARTS) {
     if (!isPart(part) || !part.css) continue;
     assert.ok(part.files.includes(part.css), `${part.id} lists its CSS file`);
-    // The board reads these files as text (component-css.ts) and draws their live cell inline, in a shadow root.
+    // The board reads these files as text (component-css.ts) and edits them on the live cell (shadow root or frame).
     assert.match(part.css, /^src\/ui\/([\w-]+)\/\1\.css$/, `${part.id}: its CSS file is a component file`);
-    assert.equal(part.frame, undefined, `${part.id}: a part with its own CSS file draws its live cell inline`);
   }
 });

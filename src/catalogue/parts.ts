@@ -442,7 +442,7 @@ const ATOMS: Part[] = [
 
 const MOLECULES: Part[] = [
   {
-    id: "share-row", area: "molecules", name: "Sharing row", files: ["src/components/share-row.ts", "src/components/share-row.css"],
+    id: "share-row", css: "src/ui/share-row/share-row.css", area: "molecules", name: "Sharing row", files: ["src/components/share-row.ts", "src/ui/share-row/share-row.css"],
     madeOf: ["icon"], copies: ["Row look borrowed from the project menu's actions (src/components/repository-menu.css)"],
     defaults: { label: "Preview link", dot: "idle", link: false },
     controls: [
@@ -469,7 +469,7 @@ const MOLECULES: Part[] = [
     },
   },
   {
-    id: "row-menu", area: "molecules", name: "Row menu", files: ["src/components/row-menu.ts", "src/components/row-menu.css"],
+    id: "row-menu", css: "src/ui/row-menu/row-menu.css", area: "molecules", name: "Row menu", files: ["src/components/row-menu.ts", "src/ui/row-menu/row-menu.css"],
     madeOf: ["button", "icon"], frame: { width: 280, height: 260 },
     defaults: { sections: false, shortcut: true, disabled: false, danger: true },
     controls: [toggle("sections", "Sections"), toggle("shortcut", "Shortcut"), toggle("disabled", "Unavailable item"), toggle("danger", "Remove")],
@@ -506,7 +506,7 @@ const MOLECULES: Part[] = [
     },
   },
   {
-    id: "confirm-dialog", area: "molecules", name: "Confirm dialog", files: ["src/components/confirm-dialog.ts", "src/components/create-dialog.css"],
+    id: "confirm-dialog", css: "src/ui/confirm-dialog/confirm-dialog.css", area: "molecules", name: "Confirm dialog", files: ["src/components/confirm-dialog.ts", "src/ui/confirm-dialog/confirm-dialog.css"],
     madeOf: ["button"], frame: { width: 440, height: 280 },
     defaults: { title: "Delete “About us”?", action: "Delete", option: false },
     controls: [text("title", "Title"), text("action", "Action"), toggle("option", "Checkbox")],

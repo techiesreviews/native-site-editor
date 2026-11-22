@@ -1,3 +1,4 @@
+import "../ui/confirm-dialog/confirm-dialog.css";
 import { createConfirmDialog } from "../components/confirm-dialog";
 
 let pending = Promise.resolve();

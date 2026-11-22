@@ -1,0 +1,9 @@
+{
+  "name": "Confirm dialog",
+  "for": "A modal question before an action that cannot be undone: a title, notes, the action and Cancel.",
+  "use": "`createConfirmDialog(id)` from `src/components/confirm-dialog.ts`.",
+  "elsewhere": [
+    "src/components/confirm-dialog.ts"
+  ],
+  "copies": "dialogs made by hand and their backdrops (`node scripts/agents/copies.mjs report`); one Dialog part is planned."
+}

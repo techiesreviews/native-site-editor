@@ -1,0 +1,8 @@
+{
+  "name": "Flyout",
+  "for": "A submenu beside a dropdown, opened from one of its rows.",
+  "use": "`mountFlyout({ … })` from `src/components/flyout.ts`.",
+  "elsewhere": [
+    "src/components/flyout.ts"
+  ]
+}

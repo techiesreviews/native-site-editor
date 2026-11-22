@@ -1,0 +1,104 @@
+/* The Flyout component: a submenu beside a dropdown (src/components/flyout.ts places it). Its whole look in one file
+   on the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md). Its --flyout-* hooks hold their
+   defaults as fallbacks where read; a screen may set a hook in its own unlayered CSS. */
+@layer tokens, elements, components;
+
+@layer components {
+  .flyout {
+    position: fixed;
+    inset: auto;
+    width: var(--flyout-width, 240px);
+    max-height: var(--flyout-max-height, calc(100dvh - var(--space-m)));
+    overflow: auto;
+    margin: 0;
+    padding: var(--flyout-padding, var(--panel-padding));
+    border: 0;
+    border-radius: var(--flyout-radius, var(--radius-panel));
+    background: var(--flyout-background, var(--panel-surface));
+    color: var(--flyout-text-color, var(--text));
+    box-shadow: var(--flyout-shadow, var(--shadow));
+    font-size: var(--flyout-font-size, var(--type-base));
+
+    & [hidden] {
+      display: none;
+    }
+
+    & .flyout__heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-xs);
+      min-height: var(--size-icon);
+      padding: var(--space-3xs) var(--space-3xs) var(--space-3xs) var(--space-xs);
+      font-size: var(--type-small);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--flyout-muted-color, var(--muted));
+    }
+
+    & .flyout__list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-4xs);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    & .flyout__item {
+      display: flex;
+      align-items: center;
+      gap: var(--flyout-item-gap, var(--space-xs));
+      width: 100%;
+      min-width: 0;
+      min-height: var(--flyout-item-min-block-size, var(--size-control));
+      padding: var(--flyout-item-padding-block, var(--space-3xs)) var(--flyout-item-padding-inline, var(--space-xs));
+      border: 0;
+      border-radius: var(--flyout-item-radius, var(--radius));
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+
+      &:active:not(:disabled),
+      &:focus-visible {
+        background: var(--flyout-hover-background, var(--hover));
+      }
+      @media (hover: hover) and (pointer: fine) {
+        &:hover:not(:disabled) {
+          background: var(--flyout-hover-background, var(--hover));
+        }
+      }
+      &:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: -2px;
+      }
+      &:disabled {
+        color: var(--flyout-disabled-text-color, var(--muted));
+        cursor: default;
+      }
+    }
+
+    /* An Icon button (src/ui/icon-button/icon-button.css) in a flyout heading: the flyout sizes it. */
+    & .flyout__icon-button {
+      flex: none;
+      width: var(--size-icon);
+      height: var(--size-icon);
+
+      &:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: -2px;
+      }
+    }
+
+    & .flyout__note {
+      margin: 0;
+      padding: var(--space-2xs) var(--space-xs);
+      font-size: var(--type-small);
+      line-height: 1.5;
+      color: var(--flyout-muted-color, var(--muted));
+    }
+  }
+}

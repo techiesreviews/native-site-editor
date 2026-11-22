@@ -354,6 +354,7 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
       else {
         const made = frameElement({ kind: "frame", id: entry.id, theme: now.theme, values: now.values, ...entry.frame, live: true }, `${entry.name}, live`);
         made.dataset.theme = now.theme;
+        if (entry.css) made.dataset.componentCss = shownText(entry, entry.css);
         const css = frameTweaks(entry);
         if (css) made.dataset.tweaks = css;
         stage.replaceChildren(made);
@@ -379,7 +380,13 @@ export function startBoard(root: HTMLElement, plans: Plans = { areas: [], mockup
   function applyTweaks(entry: Part) {
     const stage = world.querySelector<HTMLElement>(`#card-${CSS.escape(entry.id)} .cat-live__stage`);
     // A part's own CSS file: its live cell's shadow root takes the file as edited (both themes: the file holds both).
-    if (entry.css) { if (stage) liveRoot(stage, entry.css, shownText(entry, entry.css)); return; }
+    if (entry.css) {
+      if (entry.frame) {
+        const frame = stage?.querySelector("iframe");
+        if (frame) frame.dataset.componentCss = shownText(entry, entry.css);
+      } else if (stage) liveRoot(stage, entry.css, shownText(entry, entry.css));
+      return;
+    }
     const tweak = tweaks.get(entry.id);
     if (!tweak?.fields) return;
     if (entry.frame) {
