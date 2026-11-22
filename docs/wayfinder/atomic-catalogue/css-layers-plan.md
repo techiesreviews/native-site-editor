@@ -50,7 +50,7 @@ Rules that matter for every slice:
 
 | Today | Becomes |
 | --- | --- |
-| `src/theme.css`: the framework's tokens (generated) and the editor's role tokens | `tokens` (slice 4) |
+| `src/theme.css`: the framework's tokens (generated) and the editor's role tokens | `tokens`: done in slice 4 |
 | `src/style.css`: `button`, `select`, `a` base | `elements`: done in the pilot |
 | `src/style.css`: `select` box, focus rings | `elements` (slice 5) |
 | `src/utilities.css`: the reset (`*` box sizing, `body`, headings) | `elements` (slice 5) |
@@ -79,7 +79,7 @@ Rules that matter for every slice:
    Inline field onto `components`, their defaults exposed as `--<name>-*` hooks; shown on the board with their CSS
    files. Inline field loads in `src/ui/parts.css` at boot (and in `src/live-guest.ts` for the guest edit bar); the
    other five join `src/ui/parts.css` when their swap slices bring them into editor screens, keeping boot flat.
-4. **Tokens** (open). `src/theme.css` (and the generator's output) on `@layer tokens`.
+4. **Tokens** (done). `src/theme.css` (and the generator's output) on `@layer tokens`.
 5. **Elements** (open). The rest of the bare element rules onto `elements`; what is left of `src/utilities.css` (the
    reset) folded in.
 6. **Molecules** (open). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.

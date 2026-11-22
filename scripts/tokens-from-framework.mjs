@@ -64,12 +64,14 @@ export function toEditorPx(name, value) {
 
 export function generatedBlock(css) {
   const { hash, entries } = parseExport(css);
-  const lines = entries.map(([name, value]) => `  ${name}: ${toEditorPx(name, value)};`);
+  const lines = entries.map(([name, value]) => `    ${name}: ${toEditorPx(name, value)};`);
   return [
     `${startMark} from src/tokens/framework-editor.css (content hash ${hash}) in pixels.`,
     "   Do not edit by hand: change the settings, run `export` then `build` (docs/editor-colors.md). ---- */",
-    ":root {",
+    "@layer tokens {",
+    "  :root {",
     ...lines,
+    "  }",
     "}",
     endMark,
   ].join("\n");
