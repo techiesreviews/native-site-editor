@@ -11,7 +11,7 @@ import { forgetBootMemory } from "./boot-memory";
 import { planRepositoryOpen, type createBootController, type Listed } from "./controllers/boot-controller";
 import type { createSetupHost } from "./setup-host";
 import { clearWizard, readWizard } from "./setup-wizard";
-import { button, node } from "./ui/dom";
+import { node } from "./ui/dom";
 import { sameRepository, type SessionStamp } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, type WorkspaceLocation } from "./workspace-state";
 import { forgetWarmCopy, withinWait, type WarmCopy } from "./warm-copy";
@@ -51,14 +51,10 @@ export interface RepositoryListPorts {
   errorMessage: (error: unknown) => void;
   announce(text: string): void;
   setCurrentPage(path?: string): void;
-  /** Opens the project list (the project menu). */
-  chooseProject: () => void;
   removeFinishStarter(): void;
-  /** The welcome page of a signed-in account with nothing to open (src/setup-host.ts). */
-  showWelcome(): void;
   knownRepositories(): number[] | undefined;
   rememberRepositories(list: Repository[]): void;
-  showProjects?(list?: Repository[], message?: string): void;
+  showProjects(list?: Repository[], message?: string): void;
 }
 
 export function createRepositoryList(ports: RepositoryListPorts) {
@@ -104,7 +100,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
       const knownBefore = ports.boot.takeRefresh() ? ports.knownRepositories() ?? [] : undefined;
       ports.rememberRepositories(result);
-      ports.showProjects?.(result);
+      ports.showProjects(result);
       const plan = planRepositoryOpen({
         list: ports.repositories,
         linked: readWorkspaceUrl(),
@@ -112,19 +108,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         knownBefore,
         remembered: ports.user ? readWorkspace(ports.user.login) : undefined,
       });
-      if (plan.kind === "empty") {
-        if (ports.showProjects) return;
-        options(ports.repositorySelect, [
-          { value: "", label: "No selected repositories" },
-        ]);
-        if (setupEntry.dismissed()) ports.showWelcome();
-        else {
-          // A new user: the Setup wizard, full screen, over the welcome page.
-          ports.content.replaceChildren(node("p", "empty-message", "Create your first site to get started."));
-          void setupEntry.open().catch(errorMessage);
-        }
-        return;
-      }
+      if (plan.kind === "empty") return;
       resumeWizard();
       repositoryOptions();
       ports.repositorySelect.disabled = false;
@@ -149,23 +133,11 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         await ports.chooseRepository(plan.resume);
         return;
       }
-      if (ports.showProjects) { status("Choose a project to start."); return; }
-      const panel = node("section", "welcome");
-      panel.append(
-        node("h1", "", "Open a project"),
-        node(
-          "p",
-          "intro",
-          "You’re connected to GitHub. Choose a repository to explore its pages and files.",
-        ),
-        button("Choose a project", ports.chooseProject, "button primary"),
-      );
-      ports.content.replaceChildren(panel);
-      status("Connected to GitHub. Choose a project to start.");
+      status("Choose a project to start.");
     } catch (error) {
       if (at.holds()) {
         ports.boot.failed();
-        ports.showProjects?.(undefined, "Can’t reach GitHub. Reload projects to try again.");
+        ports.showProjects(undefined, "Can’t reach GitHub. Reload projects to try again.");
         options(ports.repositorySelect, [
           { value: "", label: "Repositories unavailable" },
         ]);

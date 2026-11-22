@@ -339,7 +339,7 @@ const setup = createSetupHost({
   loadSetupActions, loadWizard, loadStartSite, loadAgentPrompts, status, errorMessage,
 });
 const {
-  renderLogin, setupController, setupEntry, showWelcome, checkNewRepositories,
+  renderLogin, setupController, setupEntry, checkNewRepositories,
   rememberRepositories, knownRepositories, rememberStartingPoint, rememberPartialStart, forgetPartialStart, removeFinishStarter,
 } = setup;
 const inbox = createInbox({ appStore, pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), indexed: () => runtime.state.textIndexed, // The Inbox (TOOLS-222)
@@ -445,8 +445,8 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get content() { return workspace.content; }, get files() { return workspace.files; }, get refreshButton() { return workspace.refreshButton; },
   get branchSelect() { return workspace.branchSelect; }, get repositorySelect() { return workspace.repositorySelect; },
   get repositoryMenu() { return workspace.repositoryMenu; }, get siteActions() { return workspace.siteActions; },
-  nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage, chooseProject: () => workspace.chooseProject(),
-  removeFinishStarter, showWelcome, knownRepositories, rememberRepositories,
+  nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage,
+  removeFinishStarter, knownRepositories, rememberRepositories,
   showProjects: (list, message) => workspace.showProjects(list, message),
 });
 

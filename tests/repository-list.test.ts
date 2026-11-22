@@ -68,7 +68,7 @@ type Options = { user?: { login: string }; dismissed?: boolean; recover?: boolea
 function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Promise<Repository[]> = async () => listed, options: Options = {}) {
   const session = createWorkspaceSession(), local = store();
   const shown = { content: [] as (FakeElement | string)[], files: [] as (FakeElement | string)[] };
-  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, welcomed: 0, opened: 0, remembered: 0, hints: [] as ("install" | "create" | undefined)[] };
+  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, opened: 0, remembered: 0, projects: [] as (Repository[] | undefined)[], hints: [] as ("install" | "create" | undefined)[] };
   const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [], started: number[] = [], warmed: (WarmCopy | undefined)[] = [];
   const menu: { listed?: Repository[]; message?: string } = {};
   const content = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
@@ -110,9 +110,8 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     errorMessage: (error: unknown) => { errors.push(error); },
     announce: (text: string) => { announced.push(text); },
     setCurrentPage: () => {},
-    chooseProject: () => {},
     removeFinishStarter: () => {},
-    showWelcome: () => { calls.welcomed++; },
+    showProjects: (list?: Repository[]) => { calls.projects.push(list); },
     knownRepositories: () => undefined,
     rememberRepositories: () => { calls.remembered++; },
   } satisfies RepositoryListPorts & Record<string, unknown>;
@@ -232,31 +231,28 @@ test("the listing leaves the account's remembered repository closed until clicke
 test("a listing before the session has a user offers the choice of a project", async () => {
   pageStorage.setItem("astro-site-editor:workspace:v1:lex", JSON.stringify({ repoId: B.id, branch: "main" }));
   try {
-    const { list, chosen, shown, errors } = fixture([A, B], undefined, { user: undefined });
+    const { list, chosen, calls, errors } = fixture([A, B], undefined, { user: undefined });
     await list.loadRepositories();
     assert.deepEqual(chosen, []);
     assert.deepEqual(errors, []);
-    const panel = shown.content[0] as FakeElement;
-    assert.equal(panel.className, "welcome");
-    assert.equal((panel.children[0] as FakeElement).textContent, "Open a project");
+    assert.deepEqual(calls.projects, [[A, B]]);
   } finally {
     pageStorage.removeItem("astro-site-editor:workspace:v1:lex");
   }
 });
 
-test("no repositories, with setup dismissed, shows the welcome page", async () => {
+test("no repositories, with setup dismissed, shows the project overview", async () => {
   const { list, calls } = fixture([], undefined, { dismissed: true });
   await list.loadRepositories();
-  assert.equal(calls.welcomed, 1);
+  assert.deepEqual(calls.projects, [[]]);
   assert.equal(calls.opened, 0);
 });
 
-test("no repositories for a new user opens the Setup wizard", async () => {
-  const { list, calls, shown } = fixture([], undefined, { dismissed: false });
+test("no repositories for a new user waits for an explicit Add project", async () => {
+  const { list, calls } = fixture([], undefined, { dismissed: false });
   await list.loadRepositories();
-  assert.equal(calls.opened, 1);
-  assert.equal(calls.welcomed, 0);
-  assert.equal((shown.content[0] as FakeElement).textContent, "Create your first site to get started.");
+  assert.equal(calls.opened, 0);
+  assert.deepEqual(calls.projects, [[]]);
 });
 
 test("a failed listing says so and offers Reload", async () => {
