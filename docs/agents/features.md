@@ -1387,6 +1387,8 @@ its number unused.
 - Spec: `tests/native-save/native-top-bar.spec.ts`
 - Steps: none yet (desktop only)
 
+## Design board
+
 ### F-catalogue-01 Edit a component's CSS on the design board
 - Try: Open the catalogue, choose Sharing row, Row menu or Confirm dialog, edit its CSS, then reset it.
 - Good: The CSS section shows the part's own file on the components layer. Edits and deleted rules affect only the live cell, in either theme. Working menus and dialogs keep their frames, while state cells stay unchanged.
