@@ -210,7 +210,7 @@ for (const retry of ["menu", "Reload"] as const) test(`${retry} recovers an init
 
   retrySucceeds = retry === "menu";
   await page.locator(".repository-menu__trigger").click();
-  if (retry === "Reload") await page.getByRole("button", { name: "Reload repositories", exact: true }).click();
+  if (retry === "Reload") await page.locator("#repository-actions").getByRole("button", { name: "Reload repositories", exact: true }).click();
   await expect(page.getByRole("heading", { name: "No sites in your list", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
