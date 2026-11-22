@@ -3764,7 +3764,7 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var rect = target && target.getBoundingClientRect();
       var box = rect ? { left: rect.left + scrollX, top: rect.top + scrollY, width: rect.width, height: rect.height } : { left: 0, top: 0, width: innerWidth, height: innerHeight };
       if (!window.asePicture) { answer({ error: "The picture could not load. Reload the editor and try again." }); return; }
-      window.asePicture.paintPicture(document, box).then(function (made) {
+      window.asePicture.paintPicture(document, box, config.limit).then(function (made) {
         answer({ data: made.data, mimeType: made.mimeType, width: made.width, height: made.height, viewport: innerWidth });
       }, function (error) { answer({ error: String(error && error.message || error) }); });
     }
@@ -3928,7 +3928,8 @@ import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
       var target = request.node ? resolveNodePath({ path: request.path, node: request.node }) : null;
       if (request.node && !target) throw new Error("No such section on the page shown.");
       var copy = measuringCopy(target);
-      return measuringFrame(copy, { picture: true, id: msg.id, context: context, sheets: copy.sources });
+      return measuringFrame(copy, { picture: true, id: msg.id, context: context, sheets: copy.sources,
+        limit: Number.isFinite(request.limit) ? Math.max(1024, Math.min(600 * 1024, request.limit)) : undefined });
     }, function (report, post, finish) {
       if (report) finish(report);
       else post(request.width || innerWidth, request.height || innerHeight);

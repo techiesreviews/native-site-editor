@@ -99,7 +99,7 @@ export type HostMessage =
   | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
   // `width`/`height`: the frame it is drawn in (none: the preview's own); `node`: the element pictured (none: the first screen).
-  | Host<"picture", { id: number; request: { path: string; node?: number[]; width?: number; height?: number } }>
+  | Host<"picture", { id: number; request: { path: string; node?: number[]; width?: number; height?: number; limit?: number } }>
   | Host<"theme", { focus: string; component: string }>
   // The agents working on elements (their pages' sections, tickets 33, am-11), each in its colour, its chip's orange while it asks (sRGB); none: no agent at work.
   // `bare`: no chip (its name is on a pin); `token`, `change`, `undo`: its chip's Undo for the agent's latest change to the page (ticket am-49), with `problem` its refusal.

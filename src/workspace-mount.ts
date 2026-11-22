@@ -127,7 +127,7 @@ export interface WorkspaceAccountPorts {
   signOut: () => Promise<void>;
   choose: (resume?: WorkspaceLocation) => Promise<unknown>;
   load: () => Promise<unknown>;
-  overview?: () => void;
+  overview?: (refresh?: boolean) => void;
 }
 
 export interface WorkspaceMountPorts {
@@ -198,10 +198,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let overview: ReturnType<typeof import("./project-overview-host").createProjectOverviewHost> | undefined;
   let overviewLoad: Promise<typeof import("./project-overview-host")> | undefined;
   const pictured = new Set<string>();
-  function showProjects(list?: Repository[], message = "") {
+  function showProjects(list?: Repository[], message?: string, failed = false) {
     if (!ports.appStore.repository.value) finishOpening();
-    if (overview) overview.update(list, message);
-    else if (!location.hash) void ensureProjects().then(host => host?.update(list, message)).catch(notices.errorMessage);
+    if (overview) overview.update(list, message, failed);
+    else if (!location.hash) void ensureProjects().then(host => host?.update(list, message, failed)).catch(notices.errorMessage);
   }
   function ensureProjects() {
     const menu = repositoryMenu, login = ports.info.user?.login;
@@ -229,6 +229,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     closeEditor();
     ports.site.deactivate();
     ports.account.overview?.();
+    overview?.focus();
   }
   function showOpening(repo: Repository, branch: string) {
     finishOpening();

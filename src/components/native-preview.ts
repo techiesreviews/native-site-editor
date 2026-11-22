@@ -1372,7 +1372,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
      * pending render, once the preview shows that page (it was just opened: at most 1.5 s). Its waits stay within the
      * relay's ten seconds for the whole command (worker/agent-relay.ts), opening the page included: 1.5 s, then 5.5 s.
      */
-    async picture(request: { path: string; width?: number; height?: number; node?: number[] }) {
+    async picture(request: { path: string; width?: number; height?: number; node?: number[]; limit?: number }) {
       for (let wait = 0; wait < 15 && site?.routes[route] !== request.path; wait++) await new Promise((resolve) => setTimeout(resolve, 100));
       if (!frameState.active || !site || !frameState.ready || site.routes[route] !== request.path) throw new Error("The preview is not showing the page yet. Try again in a moment.");
       if (rafHandle) await new Promise((resolve) => requestAnimationFrame(resolve));

@@ -14,6 +14,7 @@ export function createProjectOverview(options: {
   menu: ReturnType<typeof createRowMenu>;
   open(project: ProjectMemory): Promise<void>;
   add(): void;
+  reload(): void;
   unsaved(project: ProjectMemory): boolean;
 }) {
   const root = node("section", "project-overview");
@@ -29,7 +30,7 @@ export function createProjectOverview(options: {
   const layout = node("div", "project-overview__layout");
   layout.setAttribute("role", "group");
   layout.setAttribute("aria-label", "Layout");
-  let view = "list", projects: ProjectMemory[] = [];
+  let view = "list", projects: ProjectMemory[] = [], phase: "loading" | "ready" | "error" = "loading";
   const views = ["List", "Grid"].map(name => {
     const control = button("", () => { view = name.toLowerCase(); draw(); });
     control.setAttribute("aria-label", name);
@@ -52,9 +53,10 @@ export function createProjectOverview(options: {
     const query = search.value.trim().toLowerCase();
     const filtered = projects.filter(p => `${p.repo.name} ${p.repo.full_name}`.toLowerCase().includes(query));
     results.replaceChildren();
+    if (phase === "error") results.append(button("Reload repositories", () => options.reload(), "button secondary"));
     if (!projects.length) {
       bar.hidden = true;
-      results.append(node("h1", "", "No sites in your list"), node("p", "muted", "Pick a repository from GitHub to open it here."), button("Add from GitHub", () => options.add(), "button primary"));
+      if (phase === "ready") results.append(node("h1", "", "No sites in your list"), node("p", "muted", "Pick a repository from GitHub to open it here."), button("Add from GitHub", () => options.add(), "button primary"));
       return;
     }
     bar.hidden = false;
@@ -80,11 +82,12 @@ export function createProjectOverview(options: {
   }
   return {
     root,
+    focus() { search.focus(); },
     destroy() { menu.close(false); menu.element.remove(); root.remove(); },
-    update(next: ProjectMemory[], message = "") {
+    update(next: ProjectMemory[], status: { message?: string; phase: typeof phase }) {
       projects = [...next].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0));
-      state.textContent = message;
-      state.hidden = !message;
+      phase = status.phase;
+      if (status.message !== undefined) state.textContent = status.message;
       draw();
     },
   };

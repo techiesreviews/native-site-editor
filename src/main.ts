@@ -389,7 +389,7 @@ const workspace = createWorkspaceMount({
   // Declared further down: read at call time.
   get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; }, get agentCommands() { return agentCommands; },
   account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),
-    choose: (resume) => chooseRepository(resume), load: () => loadSnapshot(), overview: () => { void loadRepositories(repositories); } },
+    choose: (resume) => chooseRepository(resume), load: () => loadSnapshot(), overview: refresh => { void loadRepositories(refresh ? undefined : repositories); } },
 });
 const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, mountWorkspace, closeWorkspace,
   setupScope, showDirectory } = workspace;
@@ -447,7 +447,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get repositoryMenu() { return workspace.repositoryMenu; }, get siteActions() { return workspace.siteActions; },
   nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage,
   removeFinishStarter, knownRepositories, rememberRepositories,
-  showProjects: (list, message) => workspace.showProjects(list, message),
+  showProjects: (list, message, failed) => workspace.showProjects(list, message, failed),
 });
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).

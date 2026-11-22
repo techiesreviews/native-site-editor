@@ -44,7 +44,7 @@ export interface RepositoryListPorts {
   readonly siteActions: { revalidate(): void } | undefined;
   nextLoad(): SessionStamp;
   chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy): Promise<void>;
-  storage: (kind: "local" | "session") => Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  storage: (kind: "local" | "session") => Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
   options: (select: HTMLSelectElement, values: { value: string; label: string }[]) => void;
   status: (message: string) => void;
   clearError: () => void;
@@ -54,7 +54,7 @@ export interface RepositoryListPorts {
   removeFinishStarter(): void;
   knownRepositories(): number[] | undefined;
   rememberRepositories(list: Repository[]): void;
-  showProjects(list?: Repository[], message?: string): void;
+  showProjects(list?: Repository[], message?: string, failed?: boolean): void;
 }
 
 export function createRepositoryList(ports: RepositoryListPorts) {
@@ -90,6 +90,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     );
     clearError();
     status("Loading selected repositories…");
+    ports.showProjects(undefined, "Checking GitHub…");
     if (hooks?.warm) return openWarm(listing, hooks.warm);
     try {
       const result = prefetched ?? (await ports.boot.fetchList(ports.boot.refreshPending()));
@@ -106,9 +107,11 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         linked: readWorkspaceUrl(),
         hashPresent: Boolean(location.hash),
         knownBefore,
-        remembered: ports.user ? readWorkspace(ports.user.login) : undefined,
       });
-      if (plan.kind === "empty") return;
+      if (plan.kind === "empty") {
+        if (knownBefore || readWizard(localStorage)) void setupEntry.open().catch(errorMessage);
+        return;
+      }
       resumeWizard();
       repositoryOptions();
       ports.repositorySelect.disabled = false;
@@ -137,7 +140,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     } catch (error) {
       if (at.holds()) {
         ports.boot.failed();
-        ports.showProjects(undefined, "Can’t reach GitHub. Reload projects to try again.");
+        ports.showProjects(undefined, "Can’t reach GitHub.", true);
         options(ports.repositorySelect, [
           { value: "", label: "Repositories unavailable" },
         ]);
@@ -286,6 +289,13 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       // 204: that was the last account on this browser, so nothing continues by itself next time.
       if (response.status === 204) forgetSignedIn(storage("local"));
       forgetBootMemory(storage("local"));
+      try {
+        const memory = storage("local"), prefix = "native-site-editor:projects:v1:";
+        for (let index = memory.length - 1; index >= 0; index--) {
+          const key = memory.key(index);
+          if (key?.startsWith(prefix) && (response.status === 204 || key === prefix + ports.user?.login.toLowerCase())) memory.removeItem(key);
+        }
+      } catch { /* Storage disabled: no project memory can be kept. */ }
       // Gone before the page leaves: the next one on this browser sees none of this site. A storage that never
       // answers holds the sign-out back no longer than the boot's own bound (other tabs heard it already).
       await withinWait(forgetWarmCopy());

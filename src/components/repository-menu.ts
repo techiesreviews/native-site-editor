@@ -454,7 +454,7 @@ export function createRepositoryMenu(options: {
   /** The repositories to list, or none with a message while loading or after a failure. */
   function setRepositories(next: Repository[], message?: string) {
     repositories = next;
-    if (currentId === undefined) name.textContent = next.length ? "All projects" : "No projects yet";
+    if (currentId === undefined) name.textContent = message || next.length ? "All projects" : "No projects yet";
     if (confirming !== undefined && !next.some((repo) => repo.id === confirming)) confirming = undefined;
     search.hidden = next.length < 6;
     empty.hidden = Boolean(next.length);

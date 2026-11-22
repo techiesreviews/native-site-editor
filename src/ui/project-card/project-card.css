@@ -41,6 +41,7 @@
   .project-card--grid :is(.project-card__source, .project-card__open) { --text-btn-text-color: var(--on-media); color: var(--on-media); }
   .project-card--grid .project-card__more { opacity: 0; }
   .project-card--grid:focus-within :is(.project-card__info, .project-card__more) { opacity: 1; }
+  .project-card--grid:has(.project-card__initial) :is(.project-card__info, .project-card__more) { opacity: 1; }
   .project-card:active { background: var(--hover); }
   @media (hover: hover) and (pointer: fine) {
     .project-card--row:hover { background: var(--hover); }

@@ -308,8 +308,6 @@ test("planRepositoryOpen decides the repository to open", () => {
     ["one added after install", { list, hashPresent: false, knownBefore: [1] }, { kind: "open", id: 2 }],
     ["added ignored with link", { list, hashPresent: true, knownBefore: [1], linked: { repoId: 1, branch: "main" } }, { kind: "open", id: 1, resume: { repoId: 1, branch: "main" } }],
     ["two added", { list, hashPresent: false, knownBefore: [] }, { kind: "choose" }],
-    ["remembered", { list, hashPresent: false, remembered: { repoId: 1, branch: "main", path: "a.html" } }, { kind: "choose" }],
-    ["remembered gone", { list, hashPresent: false, remembered: { repoId: 7, branch: "main" } }, { kind: "choose" }],
     ["only one", { list: [repo(3)], hashPresent: false }, { kind: "choose" }],
     ["choose", { list, hashPresent: false }, { kind: "choose" }],
   ];

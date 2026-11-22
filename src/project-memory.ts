@@ -12,8 +12,11 @@ export function readProjects(store: Store, login: string): ProjectMemory[] {
     return value.filter((p): p is ProjectMemory => p && Number.isSafeInteger(p.repo?.id) &&
       typeof p.repo.name === "string" && typeof p.repo.full_name === "string" &&
       typeof p.repo.default_branch === "string" && typeof p.repo.owner?.login === "string" &&
-      typeof p.branch === "string" && (p.opened === undefined || Number.isFinite(p.opened)) &&
-      (p.picture === undefined || (typeof p.picture === "string" && p.picture.length <= 120000 && /^data:image\/(webp|png|jpeg);base64,/.test(p.picture))));
+      typeof p.branch === "string" && (p.opened === undefined || Number.isFinite(p.opened)))
+      .map(p => {
+        const { picture, ...summary } = p;
+        return typeof picture === "string" && picture.length <= 120000 && /^data:image\/(webp|png|jpeg);base64,/.test(picture) ? p : summary;
+      });
   } catch { return []; /* Browser memory is optional. */ }
 }
 
@@ -31,6 +34,6 @@ export function keepOpenedProject(store: Store, login: string, repo: Repository,
 
 function save(store: Store, login: string, projects: ProjectMemory[]) {
   const recent = [...projects].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0)).slice(0, 12).map(p => p.repo.id);
-  const kept = projects.slice(0, 100).map(p => recent.includes(p.repo.id) ? p : { ...p, picture: undefined });
+  const kept = projects.map(p => recent.includes(p.repo.id) ? p : { ...p, picture: undefined });
   try { store.setItem(key(login), JSON.stringify(kept)); } catch { /* Editing works without a kept overview. */ }
 }
