@@ -267,3 +267,28 @@ test("a lost text reply does not hold up a newer render's read (R1-2)", async ({
   await expect(bold).toHaveAttribute("aria-pressed", "true");
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
+
+test("a pending text change does not repeatedly refresh its old proof", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p"));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  for (let render = 0; render < GUEST_RENDERS_KEPT / 2; render++) {
+    await page.evaluate(() => window.guestBarRace.select("p", true));
+    await page.clock.runFor(200);
+  }
+  await bold.click();
+  // A read that finishes while the write is pending is discarded, leaving the previous text proof in place.
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  await expect(bold).toHaveAttribute("aria-disabled", "true");
+  for (let render = 0; render < 5; render++) {
+    await page.evaluate(text => {
+      window.guestBarRace.select("p", true);
+      window.guestBarRace.answer(text);
+    }, source("Plain"));
+    await page.clock.runFor(200);
+  }
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
