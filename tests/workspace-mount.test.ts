@@ -191,6 +191,7 @@ function setup() {
       get nativePreviewBehind() { return state.nativePreviewBehind; },
     } satisfies WorkspaceMountPorts["preview"],
     textIndex: { noteNativePainted: say("noteNativePainted") } satisfies WorkspaceMountPorts["textIndex"],
+    afterPaint: () => {},
     runtime: { get site() { return state.site; }, get engaged() { return state.engaged; }, source: (path: string) => state.sources[path] } satisfies WorkspaceMountPorts["runtime"],
     finishedWork: { open: say("finishedWork.open"), shown: say("finishedWork.shown") } satisfies WorkspaceMountPorts["finishedWork"],
     mediaHistoryHome: { adopt: say("mediaHistoryHome.adopt"), clear: say("mediaHistoryHome.clear") } satisfies WorkspaceMountPorts["mediaHistoryHome"],
