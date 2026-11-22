@@ -42,8 +42,8 @@ function fixture(ensureList: () => Promise<void> = async () => {}) {
       account: { choose: async choice => { chosen.push(choice); }, reload: async () => {}, switchTo: async () => {}, signOut: async () => {}, load: async () => {} },
       session: fake({}) },
   };
-  const host = createHost(options), open = globalThis.overviewHostTest.options!.open;
-  return { host, open, root, selected, chosen };
+  const host = createHost(options), callbacks = globalThis.overviewHostTest.options!;
+  return { host, open: (project: Parameters<ViewOptions["open"]>[0]) => callbacks.open(project), root, selected, chosen };
 }
 test("a project choice survives listing recovery but cancels on actual navigation", async () => {
   for (const change of ["cancel", "hidden", "removed"] as const) {
