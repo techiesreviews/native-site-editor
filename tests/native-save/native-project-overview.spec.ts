@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 test('a confirmed empty account shows the approved empty state without search controls @smoke', async ({ page, baseURL }) => {
   await page.route('**/api/repositories*', route => route.fulfill({ json: [] }));
@@ -59,6 +59,13 @@ declare global {
   interface Window { projectPictureGate: { held: boolean; release(): void } }
 }
 
+async function hearSignOut(page: Page) {
+  await page.evaluate(async () => {
+    const { onWarmCopyForgotten } = await import('/src/warm-copy.ts');
+    onWarmCopyForgotten(() => { document.documentElement.dataset.projectSignout = 'heard'; });
+  });
+}
+
 test('sign-out in another tab blocks a held thumbnail from recreating project memory @smoke', async ({ page, context, baseURL }) => {
   await page.goto(`${baseURL}/`);
   const other = await context.newPage();
@@ -80,6 +87,7 @@ test('sign-out in another tab blocks a held thumbnail from recreating project me
   const memory = () => other.evaluate(() => localStorage.getItem('native-site-editor:projects:v1:native-demo-user'));
   try {
     await other.goto(`${baseURL}/`);
+    await hearSignOut(other);
     await other.locator('.project-overview [data-open="501"]').click();
     await expect.poll(() => other.evaluate(() => window.projectPictureGate.held)).toBe(true);
     // Keep the picture's timeout paused while the other tab completes sign-out.
@@ -90,10 +98,49 @@ test('sign-out in another tab blocks a held thumbnail from recreating project me
     await page.getByRole('button', { name: 'Sign out of native-demo-user', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Sign in to open your sites', exact: true })).toBeVisible();
     await expect.poll(memory).toBeNull();
+    await expect(other.locator('html')).toHaveAttribute('data-project-signout', 'heard');
     await other.evaluate(() => window.projectPictureGate.release());
     // Settle the released frame reply with the controlled clock, without reaching its timeout.
     await other.clock.runFor(50);
     expect(await memory()).toBeNull();
+  } finally { await other.close(); }
+});
+
+test('signing out of another account preserves this account’s removed cards and future caching @smoke', async ({ page, context, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  const other = await context.newPage();
+  const memory = () => other.evaluate(() => JSON.parse(localStorage.getItem('native-site-editor:projects:v1:other-user') ?? '[]') as {
+    repo: { id: number }; hidden?: boolean; opened?: number;
+  }[]);
+  try {
+    await other.route('**/api/session', async route => {
+      const response = await route.fetch();
+      const session = await response.json();
+      session.user.login = 'other-user';
+      await route.fulfill({ response, json: session });
+    });
+    await other.goto(`${baseURL}/`);
+    await hearSignOut(other);
+    await other.getByRole('button', { name: 'Options for native-demo', exact: true }).click();
+    await other.getByRole('menuitem', { name: 'Remove from list', exact: true }).click();
+    expect((await memory()).find(project => project.repo.id === 501)?.hidden).toBe(true);
+    await page.route('**/auth/logout', route => route.fulfill({ status: 200, body: '' }));
+    await page.route('**/api/session', route => route.fulfill({ json: { configured: true, user: null, installUrl: null } }));
+    await page.route('**/auth/login*', route => route.abort());
+    await page.locator('.repository-menu__trigger').click();
+    await page.getByRole('button', { name: 'Sign out of native-demo-user', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Sign in to open your sites', exact: true })).toBeVisible();
+    await expect(other.locator('html')).toHaveAttribute('data-project-signout', 'heard');
+    expect((await memory()).find(project => project.repo.id === 501)?.hidden).toBe(true);
+    const kept = other.locator('.project-overview [data-open]').first();
+    const id = Number(await kept.getAttribute('data-open'));
+    await kept.click();
+    await expect(other.frameLocator('.native-preview-frame').locator('body')).toBeVisible();
+    await other.locator('.repository-menu__trigger').click();
+    await other.locator('#repository-actions').getByRole('button', { name: 'All projects', exact: true }).click();
+    await expect(other.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
+    await expect(other.locator('.project-overview [data-open="501"]')).toHaveCount(0);
+    await expect.poll(async () => (await memory()).find(project => project.repo.id === id)?.opened).toBeGreaterThan(0);
   } finally { await other.close(); }
 });
 

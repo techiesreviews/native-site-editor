@@ -14,7 +14,7 @@ import { clearWizard, readWizard } from "./setup-wizard";
 import { node } from "./ui/dom";
 import { sameRepository, type SessionStamp } from "./workspace-session";
 import { readWorkspace, readWorkspaceUrl, type WorkspaceLocation } from "./workspace-state";
-import { forgetWarmCopy, withinWait, type WarmCopy } from "./warm-copy";
+import { forgetWarmCopy, withinWait, type SignedOut, type WarmCopy } from "./warm-copy";
 
 type Setup = ReturnType<typeof createSetupHost>;
 /** A repeat visit's kept copy (src/warm-copy.ts), shown before `listing` (the session's listing; undefined: read it) answers. */
@@ -282,29 +282,33 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     }
   }
 
-  function forgetProjects(all = false) {
+  function forgetProjects(account: SignedOut) {
+    const login = account.login?.toLowerCase();
+    if (!account.all && !login) return;
+    if (account.all || login === ports.user?.login.toLowerCase()) ports.stopProjectMemory();
     try {
       const memory = storage("local"), prefix = "native-site-editor:projects:v1:";
       for (let index = memory.length - 1; index >= 0; index--) {
         const key = memory.key(index);
-        if (key?.startsWith(prefix) && (all || key === prefix + ports.user?.login.toLowerCase())) memory.removeItem(key);
+        if (key?.startsWith(prefix) && (account.all || key === prefix + login)) memory.removeItem(key);
       }
     } catch { /* Storage disabled: no project memory can be kept. */ }
   }
 
   async function disconnect() {
+    const login = ports.user?.login;
     cleanSources.clear();
     try {
       const response = await fetch("/auth/logout", { method: "POST" });
       if (!response.ok) throw new Error("Could not disconnect. Try again.");
-      ports.stopProjectMemory();
       // 204: that was the last account on this browser, so nothing continues by itself next time.
       if (response.status === 204) forgetSignedIn(storage("local"));
       forgetBootMemory(storage("local"));
-      forgetProjects(response.status === 204);
+      const account = { login, all: response.status === 204 };
+      forgetProjects(account);
       // Gone before the page leaves: the next one on this browser sees none of this site. A storage that never
       // answers holds the sign-out back no longer than the boot's own bound (other tabs heard it already).
-      await withinWait(forgetWarmCopy());
+      await withinWait(forgetWarmCopy(undefined, account));
       location.assign("/");
     } catch (error) {
       errorMessage(error);

@@ -108,17 +108,20 @@ export function asWarmCopy(value: Partial<WarmCopy> | undefined): WarmCopy | und
 // Signed out here or in another tab: this page keeps nothing more in that storage (a tab leaving or a late timer included).
 const forgotten = new WeakSet<Factory>();
 const SIGNED_OUT = "native-site-editor-warm-copy";
-const forgetListeners = new Set<() => void>();
-export function onWarmCopyForgotten(listener: () => void) {
+export type SignedOut = { login?: string; all: boolean };
+const forgetListeners = new Set<(account: SignedOut) => void>();
+let signOutChannel: BroadcastChannel | undefined;
+export function onWarmCopyForgotten(listener: (account: SignedOut) => void) {
   forgetListeners.add(listener);
   return () => forgetListeners.delete(listener);
 }
 try {
-  const heard = new BroadcastChannel(SIGNED_OUT);
+  const heard = signOutChannel = new BroadcastChannel(SIGNED_OUT);
   // A keep of this tab that raced the other tab's delete is undone too.
-  heard.onmessage = () => {
+  heard.onmessage = (event: MessageEvent<SignedOut | "signed-out">) => {
+    const account = event.data === "signed-out" ? { all: true } : event.data;
     if (globalThis.indexedDB) { forgotten.add(globalThis.indexedDB); void remove(globalThis.indexedDB); }
-    for (const listener of forgetListeners) listener();
+    for (const listener of forgetListeners) listener(account);
   };
   // Node's channel would keep a process (the unit tests) running; a browser's has no unref.
   (heard as { unref?: () => void }).unref?.();
@@ -132,10 +135,10 @@ export function writeWarmCopy(copy: WarmCopy, factory: Factory | undefined = glo
   return fits && !copy.snapshot.empty ? run("readwrite", (store) => forgotten.has(factory) ? store.delete(KEY) : store.put(copy, KEY), factory) : remove(factory);
 }
 /** Sign-out: the copy goes, and neither this page nor another open tab keeps one again. */
-export function forgetWarmCopy(factory: Factory | undefined = globalThis.indexedDB): Promise<unknown> {
+export function forgetWarmCopy(factory: Factory | undefined = globalThis.indexedDB, account: SignedOut = { all: true }): Promise<unknown> {
   if (factory) forgotten.add(factory);
-  for (const listener of forgetListeners) listener();
-  try { const channel = new BroadcastChannel(SIGNED_OUT); channel.postMessage("signed-out"); channel.close(); } catch { /* no other tabs */ }
+  for (const listener of forgetListeners) listener(account);
+  try { signOutChannel?.postMessage(account); } catch { /* no other tabs */ }
   return remove(factory);
 }
 
