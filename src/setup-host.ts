@@ -59,7 +59,7 @@ export const EDITOR_LOGIN = "/auth/login";
  */
 function welcomeMarkup(titleId: string, actionId: string, signedIn = false) {
   return `
-      <span class="welcome-page__mark" aria-hidden="true">n</span>
+      <span class="brand-mark" aria-hidden="true">n</span>
       <h1 id="${titleId}">${signedIn ? "No sites in your list" : "Sign in to open your sites"}</h1>
       <p>${signedIn ? "Pick a repository from GitHub to open it here." : "Your sites stay in your GitHub repositories."}</p>
       <div id="${actionId}" class="login-action"></div>`;

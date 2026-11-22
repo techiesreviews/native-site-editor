@@ -17,6 +17,10 @@ test("at 390 px the overview opens a project and then shows Pages, Media and Fil
   await page.locator("#explorer-toggle").tap();
   await expect(explorer(page).getByRole("tab")).toHaveText(["Pages", /^Media\d*$/, "Files"]);
   await expect(explorer(page).getByText("No project open yet.", { exact: false })).toBeHidden();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Menu", exact: true }).tap();
+  await page.locator(".top-bar-menu").getByRole("button", { name: "All projects", exact: true }).tap();
+  await expect(page.getByRole("searchbox", { name: "Search projects" })).toBeVisible();
   await context.close();
 });
 

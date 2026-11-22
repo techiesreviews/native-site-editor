@@ -148,15 +148,14 @@
 .welcome-page {
   min-block-size: 100%;
   display: grid;
-  align-content: center;
+  align-content: start;
   grid-template-columns: minmax(var(--space-m), 1fr) minmax(0, 440px) minmax(var(--space-m), 1fr);
   gap: var(--space-m) 0;
-  padding-block: calc(var(--space-l) * 2);
+  padding-block: calc(var(--space-l) * 3);
   text-align: start;
 }
 .welcome-page > * { grid-column: 2; justify-self: start; }
 .welcome-page > p { margin: 0; color: var(--muted); }
-.welcome-page__mark { font: var(--type-heading) Georgia, serif; color: var(--primary); }
 .welcome-page__hello {
   display: inline-flex;
   align-items: center;

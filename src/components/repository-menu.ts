@@ -104,7 +104,7 @@ export function createRepositoryMenu(options: {
   branch.append(node("option", "", "—"));
   const add = accessLink("Add repositories", "repository-menu__add");
   sites.append(heading, search, list, empty, select, branch);
-  if (options.onOverview) sites.prepend(button("All projects", options.onOverview, "text-button repository-menu__action"));
+  if (options.onOverview) sites.prepend(button("All projects", options.onOverview, "text-button repository-menu__action repository-menu__overview"));
   if (add) sites.append(add);
   // The App's installations/new page lets the user pick the account or organisation.
   const another = options.installUrl ? anotherAccountLink(options.installUrl) : undefined;

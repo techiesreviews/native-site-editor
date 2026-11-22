@@ -176,6 +176,7 @@ export function mountTopBarPhone(ports: TopBarPhonePorts) {
     share: () => rowButton("shareNetwork", "Share a preview link", handOver(projectMenu)),
     settings: () => rowButton("gear", "Site settings", handOver(() => void ports.page.siteSettings())),
     switch: () => rowButton("arrowsLeftRight", "Switch site", handOver(projectMenu)),
+    overview: () => rowButton("squares-four", "All projects", handOver(() => find<HTMLButtonElement>(".repository-menu__overview")?.click())),
   };
 
   function title(text: string, back: boolean) {
