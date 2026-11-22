@@ -33,7 +33,10 @@ export function keepOpenedProject(store: Store, login: string, repo: Repository,
 }
 
 export function keepProjectPicture(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
-  rememberProject(store, login, repo, branch, picture);
+  const projects = new Map(readProjects(store, login).map(project => [project.repo.id, project])), project = projects.get(repo.id);
+  if (!project || project.branch !== branch || !picture || picture.length > 120000) return;
+  projects.set(repo.id, { ...project, picture });
+  save(store, login, [...projects.values()]);
 }
 
 function rememberProject(store: Store, login: string, repo: Repository, branch: string, picture?: string, reopening = false) {

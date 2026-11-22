@@ -1,5 +1,6 @@
 // The overview's optional UI and browser memory, loaded for the overview or after the first site paint.
 import type { Repository } from "../shared/types";
+import type { effect } from "@preact/signals-core";
 import type { NativePreview } from "./components/native-preview";
 import type { createRowMenu } from "./components/row-menu";
 import type { WorkspaceMountPorts } from "./workspace-mount";
@@ -16,9 +17,12 @@ export function createProjectOverviewHost(options: {
   login: string;
   menu: ReturnType<typeof createRowMenu>;
   main(): HTMLElement;
-  ports: Pick<WorkspaceMountPorts, "boot" | "repositories" | "account" | "session">;
+  ports: Pick<WorkspaceMountPorts, "boot" | "repositories" | "account" | "session"> & {
+    appStore: Pick<WorkspaceMountPorts["appStore"], "repository" | "branch">;
+  };
   readWorkspace: typeof readWorkspace;
   sameBranch: typeof sameBranch;
+  effect: typeof effect;
   select(id: number): void;
   add(): void;
   back(): void;
@@ -63,6 +67,11 @@ export function createProjectOverviewHost(options: {
     removed.delete(repo.id);
     keepOpenedProject(localStorage, login, repo, branch, picture);
   };
+  const stopOpened = options.effect(() => {
+    const repo = options.ports.appStore.repository.value, branch = options.ports.appStore.branch.value;
+    view.root.hidden = Boolean(repo || location.hash);
+    if (repo && branch) remember(repo, branch);
+  });
   return {
     root: view.root,
     focus: () => view.focus(),
@@ -72,7 +81,6 @@ export function createProjectOverviewHost(options: {
     remember,
     picture(preview: Pick<NativePreview, "picture">, path: string, repo: Repository, branch: string, holds: () => boolean) {
       if (!remembering || !holds()) return;
-      keepProjectPicture(localStorage, login, repo, branch);
       void preview.picture({ path, width: 1280, height: 800, limit: 119960 }).then(picture => {
         if (remembering && holds() && view.root.isConnected) keepProjectPicture(localStorage, login, repo, branch, `data:${picture.mimeType};base64,${picture.data}`);
       }, () => { /* A project without a kept picture shows its initial. */ });
@@ -86,6 +94,6 @@ export function createProjectOverviewHost(options: {
       opening.querySelector<HTMLButtonElement>("button")?.focus();
     },
     finishOpening,
-    destroy() { remembering = false; projectPick++; finishOpening(); view.destroy(); },
+    destroy() { remembering = false; projectPick++; stopOpened(); finishOpening(); view.destroy(); },
   };
 }
