@@ -249,6 +249,12 @@ test("guests swap, upload and crop a picture and change a link from the edit bar
 
   // Media, then the popup's Replace: the editor's Media picker with the site's pictures; Use is his change at once.
   const picker = await openChooser(anna.page);
+  await picker.getByRole("button", { name: /^Filter:/ }).click();
+  const filterMenu = anna.page.locator(".media-library__menu:not([hidden])");
+  await expect(filterMenu).toBeVisible();
+  await expect(filterMenu).toHaveCSS("position", "fixed");
+  await expect(filterMenu).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await anna.page.keyboard.press("Escape");
   await expect(picker.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   // Only choosing: no file details, no collections to manage.
   await expect(picker.getByRole("button", { name: "File details", exact: true })).toHaveCount(0);

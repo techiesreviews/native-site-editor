@@ -1591,3 +1591,32 @@ test("the keyboard reaching a mock-up's link brings its card up to a readable si
   await expect(page.getByRole("complementary", { name: "Options" }).getByRole("heading", { name: "14 Share, live" })).toBeVisible();
   await expectInView(page, "plan\\:agents-and-multiplayer\\/14-share-live\\.html");
 });
+
+
+test("catalogue screens load the Dropdown and Flyout styles even without their own cards", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/catalogue.html?mockup=editor&theme=light`);
+  await expect(page.locator(".topbar")).toBeVisible();
+  await page.locator(".repository-menu__trigger").click();
+  const panel = page.locator("#repository-actions");
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveCSS("border-radius", "8px");
+  await expect(panel).not.toHaveCSS("box-shadow", "none");
+  await expect(panel).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(page.locator("#branch-menu")).toHaveCSS("width", "240px");
+});
+
+test("the Confirm dialog's CSS deletion removes its live frame's shadow only", async ({ page, baseURL }) => {
+  await openBoard(page, baseURL);
+  await page.getByRole("navigation", { name: "Outline" }).getByRole("button", { name: "Confirm dialog", exact: true }).click();
+  const section = page.getByRole("complementary", { name: "Options" }).getByRole("region", { name: "CSS" });
+  const file = section.getByRole("textbox", { name: "src/ui/confirm-dialog/confirm-dialog.css", exact: true });
+  const original = await file.inputValue();
+  const live = page.frameLocator('#card-confirm-dialog [data-cell="live"] iframe');
+  await live.getByRole("button", { name: "Delete…", exact: true }).click();
+  await file.fill(original.replace(/\n\s*box-shadow: var\(--confirm-dialog-shadow, var\(--shadow\)\);/, ""));
+  await expect(live.locator(".create-dialog")).toHaveCSS("box-shadow", "none");
+  const fixed = page.frameLocator('#card-confirm-dialog .cat-half[data-theme="light"] iframe').first().locator(".create-dialog");
+  await expect(fixed).not.toHaveCSS("box-shadow", "none");
+  await section.getByRole("button", { name: "Reset" }).click();
+  await expect(live.locator(".create-dialog")).not.toHaveCSS("box-shadow", "none");
+});

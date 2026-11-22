@@ -30,6 +30,7 @@
     }
 
     & .link-row__main {
+      min-block-size: var(--share-row-min-block-size, max(var(--size-control), var(--size-tap)));
       display: flex;
       align-items: center;
       gap: var(--share-row-main-gap, calc(var(--space-xs) + var(--space-4xs)));
@@ -48,7 +49,6 @@
         outline: var(--focus-ring);
         outline-offset: -2px;
       }
-      min-block-size: var(--share-row-min-block-size, max(var(--size-control), var(--size-tap)));
 
       /* A row, not a link: no underline when pressed or hovered (the Text button, src/ui/text-button/text-button.css). */
       &:active {
@@ -131,8 +131,8 @@
       padding-inline: var(--share-row-fade-width, calc(var(--space-m) + var(--space-3xs))) 0;
       border-radius: inherit;
       background:
-        linear-gradient(to right, transparent, var(--link-row-tint) 20px),
-        linear-gradient(to right, transparent, var(--share-row-surface, var(--panel-surface)) 20px);
+        linear-gradient(to right, transparent, var(--link-row-tint) var(--share-row-fade-width, calc(var(--space-m) + var(--space-3xs)))),
+        linear-gradient(to right, transparent, var(--share-row-surface, var(--panel-surface)) var(--share-row-fade-width, calc(var(--space-m) + var(--space-3xs))));
       opacity: 0;
       pointer-events: none;
     }
