@@ -380,6 +380,7 @@ const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeCo
 const workspace = createWorkspaceMount({
   app, element, appStore, editorModule, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, linkedStyles, versions, pagesAndFiles, setup, repositoryIndex, cleanSources,
   notices, session, view, preview: sitePreview, textIndex, media, pageBuilder, share, previewShare,
+  afterPaint: run => textIndex.afterNativePaint(runtime.state.request, run),
   site: { deactivate: deactivateNative, assets: loadNativeAssets, shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles },
   get info() { return info; }, get repositories() { return repositories; }, set repositories(value) { repositories = value; },
   get nativePreview() { return nativePreview; }, set nativePreview(value) { nativePreview = value; },
