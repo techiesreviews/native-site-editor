@@ -1,6 +1,7 @@
 // The overview's optional UI and browser memory, loaded for the overview or after the first site paint.
 import type { Repository } from "../shared/types";
 import type { NativePreview } from "./components/native-preview";
+import type { createRowMenu } from "./components/row-menu";
 import { createProjectOverview } from "./components/project-overview";
 import { draftStore } from "./drafts";
 import { readProjects, keepProjects, keepOpenedProject, type ProjectMemory } from "./project-memory";
@@ -11,13 +12,14 @@ import "./ui/progress/progress.css";
 
 export function createProjectOverviewHost(options: {
   login: string;
+  menu: ReturnType<typeof createRowMenu>;
   main(): HTMLElement;
   open(project: ProjectMemory): Promise<void>;
   add(): void;
   back(): void;
 }) {
   const { login } = options;
-  const view = createProjectOverview({ open: project => options.open(project), add: () => options.add(),
+  const view = createProjectOverview({ menu: options.menu, open: project => options.open(project), add: () => options.add(),
     unsaved: project => Boolean(draftStore().list({ account: login, repoId: project.repo.id, repo: project.repo.full_name, branch: project.branch }).length) });
   let opening: HTMLElement | undefined;
   const finishOpening = () => { opening?.remove(); opening = undefined; };

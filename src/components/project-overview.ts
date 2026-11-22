@@ -7,11 +7,12 @@ import listIcon from "@phosphor-icons/core/regular/list.svg?raw";
 import gridIcon from "@phosphor-icons/core/regular/squares-four.svg?raw";
 import searchIcon from "@phosphor-icons/core/regular/magnifying-glass.svg?raw";
 import { sizedSvg, svgElement } from "../icons";
-import { createRowMenu } from "./row-menu";
+import type { createRowMenu } from "./row-menu";
 import type { ProjectMemory } from "../project-memory";
 import "./project-overview.css";
 
 export function createProjectOverview(options: {
+  menu: ReturnType<typeof createRowMenu>;
   open(project: ProjectMemory): Promise<void>;
   add(): void;
   unsaved(project: ProjectMemory): boolean;
@@ -41,7 +42,7 @@ export function createProjectOverview(options: {
   const results = node("div", "project-overview__results");
   const state = node("p", "project-overview__state");
   state.setAttribute("role", "status");
-  const menu = createRowMenu(root);
+  const menu = options.menu;
   root.prepend(bar, state, results);
   search.addEventListener("input", draw);
 
@@ -80,7 +81,7 @@ export function createProjectOverview(options: {
   }
   return {
     root,
-    destroy() { menu.close(false); root.remove(); },
+    destroy() { menu.close(false); menu.element.remove(); root.remove(); },
     update(next: ProjectMemory[], message = "") {
       projects = [...next].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0));
       state.textContent = message;
