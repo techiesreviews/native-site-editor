@@ -389,7 +389,7 @@ const workspace = createWorkspaceMount({
   // Declared further down: read at call time.
   get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; }, get agentCommands() { return agentCommands; },
   account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),
-    choose: (resume) => chooseRepository(resume), load: () => loadSnapshot(), overview: refresh => { void loadRepositories(refresh ? undefined : repositories); } },
+    choose: (resume) => chooseRepository(resume), load: () => loadSnapshot(), overview: () => { void loadRepositories(); } },
 });
 const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, mountWorkspace, closeWorkspace,
   setupScope, showDirectory } = workspace;

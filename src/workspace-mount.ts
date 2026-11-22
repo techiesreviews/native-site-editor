@@ -127,7 +127,7 @@ export interface WorkspaceAccountPorts {
   signOut: () => Promise<void>;
   choose: (resume?: WorkspaceLocation) => Promise<unknown>;
   load: () => Promise<unknown>;
-  overview?: (refresh?: boolean) => void;
+  overview?: () => void;
 }
 
 export interface WorkspaceMountPorts {
@@ -215,7 +215,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         });
         ports.app.append(overview.root);
         overview.root.hidden = Boolean(ports.appStore.repository.value || location.hash);
-        overview.update(ports.repositories.length ? ports.repositories : undefined);
+        overview.update();
       }
       return overview;
     });

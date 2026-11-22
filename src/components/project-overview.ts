@@ -20,6 +20,7 @@ export function createProjectOverview(options: {
   const root = node("section", "project-overview");
   root.setAttribute("aria-label", "Projects");
   root.setAttribute("role", "main");
+  root.tabIndex = -1;
   const bar = node("div", "project-overview__bar");
   const search = node("input", "repository-menu__search");
   search.type = "search";
@@ -82,7 +83,7 @@ export function createProjectOverview(options: {
   }
   return {
     root,
-    focus() { search.focus(); },
+    focus() { (matchMedia("(pointer: fine)").matches ? search : root).focus(); },
     destroy() { menu.close(false); menu.element.remove(); root.remove(); },
     update(next: ProjectMemory[], status: { message?: string; phase: typeof phase }) {
       projects = [...next].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0));
