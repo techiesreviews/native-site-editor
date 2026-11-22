@@ -1,0 +1,8 @@
+{
+  "name": "Dropdown",
+  "for": "A menu that opens under its button (nonmodal): opening, closing on Escape and outside click, focus, placement.",
+  "use": "`mountDropdown({ … })` from `src/components/dropdown.ts`.",
+  "elsewhere": [
+    "src/components/dropdown.ts"
+  ]
+}

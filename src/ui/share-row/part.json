@@ -1,0 +1,8 @@
+{
+  "name": "Sharing row",
+  "for": "One sharing row in the project menu (Preview link and Edit together): a status dot, label and a hover/focus copy icon.",
+  "use": "`shareRow(name, actionClass, view, press)` and `markTile(tile, which, dot)` from `src/components/share-row.ts`.",
+  "elsewhere": [
+    "src/components/share-row.ts"
+  ]
+}

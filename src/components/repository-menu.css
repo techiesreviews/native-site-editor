@@ -232,7 +232,7 @@
 }
 
 .repository-menu__remove:focus-visible,
-.repository-menu__action:focus-visible,
+.repository-menu__action:where(:not(.link-row__main)):focus-visible,
 .repository-menu__account:focus-visible,
 .repository-menu__heading-button:focus-visible {
   outline: var(--focus-ring);
@@ -380,7 +380,7 @@
   font-weight: 600;
 }
 
-.repository-menu__action {
+.repository-menu__action:where(:not(.link-row__main)) {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -396,8 +396,8 @@
   text-decoration: none;
 }
 
-.repository-menu__action:hover,
-.repository-menu__action:focus-visible {
+.repository-menu__action:where(:not(.link-row__main)):hover,
+.repository-menu__action:where(:not(.link-row__main)):focus-visible {
   background: var(--hover);
 }
 

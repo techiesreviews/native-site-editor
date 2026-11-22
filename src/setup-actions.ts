@@ -1,3 +1,4 @@
+import "./ui/confirm-dialog/confirm-dialog.css";
 import type { CreateChoice, WizardCreateOutcome } from "./components/setup-wizard";
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";

@@ -864,3 +864,13 @@ main > .code-split {
 .explorer:not([data-tab="pages"]) .pages-new,
 .explorer:not([data-tab="files"]) #new-at-root,
 .explorer[data-tab="media"] .explorer-search { display: none; }
+
+/* The explorer anchors to the whole top bar, rather than its own trigger. */
+@supports (position-area: bottom) {
+  .explorer.dropdown-panel {
+    position-area: none;
+    inset: calc(anchor(--topbar bottom) + var(--space-2xs)) auto var(--space-s) var(--space-xs);
+    margin: 0;
+    justify-self: start;
+  }
+}

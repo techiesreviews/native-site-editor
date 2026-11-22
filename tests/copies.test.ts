@@ -192,6 +192,7 @@ test("a part's own files, its tests and the design board never count", () => {
   const p = project({
     "src/ui/dom.ts": 'export const b = () => node("button");\n',
     "src/ui/button/button.css": ".button { background: var(--primary); }\n",
+    "src/ui/confirm-dialog/confirm-dialog.css": ".create-dialog { background: var(--surface); }\n",
     "src/ui/icon-button/icon-button.test.ts": 'assert.equal(markup, "<button class=\\"icon-button\\">");\n',
     "src/catalogue/board.ts": 'node("button");\n',
     "src/a.ts": 'node("button");\n',

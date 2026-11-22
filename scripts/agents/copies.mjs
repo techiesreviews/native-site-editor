@@ -32,7 +32,7 @@ export const homes = {
   dialogs: [],
   buttonLooks: ["src/ui/button/button.css", "src/ui/icon-button/icon-button.css", "src/ui/text-button/text-button.css"],
   badgeLooks: ["src/ui/badge/badge.css", "src/ui/badge/badge-options.ts"],
-  dialogLooks: [],
+  dialogLooks: ["src/ui/confirm-dialog/confirm-dialog.css"],
 };
 export const baselinePath = "scripts/agents/copies.json";
 /** The design board draws parts to show them; it is not the editor's UI. */

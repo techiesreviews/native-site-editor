@@ -1,0 +1,10 @@
+{
+  "name": "Row menu",
+  "for": "A menu of actions for one row (a page, a file, an element): items with an icon, a hint key, a disabled reason.",
+  "use": "`createRowMenu(host, onClose)` from `src/components/row-menu.ts`, items as `MenuItem`.",
+  "elsewhere": [
+    "src/components/row-menu.ts",
+    "src/components/row-actions.ts",
+    "src/components/row-action-overlay.css"
+  ]
+}

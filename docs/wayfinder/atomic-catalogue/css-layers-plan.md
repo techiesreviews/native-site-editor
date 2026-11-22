@@ -81,7 +81,7 @@ Rules that matter for every slice:
    other five join `src/ui/parts.css` when their swap slices bring them into editor screens, keeping boot flat.
 4. **Tokens** (done). `src/theme.css` (and the generator's output) on `@layer tokens`.
 5. **Elements** (done). The rest of the bare element rules onto `elements` in `src/elements.css`; what was left of `src/utilities.css` (the reset) folded in.
-6. **Molecules** (open). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
+6. **Molecules** (done). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
 7. **Screen layout** (open). `src/style.css` split by screen into unlayered editor files; it keeps only the order line
    and its imports. Waits for the top bar work (ticket 66 and the phone layout) to land.
 

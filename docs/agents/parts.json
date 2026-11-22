@@ -14,52 +14,6 @@
       ]
     },
     {
-      "id": "dropdown",
-      "name": "Dropdown",
-      "group": "shared",
-      "for": "A menu that opens under its button (nonmodal): opening, closing on Escape and outside click, focus, placement.",
-      "use": "`mountDropdown({ … })` from `src/components/dropdown.ts`.",
-      "files": [
-        "src/components/dropdown.ts",
-        "src/components/dropdown.css"
-      ]
-    },
-    {
-      "id": "flyout",
-      "name": "Flyout",
-      "group": "shared",
-      "for": "A submenu beside a dropdown, opened from one of its rows.",
-      "use": "`mountFlyout({ … })` from `src/components/flyout.ts`.",
-      "files": [
-        "src/components/flyout.ts",
-        "src/components/flyout.css"
-      ]
-    },
-    {
-      "id": "row-menu",
-      "name": "Row menu",
-      "group": "shared",
-      "for": "A menu of actions for one row (a page, a file, an element): items with an icon, a hint key, a disabled reason.",
-      "use": "`createRowMenu(host, onClose)` from `src/components/row-menu.ts`, items as `MenuItem`.",
-      "files": [
-        "src/components/row-menu.ts",
-        "src/components/row-menu.css",
-        "src/components/row-actions.ts",
-        "src/components/row-action-overlay.css"
-      ]
-    },
-    {
-      "id": "confirm-dialog",
-      "name": "Confirm dialog",
-      "group": "shared",
-      "for": "A modal question before an action that cannot be undone: a title, notes, the action and Cancel.",
-      "use": "`createConfirmDialog(id)` from `src/components/confirm-dialog.ts`. Its look is the create dialog's (`src/components/create-dialog.css`).",
-      "files": [
-        "src/components/confirm-dialog.ts"
-      ],
-      "copies": "dialogs made by hand and their backdrops (`node scripts/agents/copies.mjs report`); one Dialog part is planned."
-    },
-    {
       "id": "field-suggestions",
       "name": "Field suggestions",
       "group": "shared",
@@ -171,7 +125,7 @@
     "src/controllers/files-tree-controller.ts": "The Files tab's tree: folders opened, rows listed and kept in step with the branch.",
     "src/page-builder/player-markup.ts": "The markup of a video or audio player and its subtitles in the page source.",
     "src/page-builder/online-video.ts": "YouTube and Vimeo videos: their address checks, records and still pictures.",
-    "src/components/file-row-actions.ts": "The Files tree's row actions: the ⋯ button and right-click menu, rename, delete, and moving or uploading by drag.",
+    "src/components/file-row-actions.ts": "The Files tree's row actions: the \u22ef button and right-click menu, rename, delete, and moving or uploading by drag.",
     "src/components/page-picker.ts": "Picks where a new page goes: under which page in the site's tree.",
     "src/components/pages-tree.ts": "The explorer's Pages tab: the site's pages as a tree, with new page and rename.",
     "src/components/card-grid-controls.ts": "Add card and New page + card under a grid of cards on the canvas.",

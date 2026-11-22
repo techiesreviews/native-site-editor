@@ -111,7 +111,7 @@ test("Media's Download original and suggested name use the underlined text butto
 test("the old copies are gone: no screen styles the icon button's or the text button's look", () => {
   const looks = copiesInStyles(read("src/style.css")).filter(({ kind }) => kind === "buttonLooks").map(({ text }) => text);
   assert.ok(!looks.some((text) => /\.(icon|text)-button\b/.test(text)), looks.join("\n"));
-  for (const [path, cls] of [["src/components/flyout.css", "flyout__icon-button"], ["src/page-builder/components.css", "component-panel__"], ["src/components/repository-menu.css", "repository-menu__heading-button"]])
+  for (const [path, cls] of [["src/ui/flyout/flyout.css", "flyout__icon-button"], ["src/page-builder/components.css", "component-panel__"], ["src/components/repository-menu.css", "repository-menu__heading-button"]])
     assert.deepEqual(copiesInStyles(read(path)).filter(({ text }) => text.includes(cls)), [], `${path} sizes its icon and text buttons but gives them no look`);
 });
 

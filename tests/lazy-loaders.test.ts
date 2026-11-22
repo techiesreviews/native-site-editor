@@ -35,6 +35,7 @@ const stubModules: Record<string, string> = {
   "shared/media-records.ts": loaded("media-records"),
 };
 registerHooks({ load: (url, context, next) => {
+  if (url.endsWith(".css")) return { format: "module", source: "", shortCircuit: true };
   const stub = Object.entries(stubModules).find(([path]) => url.endsWith(`/${path}`));
   return stub ? { format: "module", source: stub[1], shortCircuit: true } : next(url, context);
 } });

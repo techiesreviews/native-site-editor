@@ -1,0 +1,270 @@
+/* The Sharing row component: Preview link and Edit together rows in the project menu (src/components/share-row.ts).
+   Its whole look in one file on the components layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md). Its
+   --share-row-* hooks hold their defaults as fallbacks where read; a screen may set a hook in its own unlayered CSS.
+   The classes are link-row and link-rows, never share-row(s): ad blockers' annoyances lists (Fanboy Social and
+   Annoyance) hide any `.share-row`, which left the menu's Share title with no rows under it (Lex, 2026-11-10). */
+@layer tokens, elements, components;
+
+@layer components {
+  .link-rows {
+    display: grid;
+    gap: var(--share-row-gap, var(--space-4xs));
+
+    &[hidden] {
+      display: none;
+    }
+  }
+
+  .link-row {
+    /* The row's own tint (hover, focus) over the menu's surface: the fade ends on their mix, hiding the label under it. */
+    --link-row-tint: transparent;
+    display: grid;
+    border-radius: var(--share-row-radius, var(--radius));
+
+    & [hidden] {
+      display: none;
+    }
+
+    & > * {
+      grid-area: 1 / 1;
+    }
+
+    & .link-row__main {
+      display: flex;
+      align-items: center;
+      gap: var(--share-row-main-gap, calc(var(--space-xs) + var(--space-4xs)));
+      width: 100%;
+      padding: var(--share-row-padding-block, var(--space-3xs)) var(--share-row-padding-inline, var(--space-xs));
+      border: 0;
+      border-radius: var(--share-row-radius, var(--radius));
+      background: transparent;
+      color: inherit;
+      font-size: var(--type-base);
+      text-align: left;
+      text-decoration: none;
+
+      &:focus-visible {
+        background: var(--share-row-hover-background, var(--hover));
+        outline: var(--focus-ring);
+        outline-offset: -2px;
+      }
+      min-block-size: var(--share-row-min-block-size, max(var(--size-control), var(--size-tap)));
+
+      /* A row, not a link: no underline when pressed or hovered (the Text button, src/ui/text-button/text-button.css). */
+      &:active {
+        text-decoration: none;
+      }
+      @media (hover: hover) and (pointer: fine) {
+        &:hover {
+          text-decoration: none;
+        }
+      }
+
+      &::before {
+        content: "";
+        flex: none;
+        inline-size: var(--share-row-dot-size, var(--space-xs));
+        block-size: var(--share-row-dot-size, var(--space-xs));
+        border-radius: var(--radius-full);
+        background: var(--share-row-muted-color, var(--muted));
+        opacity: 0.5;
+      }
+
+      &[aria-disabled="true"] {
+        color: var(--share-row-muted-color, var(--muted));
+        cursor: default;
+      }
+
+      &:active:not([aria-disabled="true"]) {
+        background: var(--share-row-active-background, color-mix(in oklch, var(--hover), var(--text) 8%));
+      }
+    }
+
+    &[data-dot="wait"] .link-row__main::before {
+      background: var(--share-row-wait-color, var(--color-warning));
+      opacity: 1;
+    }
+    &[data-dot="on"] .link-row__main::before {
+      background: var(--share-row-on-color, var(--color-success));
+      opacity: 1;
+    }
+    &[data-dot="bad"] .link-row__main::before {
+      background: var(--share-row-bad-color, var(--danger));
+      opacity: 1;
+    }
+    &[data-dot="busy"] .link-row__main[aria-disabled="true"] {
+      cursor: progress;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      &:is([data-dot="wait"], [data-dot="busy"]) .link-row__main::before {
+        animation: link-row-pulse var(--share-row-pulse-duration, 1.4s) ease-in-out infinite;
+      }
+    }
+
+    & .link-row__label {
+      flex: 1;
+      min-inline-size: 0;
+      overflow: clip;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    & .link-row__end {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+
+      & .person-chip {
+        --person-chip-ring: var(--share-row-surface, var(--panel-surface));
+      }
+    }
+
+    &:has(> .link-row__main:focus-visible) {
+      --link-row-tint: var(--share-row-hover-background, var(--hover));
+    }
+
+    & .link-row__action {
+      place-self: stretch end;
+      display: flex;
+      align-items: center;
+      padding-inline: var(--share-row-fade-width, calc(var(--space-m) + var(--space-3xs))) 0;
+      border-radius: inherit;
+      background:
+        linear-gradient(to right, transparent, var(--link-row-tint) 20px),
+        linear-gradient(to right, transparent, var(--share-row-surface, var(--panel-surface)) 20px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    & .link-row__copy {
+      display: inline-grid;
+      place-items: center;
+      /* The row's full height and as wide as the row is tall (44 px on touch and narrow windows): a whole target. */
+      inline-size: max(var(--size-control), var(--size-tap));
+      block-size: 100%;
+      padding: 0;
+      border: 0;
+      border-radius: var(--share-row-radius, var(--radius));
+      background: transparent;
+      color: var(--share-row-muted-color, var(--muted));
+      cursor: pointer;
+
+      &.is-done {
+        color: var(--share-row-done-color, var(--success-fg));
+      }
+      &:focus-visible {
+        outline: var(--focus-ring);
+        outline-offset: -2px;
+      }
+      &:active {
+        background: var(--share-row-active-background, color-mix(in oklch, var(--hover), var(--text) 8%));
+      }
+    }
+
+    /* Shown on keyboard focus anywhere in the row (not after a mouse click: :focus-visible), and while it says it copied
+       or the browser refused the copy. */
+    &:is(:has(:focus-visible), .is-done) > .link-row__action {
+      opacity: 1;
+    }
+    &:is(:has(:focus-visible), .is-done) > .link-row__action > .link-row__copy {
+      pointer-events: auto;
+    }
+
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        --link-row-tint: var(--share-row-hover-background, var(--hover));
+      }
+      /* The row keeps its hover while the pointer is on the copy icon over it. */
+      &:hover > .link-row__main:not([aria-disabled="true"]) {
+        background: var(--share-row-hover-background, var(--hover));
+      }
+      &:hover > .link-row__main[aria-disabled="true"] {
+        background: transparent;
+      }
+      &:hover > .link-row__action {
+        opacity: 1;
+      }
+      &:hover > .link-row__action > .link-row__copy {
+        pointer-events: auto;
+      }
+      & .link-row__copy:hover {
+        background: var(--share-row-hover-background, var(--hover));
+        color: var(--text);
+      }
+    }
+
+    /* No hover to reveal it: the icon always shows, and the label stops short of it. */
+    @media (hover: none), (pointer: coarse) {
+      & > .link-row__action {
+        padding-inline: 0;
+        background: none;
+        opacity: 1;
+      }
+      & > .link-row__action > .link-row__copy {
+        inline-size: var(--size-touch);
+        pointer-events: auto;
+      }
+      &:has(> .link-row__action:not([hidden])) > .link-row__main {
+        padding-inline-end: var(--size-touch);
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      @media (hover: hover) and (pointer: fine) {
+        & .link-row__action {
+          transition: opacity var(--share-row-action-duration, 140ms) var(--ease-out);
+        }
+        & .link-row__copy {
+          transform: translateX(40%);
+          transition: transform var(--share-row-action-duration, 140ms) var(--ease-out);
+        }
+        &:is(:hover, :has(:focus-visible), .is-done) .link-row__copy {
+          transform: none;
+        }
+        /* Keyboard access is immediate. */
+        &:has(:focus-visible) > .link-row__action,
+        &:has(:focus-visible) .link-row__copy {
+          transition: none;
+        }
+      }
+    }
+  }
+
+  .link-row__people {
+    display: flex;
+  }
+
+  /* The project tile's dot while a link is on (src/components/share-row.ts `markTile`): at the tile's lower corner,
+     apart from the counts on its upper one. */
+  .repository-menu__trigger[data-shared]::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 30px;
+    inset-inline-start: 34px;
+    inline-size: 10px;
+    block-size: 10px;
+    box-sizing: border-box;
+    border: 2px solid var(--surface-toolbar);
+    border-radius: var(--radius-full);
+    background: var(--share-row-muted-color, var(--muted));
+    pointer-events: none;
+  }
+  .repository-menu__trigger[data-shared="wait"]::after {
+    background: var(--share-row-wait-color, var(--color-warning));
+  }
+  .repository-menu__trigger[data-shared="on"]::after {
+    background: var(--share-row-on-color, var(--color-success));
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .repository-menu__trigger:is([data-shared="wait"], [data-shared="busy"])::after {
+      animation: link-row-pulse var(--share-row-pulse-duration, 1.4s) ease-in-out infinite;
+    }
+  }
+
+  @keyframes link-row-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+}

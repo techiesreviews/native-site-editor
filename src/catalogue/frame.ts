@@ -132,13 +132,22 @@ export async function startFrame(shown: NonNullable<ReturnType<typeof frameOf>>)
   const set = (): Values | undefined => {
     try { return host?.dataset.values ? { ...shown.values, ...JSON.parse(host.dataset.values) as Values } : undefined; } catch { return undefined; }
   };
+  // A frame already isolates its part. Replace its own stylesheet, so deleting a rule removes it too.
+  const componentPath = isPart(shown.entry) ? shown.entry.css : undefined;
+  const setComponentCss = () => {
+    if (!componentPath || host?.dataset.componentCss === undefined) return;
+    const style = document.querySelector<HTMLStyleElement>(`style[data-component="${CSS.escape(componentPath)}"]`);
+    if (style) style.textContent = host.dataset.componentCss;
+  };
   const setTweaks = () => { tweaks.textContent = host?.dataset.tweaks ?? ""; placeTweaks(); };
   if (host) {
+    setComponentCss();
     setTweaks();
     new MutationObserver((changes) => {
+      if (changes.some((change) => change.attributeName === "data-component-css")) setComponentCss();
       if (changes.some((change) => change.attributeName === "data-tweaks")) setTweaks();
       if (changes.some((change) => change.attributeName === "data-values")) { const values = set(); if (values) void draw(values); }
-    }).observe(host, { attributes: true, attributeFilter: ["data-values", "data-tweaks"] });
+    }).observe(host, { attributes: true, attributeFilter: ["data-values", "data-tweaks", "data-component-css"] });
   }
   await draw(set() ?? shown.values);
 }

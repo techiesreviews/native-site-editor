@@ -1,0 +1,8 @@
+{
+  "screen": "catalogue",
+  "name": "component-css",
+  "steps": [
+    "click exactly \"Sharing row\"",
+    "expect visible \"src/ui/share-row/share-row.css\""
+  ]
+}

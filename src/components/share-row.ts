@@ -2,7 +2,6 @@
 // and Edit together (src/components/share-menu.ts) each draw one, as Connect to MCP is drawn
 // (src/components/agent-menu.ts): a leading dot that is the only status, then the label. The row is the only control;
 // while a link is on, a copy icon fades in over the row's end. Loaded with the items (src/shares-later.ts).
-import "./share-row.css";
 import { setIcon } from "../icons";
 import { node } from "../ui/dom";
 

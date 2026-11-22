@@ -24,7 +24,7 @@ const on = (more: Partial<Extract<PreviewState, { on: true }>> = {}): PreviewSta
 
 async function inBrowser(run: (page: Page) => Promise<void>, context: BrowserContextOptions = {}) {
   const bundle = await build({
-    stdin: { contents: "import './src/theme.css'; import './src/style.css'; import { createRepositoryMenu } from './src/components/repository-menu'; import { previewItems, previewTile } from './src/components/preview-menu'; import { markTile } from './src/components/share-row'; import { createPreviewShare } from './src/preview-share'; globalThis.createPreviewShare = createPreviewShare; globalThis.menuFactory = createRepositoryMenu; globalThis.items = previewItems; globalThis.tile = previewTile; globalThis.markTile = markTile;", resolveDir: process.cwd(), loader: "ts" },
+    stdin: { contents: "import './src/theme.css'; import './src/style.css'; import './src/ui/parts.css'; import './src/ui/share-row/share-row.css'; import { createRepositoryMenu } from './src/components/repository-menu'; import { previewItems, previewTile } from './src/components/preview-menu'; import { markTile } from './src/components/share-row'; import { createPreviewShare } from './src/preview-share'; globalThis.createPreviewShare = createPreviewShare; globalThis.menuFactory = createRepositoryMenu; globalThis.items = previewItems; globalThis.tile = previewTile; globalThis.markTile = markTile;", resolveDir: process.cwd(), loader: "ts" },
     bundle: true, write: false, format: "iife", platform: "browser", outdir: "out", loader: { ".svg": "text", ".woff2": "empty", ".png": "empty" },
   });
   const browser = await chromium.launch({ headless: true });

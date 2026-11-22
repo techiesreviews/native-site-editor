@@ -1,16 +1,6 @@
-/* New file or folder. */
-.create-dialog {
-  width: min(420px, calc(100vw - 32px));
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-dialog);
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-.create-dialog::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.45); }
-.create-dialog__form { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
-.create-dialog__title { margin: 0; font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+/* New file or folder: the Confirm dialog shell with kind choices, fields and the page picker. */
+@import "../ui/confirm-dialog/confirm-dialog.css";
+
 .create-dialog__kinds { display: flex; gap: 6px; margin: 0; padding: 0; border: 0; }
 .create-dialog__kinds[hidden], .create-dialog__kind[hidden], .create-dialog__field[hidden] { display: none; }
 .create-dialog__kind { display: inline-flex; align-items: center; gap: 6px; min-height: var(--size-control); padding: 0 10px; border-radius: var(--radius); background: var(--surface-subtle); font-size: var(--type-base); cursor: pointer; }
@@ -32,9 +22,6 @@
   font-size: var(--type-base);
 }
 .create-dialog__field input:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
-.create-dialog__result { margin: 0; font-size: var(--type-small); line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
-.create-dialog__result.is-error { color: var(--warning-fg); }
-.create-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* The "+" beside a folder is an Icon button (src/ui/icon-button/), sized here. */
 .file-add {
@@ -44,9 +31,6 @@
 }
 .file-add:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 .file-new { flex-shrink: 0; padding: 0 5px; border-radius: var(--radius-small); background: var(--success-bg); color: var(--success-fg); font-size: var(--type-badge); font-weight: 600; line-height: 16px; letter-spacing: 0.04em; }
-.confirm-dialog__notes { display: flex; flex-direction: column; gap: 6px; }
-.confirm-dialog__option { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: var(--type-base); cursor: pointer; }
-.confirm-dialog__option[hidden] { display: none; }
 
 /* Move to…: where a page can go. */
 .page-picker__tree { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 2px; max-height: 50dvh; overflow: auto; }

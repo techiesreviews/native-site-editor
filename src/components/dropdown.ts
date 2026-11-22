@@ -1,4 +1,3 @@
-import "./dropdown.css";
 
 /** Shared, nonmodal dropdown behavior for navigation and repository actions. */
 export function mountDropdown(options: {

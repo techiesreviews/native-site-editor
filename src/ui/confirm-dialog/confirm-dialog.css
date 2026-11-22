@@ -1,0 +1,72 @@
+/* The Confirm dialog component (and shared modal shell used by Create dialog, Page picker and component dialogs): a
+   modal question with a title, notes, optional checkbox and actions. Its whole look in one file on the components layer
+   (docs/wayfinder/atomic-catalogue/css-layers-plan.md). Its --confirm-dialog-* hooks hold their defaults as fallbacks
+   where read; a screen may set a hook in its own unlayered CSS. */
+@layer tokens, elements, components;
+
+@layer components {
+  .create-dialog {
+    width: var(--confirm-dialog-width, min(420px, calc(100vw - var(--space-l) - var(--space-xs))));
+    padding: 0;
+    border: 1px solid var(--confirm-dialog-border-color, var(--line));
+    border-radius: var(--confirm-dialog-radius, var(--radius-dialog));
+    background: var(--confirm-dialog-background, var(--surface));
+    color: var(--confirm-dialog-text-color, var(--text));
+    box-shadow: var(--confirm-dialog-shadow, var(--shadow));
+
+    &::backdrop {
+      background: var(--confirm-dialog-backdrop, oklch(from var(--semantic-shadow) l c h / 0.45));
+    }
+
+    & .create-dialog__form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--confirm-dialog-gap, calc(var(--space-s) + var(--space-4xs)));
+      padding: var(--confirm-dialog-padding, var(--space-m));
+    }
+
+    & .create-dialog__title {
+      margin: 0;
+      font-size: var(--confirm-dialog-title-font-size, var(--type-title));
+      font-weight: var(--confirm-dialog-title-font-weight, 600);
+      overflow-wrap: anywhere;
+    }
+
+    & .create-dialog__result {
+      margin: 0;
+      font-size: var(--confirm-dialog-result-font-size, var(--type-small));
+      line-height: 1.5;
+      color: var(--confirm-dialog-muted-color, var(--muted));
+      overflow-wrap: anywhere;
+
+      &.is-error {
+        color: var(--confirm-dialog-error-color, var(--warning-fg));
+      }
+    }
+
+    & .create-dialog__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--confirm-dialog-actions-gap, var(--space-xs));
+    }
+
+    & .confirm-dialog__notes {
+      display: flex;
+      flex-direction: column;
+      gap: var(--confirm-dialog-notes-gap, var(--space-2xs));
+    }
+
+    & .confirm-dialog__option {
+      display: flex;
+      align-items: center;
+      gap: var(--confirm-dialog-option-gap, var(--space-xs));
+      margin: var(--confirm-dialog-option-margin-top, calc(var(--space-xs) + var(--space-4xs))) 0 0;
+      font-size: var(--type-base);
+      cursor: pointer;
+
+      &[hidden] {
+        display: none;
+      }
+    }
+  }
+}
