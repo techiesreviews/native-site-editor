@@ -449,7 +449,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   removeFinishStarter, knownRepositories, rememberRepositories,
   showProjects: (list, message, failed) => workspace.showProjects(list, message, failed),
 });
-onWarmCopyForgotten(() => { workspace.stopProjectMemory(); forgetProjects(); });
+onWarmCopyForgotten(forgetProjects);
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
 draftStore().baseline = (scope, path) => {

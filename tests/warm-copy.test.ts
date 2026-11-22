@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asWarmCopy, forgetWarmCopy, MAX_TEXT_LENGTH, MAX_TREE_ENTRIES, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
+import { asWarmCopy, forgetWarmCopy, onWarmCopyForgotten, MAX_TEXT_LENGTH, MAX_TREE_ENTRIES, provenTexts, readWarmCopy, warmFor, writeWarmCopy, type WarmCopy } from "../src/warm-copy.ts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 import type { Repository, TreeEntry } from "../shared/types.ts";
 
@@ -150,4 +150,16 @@ test("after another context's version change closes the connection, the next kee
   fake.versionChange();
   await writeWarmCopy(copy({ branch: "next", snapshot: { ...copy().snapshot, branch: "next" } }), fake.factory);
   assert.equal((await readWarmCopy(fake.factory))?.branch, "next");
+});
+
+test("sign-out notifications identify one account or all accounts and can be unsubscribed", async () => {
+  const { factory } = fakeIndexedDB(), notices: unknown[] = [];
+  const unsubscribe = onWarmCopyForgotten(notice => { notices.push(notice); });
+  try {
+    await forgetWarmCopy(factory, { login: "lex", all: false });
+    await forgetWarmCopy(factory, { all: true });
+    unsubscribe();
+    await forgetWarmCopy(factory, { all: true });
+    assert.deepEqual(notices, [{ login: "lex", all: false }, { all: true }]);
+  } finally { unsubscribe(); }
 });
