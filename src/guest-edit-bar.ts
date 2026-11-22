@@ -17,7 +17,7 @@ import { GUEST_NOT_KEPT, GUEST_OTHER_PAGE, GUEST_UPLOAD_BYTES, guestPhoto, type 
 import { blobOfDataUrl } from "./data-url-blob";
 import { nativeKindLabel } from "./native-structure";
 import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
-import { GUEST_PICTURES_MAX, type GuestMessage, type HostMessage } from "./live-session";
+import { GUEST_PICTURES_MAX, GUEST_RENDERS_KEPT, type GuestMessage, type HostMessage } from "./live-session";
 
 type FrameLink = ReturnType<typeof createPreviewLink>;
 type Target = { path: string; node: number[] };
@@ -334,7 +334,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     const mine = { key: key(target), on: seen, again: false };
     textReading = mine;
     try {
-      const on = seen;
+      const on = mine.on;
       const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
         sources().catch(() => undefined), import("./native-text-size"), import("./whole-wrapper"),
       ]);
@@ -472,8 +472,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     render();
     clearTimeout(reread);
     if (!next || next.tag === "img" || context?.path !== next.path) return;
-    // A new selection or settled change reads at once; other refreshes wait for renders to pause.
-    if (moved || shown) void readText(next);
+    // Keep the proof inside Lex's retained renders during long edits, without reading on every render.
+    const readOn = textReading?.key === key(next) ? textReading.on : text?.on;
+    if (moved || shown || readOn !== undefined && seen - readOn >= GUEST_RENDERS_KEPT / 2) void readText(next);
     else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
   }
 
