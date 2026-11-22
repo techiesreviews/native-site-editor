@@ -28,7 +28,6 @@ export function planRepositoryOpen(input: {
   linked?: WorkspaceLocation;
   hashPresent: boolean;
   knownBefore?: readonly number[];
-  remembered?: WorkspaceLocation;
 }): RepositoryOpenPlan {
   const { list, linked } = input;
   if (!list.length) return { kind: "empty" };
@@ -40,9 +39,7 @@ export function planRepositoryOpen(input: {
     const added = list.filter((repo) => !known.has(repo.id));
     if (added.length === 1 && !linked) return { kind: "open", id: added[0].id };
   }
-  const previous = linked;
-  const remembered = previous && list.find((repo) => repo.id === previous.repoId);
-  if (remembered) return { kind: "open", id: remembered.id, resume: previous };
+  if (linked) return { kind: "open", id: linked.repoId, resume: linked };
   return { kind: "choose" };
 }
 

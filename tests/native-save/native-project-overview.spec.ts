@@ -1,5 +1,26 @@
 import { test, expect } from '@playwright/test';
 
+test('a new browser distinguishes a pending and failed list from an empty account @smoke', async ({ page, baseURL }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/repositories*', async route => {
+    await held;
+    await route.fulfill({ status: 500, json: { error: 'GitHub is unavailable' } });
+  });
+  try {
+    await page.goto(`${baseURL}/`);
+    await expect(page.getByText('Checking GitHub…', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add from GitHub', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'No sites in your list', exact: true })).toHaveCount(0);
+    release();
+    await expect(page.getByRole('button', { name: 'Reload repositories', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'No sites in your list', exact: true })).toHaveCount(0);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.getByRole('button', { name: 'Reload repositories', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Continue editing', exact: true })).toBeVisible();
+  } finally { release(); }
+});
+
 test('the root opens projects without loading a site, then opens only the clicked site @smoke', async ({ page, baseURL }) => {
   const siteReads: string[] = [];
   page.on('request', request => {

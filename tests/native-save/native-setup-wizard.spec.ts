@@ -216,7 +216,6 @@ test("back from GitHub without installing the App: Connect GitHub explains the t
   // The retry goes to GitHub's install page once more, in this tab, and carries on.
   await control(page, baseURL, { cancelInstall: false });
   await page.getByRole("link", { name: "Connect GitHub" }).click();
-  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   expect((await state(page, baseURL!)).installs).toBe(1);
   await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);

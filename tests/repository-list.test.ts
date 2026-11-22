@@ -123,10 +123,14 @@ test("sign-out of the last account forgets the signed-in mark and the boot memor
   rememberSignedIn(ports.local);
   writeBootMemory(ports.local, { login: "lex", repoId: 1, fullName: "lex/site-1", branch: "main", commit: "a".repeat(40), files: [] });
   answer = () => new Response(null, { status: 204 });
+  ports.local.setItem("native-site-editor:projects:v1:lex", "private picture");
+  ports.local.setItem("native-site-editor:projects:v1:other", "other private picture");
   assigned.length = 0;
   await list.disconnect();
   assert.equal(signedInBefore(ports.local), false);
   assert.equal(readBootMemory(ports.local, 1), undefined);
+  assert.equal(ports.local.getItem("native-site-editor:projects:v1:lex"), null);
+  assert.equal(ports.local.getItem("native-site-editor:projects:v1:other"), null);
   assert.equal(calls.cleared, 1);
   assert.deepEqual(assigned, ["/"]);
 });
@@ -136,10 +140,14 @@ test("sign-out with another account left forgets only the boot memory", async ()
   rememberSignedIn(ports.local);
   writeBootMemory(ports.local, { login: "lex", repoId: 1, fullName: "lex/site-1", branch: "main", commit: "a".repeat(40), files: [] });
   answer = () => new Response(null, { status: 200 });
+  ports.local.setItem("native-site-editor:projects:v1:lex", "private picture");
+  ports.local.setItem("native-site-editor:projects:v1:other", "other private picture");
   assigned.length = 0;
   await list.disconnect();
   assert.equal(signedInBefore(ports.local), true);
   assert.equal(readBootMemory(ports.local, 1), undefined);
+  assert.equal(ports.local.getItem("native-site-editor:projects:v1:lex"), null);
+  assert.equal(ports.local.getItem("native-site-editor:projects:v1:other"), "other private picture");
   assert.deepEqual(assigned, ["/"]);
 });
 
@@ -235,7 +243,7 @@ test("a listing before the session has a user offers the choice of a project", a
     await list.loadRepositories();
     assert.deepEqual(chosen, []);
     assert.deepEqual(errors, []);
-    assert.deepEqual(calls.projects, [[A, B]]);
+    assert.deepEqual(calls.projects, [undefined, [A, B]]);
   } finally {
     pageStorage.removeItem("astro-site-editor:workspace:v1:lex");
   }
@@ -244,7 +252,7 @@ test("a listing before the session has a user offers the choice of a project", a
 test("no repositories, with setup dismissed, shows the project overview", async () => {
   const { list, calls } = fixture([], undefined, { dismissed: true });
   await list.loadRepositories();
-  assert.deepEqual(calls.projects, [[]]);
+  assert.deepEqual(calls.projects, [undefined, []]);
   assert.equal(calls.opened, 0);
 });
 
@@ -252,7 +260,7 @@ test("no repositories for a new user waits for an explicit Add project", async (
   const { list, calls } = fixture([], undefined, { dismissed: false });
   await list.loadRepositories();
   assert.equal(calls.opened, 0);
-  assert.deepEqual(calls.projects, [[]]);
+  assert.deepEqual(calls.projects, [undefined, []]);
 });
 
 test("a failed listing says so and offers Reload", async () => {
