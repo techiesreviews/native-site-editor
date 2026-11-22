@@ -1,6 +1,7 @@
 // The opening project overview: cached summaries, search, list/grid and explicit site opening.
 import { button, node } from "../ui/dom";
 import { projectCard } from "../ui/project-card/project-card";
+import { iconButton } from "../ui/icon-button/icon-button";
 import { reported } from "../ui/report-failure";
 import listIcon from "@phosphor-icons/core/regular/list.svg?raw";
 import gridIcon from "@phosphor-icons/core/regular/squares-four.svg?raw";
@@ -35,13 +36,12 @@ export function createProjectOverview(options: {
   let view = "list", projects: ProjectMemory[] = [], phase: "loading" | "ready" | "error" = "loading";
   try { if (localStorage.getItem(layoutKey) === "grid") view = "grid"; } catch { /* List is the default without browser storage. */ }
   const views = ["List", "Grid"].map(name => {
-    const control = button("", () => {
+    const control = iconButton(name, svgElement(sizedSvg(name === "List" ? listIcon : gridIcon, 14)), { title: false, action: () => {
       view = name.toLowerCase();
       try { localStorage.setItem(layoutKey, view); } catch { /* The choice still works for this visit. */ }
       draw();
-    });
-    control.setAttribute("aria-label", name);
-    control.append(svgElement(sizedSvg(name === "List" ? listIcon : gridIcon, 14)), node("span", "project-overview__view-label", name));
+    } });
+    control.append(node("span", "project-overview__view-label", name));
     layout.append(control);
     return control;
   });

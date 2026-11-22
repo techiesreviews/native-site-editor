@@ -1,5 +1,5 @@
 // A project's picture and details, with one open action and a separate options button.
-import type { ProjectMemory } from "../../project-memory";
+import type { Repository } from "../../../shared/types";
 import { button, node } from "../dom";
 import { icon } from "../../icons";
 import { badgePart } from "../badge/badge";
@@ -7,7 +7,7 @@ import { iconButton } from "../icon-button/icon-button";
 import "./project-card.css";
 import "../badge/badge.css";
 
-export function projectCard(project: ProjectMemory, options: {
+export function projectCard(project: { repo: Pick<Repository, "id" | "name" | "full_name">; branch: string; opened?: number; picture?: string }, options: {
   mode: "featured" | "row" | "grid";
   open(): void;
   more(anchor: HTMLElement): void;

@@ -37,7 +37,7 @@
   .project-card--row + .project-card--row { border-block-start: 0; }
   .project-card--grid { grid-template-columns: minmax(0, 1fr); padding: 0; overflow: clip; gap: 0; }
   .project-card--grid .project-card__picture { grid-area: 1 / 1; border-radius: 0; }
-  .project-card--grid .project-card__info { grid-area: 1 / 1; align-self: end; padding: var(--space-l) var(--space-s) var(--space-xs); background: linear-gradient(transparent, var(--media-scrim)); color: var(--on-media); opacity: 0; }
+  .project-card--grid .project-card__info { grid-area: 1 / 1; z-index: var(--layer-raised); align-self: end; padding: var(--space-l) var(--space-s) var(--space-xs); background: linear-gradient(transparent, var(--media-scrim)); color: var(--on-media); opacity: 0; }
   .project-card--grid :is(.project-card__source, .project-card__open) { --text-btn-text-color: var(--on-media); color: var(--on-media); }
   .project-card--grid .project-card__more { opacity: 0; }
   .project-card--grid:focus-within :is(.project-card__info, .project-card__more) { opacity: 1; }

@@ -1,7 +1,6 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import type { ProjectMemory } from "../../project-memory.ts";
 
 registerHooks({ load: (url, context, next) => /\.css$|\?raw$/.test(url)
   ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context) });
@@ -26,7 +25,7 @@ const fake = (element: HTMLElement) => element as unknown as Element;
 const all = (element: Element): Element[] => [element, ...element.children.flatMap(all)];
 
 test("every project card has separate open and options actions with a closed, named menu", () => {
-  const project: ProjectMemory = { repo: { id: 1, name: "<img onerror=alert(1)>", full_name: "lex/site", default_branch: "main", private: true,
+  const project = { repo: { id: 1, name: "<img onerror=alert(1)>", full_name: "lex/site", default_branch: "main", private: true,
     owner: { login: "lex", type: "User" } }, branch: "draft", opened: 1 };
   for (const mode of ["featured", "row", "grid"] as const) {
     let opened = 0, menuAnchor: HTMLElement | undefined;

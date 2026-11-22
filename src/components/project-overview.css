@@ -15,8 +15,7 @@
 .project-overview__search > .icon { position: absolute; inset-inline-start: var(--space-xs); inset-block-start: 50%; translate: 0 -50%; pointer-events: none; }
 .project-overview__bar .repository-menu__search { margin: 0; inline-size: 100%; min-block-size: max(var(--size-control), var(--size-tap)); padding-inline-start: calc(var(--space-xs) * 2 + var(--size-icon)); }
 .project-overview__layout { display: flex; gap: var(--space-3xs); }
-.project-overview__layout .button { min-block-size: max(var(--size-control), var(--size-tap)); }
-.project-overview__layout .button[aria-pressed="true"] { --btn-background: var(--pressed); --btn-hover-background: var(--pressed); --btn-text-color: var(--on-pressed); }
+.project-overview__layout .icon-button { display: inline-flex; justify-content: center; gap: var(--space-3xs); inline-size: auto; min-inline-size: max(var(--size-control), var(--size-tap)); block-size: max(var(--size-control), var(--size-tap)); padding-inline: var(--space-xs); }
 .project-overview__state:empty { display: none; }
 .project-overview__results { display: grid; gap: var(--space-m); align-content: start; min-inline-size: 0; }
 .project-overview__results > :is(p, h1) { margin: 0; }
