@@ -18,6 +18,7 @@
 .project-overview__layout .button { min-block-size: max(var(--size-control), var(--size-tap)); }
 .project-overview__results { display: grid; gap: var(--space-m); align-content: start; min-inline-size: 0; }
 .project-overview__results > :is(p, h1) { margin: 0; }
+.project-overview__results > h1 { font-size: var(--type-heading); letter-spacing: normal; }
 .project-overview__results > .button { justify-self: start; }
 .project-overview__list { display: grid; min-inline-size: 0; }
 .project-overview__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 272px), 1fr)); gap: var(--space-m); }
