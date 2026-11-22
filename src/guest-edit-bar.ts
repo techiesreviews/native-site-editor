@@ -334,7 +334,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
-    if (sending?.key === key(target)) return;
+    if (sending?.key === key(target) || typingAhead()) return;
     if (textReading?.key === key(target) && textReading.on === seen && textReading.epoch === textEpoch) { textReading.again = true; return; }
     const ticket = ++reading;
     const mine = { key: key(target), on: seen, epoch: textEpoch, again: false };
@@ -486,7 +486,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (!next || next.tag === "img" || context?.path !== next.path) return;
     // Keep the proof inside Lex's retained renders during long edits, without reading on every render.
     const readOn = textReading?.key === key(next) ? textReading.on : text?.on;
-    if (moved || shown || readOn !== undefined && seen - readOn >= GUEST_RENDERS_KEPT / 2) void readText(next);
+    const needsText = text && text.epoch !== textEpoch && textReading?.epoch !== textEpoch;
+    if (moved || shown || !typingAhead() && needsText || readOn !== undefined && seen - readOn >= GUEST_RENDERS_KEPT / 2) void readText(next);
     else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
   }
 
@@ -554,11 +555,16 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     typing(seq: number) {
       if (closed || !Number.isInteger(seq)) return;
       const was = typingAhead();
+      textEpoch++;
       // A fresh frame numbers its typing from 1 again: the last letter sent is the one to wait for.
       typedSent = seq;
       if (seq <= typedShown) typedShown = seq - 1;
       clearTimeout(typedTimer);
-      typedTimer = setTimeout(() => { typedShown = typedSent; render(); }, RENDER_WAIT_MS);
+      typedTimer = setTimeout(() => {
+        typedShown = typedSent;
+        render();
+        if (selected && selected.tag !== "img" && context?.path === selected.path) void readText(selected);
+      }, RENDER_WAIT_MS);
       if (!was) render();
     },
     close() {

@@ -10,7 +10,7 @@ declare global {
     guestBarRace: {
       bar: ReturnType<typeof createGuestEditBar>;
       sent: GuestMessage[];
-      select(tag: "img" | "p" | "h2", render?: boolean, node?: number[]): void;
+      select(tag: "img" | "p" | "h2", render?: boolean, node?: number[], typed?: number): void;
       answer(source: string, ask?: number): void;
       picture(path?: string): void;
       delaySources(source: string, ms: number): void;
@@ -54,10 +54,10 @@ async function mount(page: Page) {
     };
     window.guestBarRace = {
       bar, sent, answer,
-      select(tag, changed = false, node) {
+      select(tag, changed = false, node, typed) {
         if (changed) {
           // Only the render number is consumed by the bar; the frame reports its selection below.
-          bar.receive({ t: "render", n: ++render, typed: {}, colours: {}, payload: { html: "", css: "" } });
+          bar.receive({ t: "render", n: ++render, typed: typed === undefined ? {} : { anna: typed }, colours: {}, payload: { html: "", css: "" } });
         }
         receive({ source: FRAME_SOURCE, type: "select", context: frameLink.context(), path: "index.html", tag,
           node: node ?? [0, tag === "img" ? 0 : 1], rect: { top: 100, left: 100, bottom: 130, right: 400, width: 300, height: 30 } });
@@ -347,6 +347,42 @@ test("Bold waits for the read confirming the guest's preceding Text size change"
     seen: 1, change: { kind: "bold", on: true },
   });
   await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
+test("text controls wait for the read confirming the guest's typed letters", async ({ page }) => {
+  for (const control of ["Bold", "Text size"]) {
+    await mount(page);
+    await page.evaluate(() => window.guestBarRace.select("p"));
+    await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+    const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+    const size = bar(page).getByRole("combobox", { name: "Text size" });
+    await expect(bold).toHaveAttribute("aria-pressed", "false");
+    await page.evaluate(() => {
+      window.guestBarRace.bar.typing(1);
+      window.guestBarRace.select("p", true);
+    });
+    await page.clock.runFor(1_201);
+    expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(1);
+    await page.evaluate(() => window.guestBarRace.select("p", true, undefined, 1));
+    await expect(bold).toHaveAttribute("aria-disabled", "true");
+    await expect(size).toHaveAttribute("aria-disabled", "true");
+    // Even a forced DOM event while the fresh read is held cannot send an unconfirmed proof.
+    if (control === "Bold") await bold.evaluate((button: HTMLButtonElement) => button.click());
+    else await size.evaluate((select: HTMLSelectElement) => {
+      select.value = "1.25rem";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "change").length)).toBe(0);
+    await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+    await page.evaluate(text => window.guestBarRace.answer(text), source("Plain typed"));
+    await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+    if (control === "Bold") await bold.click();
+    else await size.selectOption("1.25rem");
+    await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({
+      seen: 2, change: { kind: control === "Bold" ? "bold" : "size" },
+    });
+    await page.evaluate(() => window.guestBarRace.bar.close());
+  }
 });
 
 test("a cancelled picker's late change answer cannot stop a newly opened picker's thumbnails", async ({ page }) => {
