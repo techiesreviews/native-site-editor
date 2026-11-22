@@ -137,7 +137,6 @@ export interface WorkspaceMountPorts {
   view: Pick<View, "fileGeneration" | "setCurrentPage">;
   preview: Pick<Preview, "nativeModeActive" | "updateNativePreviewSources" | "nativeRouteForPath" | "nativePreviewBehind" | "nativeRouteInfo" | "nativePageStyles">;
   textIndex: Pick<TextIndex, "noteNativePainted">;
-  afterPaint(run: () => void): void;
   /** Media's host (src/controllers/media-host.ts); its pictures, reader and image popup also serve session guests' edit bars (TOOLS-185). */
   media: { mediaController: Pick<ReturnType<typeof createMediaController>, "disposeGallery" | "mediaEnded" | "chooseImage" | "guestImage" | "workspaceContext">;
     nativeImagePaths(): string[] };
@@ -573,7 +572,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         if (repository && branch && login && pictureKey && structure.items.length && !pictured.has(pictureKey)) {
           pictured.add(pictureKey);
           const at = session.begin();
-          ports.afterPaint(() => {
+          afterPaint(() => {
             if (!at.holds()) return;
             void ensureProjects().then(host => {
               if (at.holds() && ports.nativePreview) host?.picture(ports.nativePreview, structure.path, repository, branch, () => at.holds());
