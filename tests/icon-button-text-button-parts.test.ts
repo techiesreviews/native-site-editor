@@ -109,14 +109,14 @@ test("Media's Download original and suggested name use the underlined text butto
 });
 
 test("the old copies are gone: no screen styles the icon button's or the text button's look", () => {
-  const looks = copiesInStyles(read("src/style.css")).filter(({ kind }) => kind === "buttonLooks").map(({ text }) => text);
+  const looks = copiesInStyles(read("src/screens/topbar.css")).filter(({ kind }) => kind === "buttonLooks").map(({ text }) => text);
   assert.ok(!looks.some((text) => /\.(icon|text)-button\b/.test(text)), looks.join("\n"));
   for (const [path, cls] of [["src/ui/flyout/flyout.css", "flyout__icon-button"], ["src/page-builder/components.css", "component-panel__"], ["src/components/repository-menu.css", "repository-menu__heading-button"]])
     assert.deepEqual(copiesInStyles(read(path)).filter(({ text }) => text.includes(cls)), [], `${path} sizes its icon and text buttons but gives them no look`);
 });
 
 test("the top bar sizes only its own icon buttons, never those in the menus that open inside it", () => {
-  const css = read("src/style.css");
+  const css = read("src/screens/topbar.css");
   assert.doesNotMatch(css, /\.topbar \.icon-button\b/, "the project menu opens inside .topbar, so this would grow its Reload and Refresh buttons");
   assert.equal([...css.matchAll(/^\s*\.topbar-actions \.icon-button \{/gm)].length, 2, "the bar's own size, and its phone size");
   assert.match(read("src/components/commit-history.css"), /^\.commit-history :is\(\.commit-history__refresh, \.commit-history__more\)\.icon-button \{\s*flex: none;\s*width: var\(--size-icon\);\s*height: var\(--size-icon\);/m,

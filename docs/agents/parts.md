@@ -417,10 +417,15 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Pages and files explorer | The Files explorer's own actions: Create (the + dialog), a row's menu, renaming and dropping. | `src/pages-and-files-explorer.ts` | `tests/await-race-guard.test.ts`, `tests/pages-and-files-host.test.ts` |
 | Preview visit | A preview link's page, on the preview Worker's address (worker/preview-host.ts), never the editor's: a customer sees the real site, its own scripts running, as Lex edits it. | `src/preview-visit.ts` `src/preview-visit.css` | `tests/frame-guard.test.ts` |
 | Repository list | The repository list and the account: listing the selected repositories and opening the planned one (loadRepositories), listing them again after a visit to GitHub's access page (refreshRepositoryList), switching… | `src/repository-list.ts` | `tests/repository-list.test.ts`, `tests/workspace-session-guard.test.ts` |
+| Explorer | The editor's explorer screen layout and overrides, above the component layers. | `src/screens/explorer.css` | none yet |
+| Notices | The editor's notices screen layout and overrides, above the component layers. | `src/screens/notices.css` | none yet |
+| Topbar | The editor's topbar screen layout and overrides, above the component layers. | `src/screens/topbar.css` | none yet |
+| Welcome | The editor's welcome screen layout and overrides, above the component layers. | `src/screens/welcome.css` | none yet |
+| Workspace | The editor's workspace screen layout and overrides, above the component layers. | `src/screens/workspace.css` | none yet |
 | Setup host | Login and setup: the welcome page (signed out it is the login page), Start your site, setup in the Inbox, the Setup wizard and a starting point that stopped part way. | `src/setup-host.ts` | `tests/setup-host.test.ts`, `tests/workspace-session-guard.test.ts` |
 | Site download | Download site: the repository's files as the editor has them, unsaved drafts included, zipped as they are. | `src/site-download.ts` | `tests/preview-share.test.ts`, `tests/site-download.test.ts` |
 | Site loading | Site loading: reading a native site's pages, templates, stylesheets, component styles and assets for the preview, its files for Download site, opening it (activateNativeSite), the top bar's page label, the file… | `src/site-loading.ts` | `tests/site-loading.test.ts` |
-| Style | The editor's CSS on the Techies Framework layers: theme tokens, bare elements, then components each in a file of its own. | `src/style.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |
+| Style | The editor layers, then unlayered screen layout. | `src/style.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |
 | Theme | Hands the theme's colours to what cannot read CSS variables (Monaco, the preview overlay) and keeps them in step. | `src/theme.ts` | none yet |
 | Escape | Text for markup strings: the parts' option modules turn words into HTML text, so every word passes through here. | `src/ui/escape.ts` | `src/ui/escape.test.ts` |
 | Parts | The editor's parts' own files, in one import of src/main.ts (which keeps under its line ceiling). | `src/ui/parts.css` | `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts` |

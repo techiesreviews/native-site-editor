@@ -2,7 +2,7 @@
 
 Lex, 2026-11-11 (Orbit TOOLS-207): direct access to all the CSS of a component, one file per component with its own
 defaults, edited in CSS on the design board, with layers deciding which rule wins. This plan maps today's CSS onto
-the layers and orders the slices. Slices 1, 2 and 3 are done; slices 4 to 7 remain.
+the layers and orders the slices. Slices 1 to 7 are done.
 
 ## The layers
 
@@ -82,7 +82,7 @@ Rules that matter for every slice:
 4. **Tokens** (done). `src/theme.css` (and the generator's output) on `@layer tokens`.
 5. **Elements** (done). The rest of the bare element rules onto `elements` in `src/elements.css`; what was left of `src/utilities.css` (the reset) folded in.
 6. **Molecules** (done). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
-7. **Screen layout** (open). `src/style.css` split by screen into unlayered editor files; it keeps only the order line
+7. **Screen layout** (done). `src/style.css` split by screen into unlayered editor files; it keeps only the order line
    and its imports. Waits for the top bar work (ticket 66 and the phone layout) to land.
 
 Open for Lex later: the Framework names its variants `data-variant="secondary"` and `data-size="small"`; the editor

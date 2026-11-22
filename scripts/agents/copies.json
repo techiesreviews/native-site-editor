@@ -57,8 +57,17 @@
     "src/page-builder/media-popup-frame.ts": { "buttons": 1, "dialogs": 1 },
     "src/page-builder/palette.ts": { "dialogs": 1 },
     "src/page-builder/shape-menu.ts": { "buttons": 1 },
-    "src/style.css": { "badgeLooks": 1 },
+    "src/screens/welcome.css": { "badgeLooks": 1 },
     "src/workspace-shell.ts": { "buttons": 8 }
   },
-  "waivers": []
+  "waivers": [
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/welcome.css",
+      "kind": "badgeLooks",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 moves the existing welcome badge rule from style.css into screens/welcome.css. The total number of copies is unchanged."
+    }
+  ]
 }

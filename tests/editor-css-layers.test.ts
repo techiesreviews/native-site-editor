@@ -215,3 +215,14 @@ test("the design board shows each migrated component's own CSS file", () => {
     assert.match(part.css, /^src\/ui\/([\w-]+)\/\1\.css$/, `${part.id}: its CSS file is a component file`);
   }
 });
+
+
+test("the editor entry only orders layers and imports its unlayered screens", () => {
+  const css = withoutComments(read("src/style.css")).trim();
+  const screens = ["topbar", "workspace", "welcome", "notices", "explorer"];
+  for (const name of screens) {
+    assert.match(css, new RegExp(`@import "\\./screens/${name}\\.css";`));
+    assert.doesNotMatch(withoutComments(read(`src/screens/${name}.css`)), /@layer\b/, `${name} stays above the component layers`);
+  }
+  assert.equal(css.replace(ORDER, "").replace(/@import "[^";]+";/g, "").trim(), "", "screen rules never return to the entry file");
+});

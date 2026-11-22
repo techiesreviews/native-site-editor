@@ -212,7 +212,7 @@ its number unused.
 ### F-repo-14 Choose a project with none open
 - Try: At 390 px with no project open, tap the page button, then Choose a project; or tap Choose a project on the welcome.
 - Good: The panel says no project is open and offers Choose a project, never an empty search box; both open the project list, and a project chosen there shows its Pages, Media and Files (U4).
-- Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`, `src/style.css`
+- Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`, `src/style.css`, `src/screens/*.css`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-project-choice.spec.ts`
 - Steps: none yet (scripted tries start inside a project; the spec opens the editor with none)
@@ -962,7 +962,7 @@ its number unused.
 ### F-code-02 Linked styles pane
 - Try: Select a heading and look at the second pane.
 - Good: The stylesheet rule that styles it opens beside the page, with chips for the rules that apply. On a phone (U4) a chip is 44 px to tap and 28 px to see, and both panes' titles are tall enough for the 44 px chip, so their code starts level (as in Lex's approved prototype, TOOLS-269).
-- Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`, `src/style.css`
+- Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`, `src/style.css`, `src/screens/*.css`
 - Phone: yes
 - Spec: `tests/native-save/native-selector.spec.ts`, `tests/native-save/native-phone-tap-targets.spec.ts`
 - Steps: `scripts/agents/shots/features/F-code-02.json`
@@ -1250,7 +1250,7 @@ its number unused.
 ### F-inbox-01 The Inbox in the top bar
 - Try: At 1280 px look between History and Publish, then click the tray button. Press Escape. Do it again on a site where nothing waits.
 - Good: A 28 px tray button sits between History and Publish (mock-up 05 v2). While something waits it wears a small orange dot, never a number. Its panel opens under it, headed "Inbox", one row per item: an icon, what needs doing ("Picture without a description") and where ("Home page", "/about/"), with the first row focused. Nothing waiting: no dot, and the panel says "All done" with a check in one line; opened before the pages are read (or, after a switch, the new site's) it says "Checking pages…" and lists nothing. Escape or a click outside closes it and the keyboard goes back to the tray. A repository with no site says "All done". Rows drawn before a switch to another site or branch never act on the new one: the list is checked again. No toast and no explainer text. Light and dark (S1, S3, S4).
-- Files: `src/inbox/inbox-host.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/workspace-shell.ts`, `src/style.css`
+- Files: `src/inbox/inbox-host.ts`, `src/inbox/inbox.ts`, `src/inbox/inbox.css`, `src/workspace-shell.ts`, `src/style.css`, `src/screens/*.css`
 - Phone: no
 - Spec: `tests/native-save/native-inbox.spec.ts`
 - Steps: `scripts/agents/shots/features/F-inbox-01.json`
@@ -1282,7 +1282,7 @@ its number unused.
 ### F-inbox-05 The Inbox on a phone
 - Try: At 390 px, with something waiting, look at the bar, open the Menu, close it and tap the bar's Inbox button.
 - Good: The tray button stays on the phone's one-row bar as a 44 px target with the orange dot, as in the approved sketch (TOOLS-188); the Menu button has no dot and the Menu no Inbox row. Tapping the tray opens the Inbox panel within the screen, its rows and Decorative 44 px targets (U6); closing it brings the keyboard back to the tray.
-- Files: `src/style.css`, `src/inbox/inbox.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-menu-rules.ts`
+- Files: `src/style.css`, `src/screens/*.css`, `src/inbox/inbox.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-menu-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-inbox.spec.ts`
 - Steps: none yet (phone only; a feature try also runs at 1280 px, where the Menu is not shown)
@@ -1358,7 +1358,7 @@ its number unused.
 ### F-phone-03 Phone top bar, its Menu and the explorer
 - Try: On a phone tap the site and page name to open Pages; tap Menu and use its rows (Pages, Add a block, Page structure, Code, Screen size, History, Share a preview link, Site settings, Switch site).
 - Good: One 44 px row (the site and page name, Undo, Publish, Menu) and nothing else above the page: no block rail or canvas bar rows. The Menu is a bottom sheet over a dimmed page; a tap outside, Escape or the grabber closes it; each row does what its control does on a wide screen, Screen size shows the pressed size and stays open. The explorer never covers Publish (Lex's phone layout of 2026-11-11, U4, S4).
-- Files: `src/workspace-mount.ts`, `src/style.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
+- Files: `src/workspace-mount.ts`, `src/style.css`, `src/screens/*.css`, `src/components/top-bar-phone.ts`, `src/components/top-bar-phone.css`, `src/components/top-bar-menu-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-top-bar.spec.ts`, `tests/native-save/native-explorer-size.spec.ts`
 - Steps: none yet (the try also runs at 1280, where there is no phone top bar)
@@ -1382,7 +1382,7 @@ its number unused.
 ### F-phone-06 Slim top bar on a wide screen
 - Try: At 1280 px look along the top bar; open the project menu and the page button. Type in the page's heading, press Ctrl+Z, then press Redo.
 - Good: One 44 px row: the project tile (at the bar's own left padding, with no space of its own on the left) and name in 13 px, a thin faint "/", the page button (28 px, a muted caret), then Undo, Redo and History as 28 px buttons 4 px apart, and Publish (28 px) on the right with no divider before Publish (atomic catalogue ticket 66, version B; mock-up 05 v2). Ctrl+Z while typing on the page takes the typing back as the Undo button does: Undo greys out, Redo lights up and brings it back (TOOLS-220).
-- Files: `src/workspace-mount.ts`, `src/style.css`, `src/components/source-editor.css`, `src/components/native-preview-runtime.js`
+- Files: `src/workspace-mount.ts`, `src/style.css`, `src/screens/*.css`, `src/components/source-editor.css`, `src/components/native-preview-runtime.js`
 - Phone: no
 - Spec: `tests/native-save/native-top-bar.spec.ts`
 - Steps: none yet (desktop only)

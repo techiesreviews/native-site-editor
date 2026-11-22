@@ -132,7 +132,7 @@ export const SCREENS: readonly Mockup[] = [
   {
     id: "editor", area: "screens", name: "Editor",
     files: [
-      "src/workspace-shell.ts", "src/style.css", "src/components/repository-menu.ts", "src/components/repository-menu.css",
+      "src/workspace-shell.ts", "src/screens/topbar.css", "src/screens/workspace.css", "src/screens/explorer.css", "src/components/repository-menu.ts", "src/components/repository-menu.css",
       "src/components/page-structure.ts", "src/components/page-structure.css", "src/native-structure.ts",
       "src/components/sidebar-resize.ts", "src/components/sidebar-resize.css", "src/components/dropdown.ts", "src/components/files-tree.css",
       "src/components/canvas-bar.ts", "src/components/canvas-bar.css", "src/components/native-preview.css",

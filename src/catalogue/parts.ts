@@ -581,7 +581,7 @@ async function topBar(values: Values, phone: boolean, open: boolean) {
 const ORGANISMS: Part[] = [
   {
     id: "top-bar", area: "organisms", name: "Top bar", madeOf: ["button", "icon"], frame: { width: 1280, height: 64 },
-    files: ["src/workspace-shell.ts", "src/style.css", "src/components/top-bar-phone.ts", "src/components/top-bar-phone.css"],
+    files: ["src/workspace-shell.ts", "src/screens/topbar.css", "src/screens/workspace.css", "src/components/top-bar-phone.ts", "src/components/top-bar-phone.css"],
     defaults: { project: "techies-site", page: "Home" },
     controls: [text("project", "Project"), text("page", "Page")],
     rows: [{ label: "A page open" }, { label: "A long page name", values: { page: "Winter pruning: when to cut back roses, shrubs and fruit trees" } }],
@@ -590,7 +590,7 @@ const ORGANISMS: Part[] = [
   },
   {
     id: "top-bar-phone", area: "organisms", name: "Top bar on a phone", madeOf: ["button", "icon"], frame: { width: 390, height: 720 },
-    files: ["src/components/top-bar-phone.ts", "src/components/top-bar-phone.css", "src/components/top-bar-menu-rules.ts", "src/style.css"],
+    files: ["src/components/top-bar-phone.ts", "src/components/top-bar-phone.css", "src/components/top-bar-menu-rules.ts", "src/screens/topbar.css"],
     defaults: { project: "techies-site", page: "Home", menu: false },
     controls: [text("project", "Project"), text("page", "Page"), toggle("menu", "Menu open")],
     rows: [{ label: "The bar", values: { menu: false } }, { label: "Menu open", values: { menu: true } }],
