@@ -204,11 +204,11 @@ test('a branch list GitHub never answers shows the panel after four tries; Try a
   await installClock(page);
   const reads = { seen: 0, failing: true };
   await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
-  // The site remembered from an earlier visit, not named in the address: the open waits for the branch list.
-  // A linked site's snapshot, asked by the page itself (src/boot-early.ts), proves its branch and opens it
-  // without the list, as a remembered boot does.
+  // Opening a project from the overview waits for the branch list. A linked site's
+  // early snapshot proves its branch and would bypass the branch-list request.
   await page.addInitScript(() => localStorage.setItem('astro-site-editor:workspace:v1:native-demo-user', JSON.stringify({ repoId: 501, branch: 'main', path: 'index.html' })));
   await page.goto(`${baseURL}/`);
+  await page.getByRole('button', { name: 'native-demo', exact: true }).click();
   await failFourTries(page, reads);
   await expect(notice(page)).toContainText(SAID);
   await expect(page.locator('#content')).toContainText('Branches could not be loaded.');
