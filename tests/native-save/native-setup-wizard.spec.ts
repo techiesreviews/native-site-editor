@@ -46,12 +46,12 @@ async function newBrowser(context: BrowserContext, baseURL: string) {
 }
 
 /** Signed out, the account has nothing yet: the App is not installed and there are no repositories. One button; the worker does the rest. */
-async function startSignedOut(page: Page, baseURL: string, controls: object = {}) {
+async function startSignedOut(page: Page, baseURL: string, controls: Record<string, unknown> = {}) {
   await newBrowser(page.context(), baseURL);
   await control(page, baseURL, { reset: true, repositories: "none", installed: false, ...controls });
   await page.goto(`${baseURL}/`);
   await page.getByRole("link", { name: "Continue with GitHub" }).click();
-  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
+  if (controls.installOauth !== false) await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   // Sign in, install (GitHub's install page, never an editor screen in between), back signed in: the wizard.
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
