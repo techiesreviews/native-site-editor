@@ -1,0 +1,91 @@
+/* The editor's explorer screen layout and overrides, above the component layers. */
+/* Pages, Media and Files (mock-up 05 v2, version B): one white panel from the left edge, under the project /
+   page path, 6px below the bar and 12px above the window's bottom; its own list scrolls inside. */
+.explorer.dropdown-panel {
+  padding: var(--space-xs) var(--space-s) var(--space-s);
+  width: min(760px, calc(100vw - 16px));
+  inset-block-end: var(--space-s);
+  block-size: auto;
+  max-height: none;
+  flex-direction: column;
+  overflow: clip;
+  border: 1px solid var(--line);
+}
+.explorer.dropdown-panel:popover-open {
+  display: flex;
+}
+/* A Files row dragged out of the explorer: the box steps aside (faded, and the pointer passes
+   through it) so the code under it takes the drop; it comes back on drop or cancel. */
+.explorer.is-stepping-aside {
+  pointer-events: none;
+  opacity: 0.15;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .explorer.dropdown-panel { transition: opacity 150ms ease-out; }
+}
+/* The shown tab fills the box; its own list scrolls inside. */
+.explorer-panel:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.explorer #files {
+  flex: 1;
+  max-height: none;
+  min-height: 80px;
+  overflow: auto;
+}
+
+/* No project open: the panel says so and offers the project list (src/workspace-mount.ts), instead of an empty search. */
+.explorer:has(> .explorer-none:not([hidden])) > :not(.explorer-none) { display: none; }
+.explorer-none { display: grid; justify-items: start; gap: var(--space-s); padding: var(--space-xs); }
+.explorer-none[hidden] { display: none; }
+.explorer-none p { margin: 0; color: var(--muted); }
+.explorer-none .button { min-height: var(--size-touch); }
+
+/* The explorer's one head row: Pages | Media | Files, the search, and the tab's New (mock-up 05 v2). */
+.explorer-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); padding-block-end: var(--space-xs); }
+.explorer-search {
+  position: relative;
+  flex: 1 1 12rem;
+  display: flex;
+  min-width: 0;
+}
+.explorer-search::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 var(--space-xs);
+  width: 14px;
+  background: var(--muted);
+  mask: url("@phosphor-icons/core/regular/magnifying-glass.svg") center / 14px no-repeat;
+  pointer-events: none;
+}
+.explorer-search > input {
+  flex: 1;
+  min-width: 0;
+  block-size: max(var(--size-control), var(--size-tap));
+  padding-inline: calc(var(--space-xs) * 3) var(--space-xs);
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font: inherit;
+}
+.explorer-search > input:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+/* Touch: at least 16px (the spacing step of that size), so focusing the field never zooms the page. */
+@media (hover: none), (pointer: coarse) { .explorer-search > input { font-size: max(var(--space-m), var(--type-base)); } }
+.explorer-new-slot { display: contents; }
+.explorer:not([data-tab="pages"]) .pages-new,
+.explorer:not([data-tab="files"]) #new-at-root,
+.explorer[data-tab="media"] .explorer-search { display: none; }
+
+/* The explorer anchors to the whole top bar, rather than its own trigger. */
+@supports (position-area: bottom) {
+  .explorer.dropdown-panel {
+    position-area: none;
+    inset: calc(anchor(--topbar bottom) + var(--space-2xs)) auto var(--space-s) var(--space-xs);
+    margin: 0;
+    justify-self: start;
+  }
+}

@@ -1,0 +1,322 @@
+/* The editor's welcome screen layout and overrides, above the component layers. */
+.welcome {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 80px 65px 45px;
+}
+.intro-label {
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 22px;
+}
+.intro {
+  font-size: 15px;
+  color: var(--muted);
+  line-height: 1.8;
+  max-width: 470px;
+  margin: 0 0 27px;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 22px;
+
+  padding-top: 30px;
+  margin-top: 65px;
+}
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.step strong {
+  font-size: var(--type-base);
+  font-weight: 600;
+}
+.step > span:last-child {
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.command {
+  display: block;
+  padding: 10px 13px;
+  background: var(--selected);
+  border-radius: var(--radius-small);
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  margin: 12px 0;
+}
+.directory-summary {
+  padding: 64px;
+  max-width: 830px;
+  margin: 0 auto;
+}
+.directory-summary h1 {
+  font-size: 36px;
+  margin-top: 20px;
+  overflow-wrap: anywhere;
+}
+.upload-summary__image {
+  display: block;
+  max-width: 100%;
+  max-height: 50vh;
+  margin: 0 0 24px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.badge {
+  display: inline-flex;
+  font-size: var(--type-small);
+  border: 0;
+  color: var(--link);
+  background: var(--surface-subtle);
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+.project-meta {
+  margin-top: 30px;
+  font-size: var(--type-base);
+}
+.project-meta > div {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  padding: 12px 0;
+}
+.next-step {
+  padding: 3px 0 3px 16px;
+  font-size: var(--type-small);
+  line-height: 1.8;
+  color: var(--muted);
+  margin-top: 35px;
+}
+@media (min-width: 1500px) {
+  .welcome {
+    padding-top: 110px;
+  }
+  .directory-summary {
+    padding-top: 90px;
+  }
+}
+@media (max-width: 1050px) {
+  .welcome,
+  .directory-summary {
+    padding: 48px 35px;
+  }
+  .steps {
+    gap: 12px;
+  }
+}
+@media (max-width: 650px) {
+  .welcome,
+  .directory-summary {
+    padding: 35px 24px;
+  }
+  .intro {
+    font-size: 14px;
+  }
+  .steps {
+    margin-top: 35px;
+    gap: 15px;
+  }
+}
+
+/* Authentication is a separate view; the editor shell is mounted only after sign-in. */
+#app.login-page {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--background);
+}
+/* The slim top bar over the login page (TOOLS-188): the project menu's place, with no project yet. */
+.welcome-bar {
+  display: flex;
+  align-items: center;
+  min-block-size: var(--size-touch);
+  padding-inline: var(--space-xs);
+  border-block-end: 1px solid var(--line);
+  background: var(--surface);
+}
+/* The welcome page: "Where does your site live?" with one card per place (GitHub
+   for now). The same page signed out (the login page) and for a signed-in
+   account with nothing to open yet (in the workspace content). */
+.welcome-page {
+  min-block-size: 100%;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: calc(var(--space-l) + var(--space-xs)) var(--space-m) max(calc(var(--space-l) * 2), env(safe-area-inset-bottom));
+  text-align: center;
+  background:
+    radial-gradient(60% 50% at 15% 0%, var(--current), transparent 70%),
+    radial-gradient(55% 55% at 90% 10%, var(--surface-subtle), transparent 70%);
+}
+.welcome-page__hello {
+  display: inline-flex;
+  align-items: center;
+  block-size: 28px;
+  margin: 0;
+  padding-inline: var(--space-s);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  /* The link blue, readable on the pill in both themes (the action blue is too dark on a dark pill). */
+  color: var(--link);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.welcome-page h1 {
+  margin: var(--space-m) 0 calc(var(--space-l) + var(--space-3xs));
+  font-size: clamp(var(--type-heading), 4.4vw, calc(var(--type-heading) * 2));
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.welcome-page__choices {
+  display: grid;
+  gap: var(--space-l);
+  inline-size: min(100%, 408px);
+  text-align: start;
+}
+.welcome-page__choice {
+  display: grid;
+  padding: var(--space-s);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.welcome-page__picture {
+  aspect-ratio: 384 / 206;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-subtle);
+  pointer-events: none;
+  user-select: none;
+}
+.welcome-page__picture img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  scale: 1.4;
+}
+.welcome-page__body {
+  display: grid;
+  gap: var(--space-s);
+  padding: var(--space-m) var(--space-xs) var(--space-2xs);
+}
+.welcome-page h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  font-size: var(--type-heading);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+/* The GitHub mark sits beside the words, not centred like an icon alone. */
+.welcome-page h2 .icon { margin-inline: 0; }
+.welcome-page .login-notice {
+  inline-size: min(100%, 408px);
+  text-align: start;
+}
+.login-button {
+  width: 100%;
+}
+  .login-button.button {
+    --btn-min-block-size: var(--size-touch);
+    --btn-font-size: var(--type-title);
+  }
+.login-state {
+  color: var(--muted);
+  font-size: var(--type-small);
+  text-align: center;
+  margin: 8px 0;
+}
+/* The same card for loading, signing in by itself and the button: the action
+   keeps its height, so nothing jumps when the answer arrives. */
+.login-action {
+  min-height: calc(var(--size-control) + 20px);
+}
+.login-busy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  min-height: var(--size-control);
+}
+.login-cancel {
+  display: block;
+  margin: 2px auto 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  font-size: var(--type-small);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.login-cancel:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+.login-spinner {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--control-line);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: login-spin 0.9s linear infinite;
+}
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-spinner {
+    animation: none;
+    border-top-color: var(--control-line);
+    border-right-color: var(--primary);
+  }
+}
+.login-setup {
+  margin-top: 16px;
+  font-size: var(--type-small);
+  color: var(--muted);
+}
+.login-setup summary {
+  cursor: pointer;
+  color: var(--link);
+}
+.login-notice {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  font-size: var(--type-base);
+  padding: 12px;
+  border-radius: var(--radius);
+  margin-top: 12px;
+}
+.login-notice[hidden] {
+  display: none;
+}
+.login-notice .text-link {
+  display: block;
+  margin-top: 8px;
+}
+@media (max-width: 680px) {
+  .welcome-page__picture {
+    aspect-ratio: 384 / 150;
+  }
+}

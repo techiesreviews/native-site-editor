@@ -1,0 +1,37 @@
+/* The editor's notices screen layout and overrides, above the component layers. */
+.notice {
+  background: var(--warning-bg);
+
+  color: var(--warning-fg);
+  padding: 11px 26px;
+  font-size: var(--type-base);
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: center;
+}
+.notice[hidden] {
+  display: none;
+}
+.empty-message {
+  color: var(--muted);
+  padding: 40px;
+  font-size: var(--type-base);
+}
+/* Try again on a failed panel (its own line under the words) or in the notice. */
+.empty-message .button, .notice .button {
+  min-block-size: max(var(--size-control), var(--size-tap));
+}
+.empty-message .button {
+  display: block;
+  margin-block-start: var(--space-s);
+}
+@media (max-width: 650px) {
+  .notice {
+    padding: 12px 18px;
+    justify-content: flex-start;
+  }
+  .empty-message {
+    padding: 24px;
+  }
+}

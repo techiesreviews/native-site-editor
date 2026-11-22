@@ -1,0 +1,255 @@
+/* The editor's workspace screen layout and overrides, above the component layers. */
+#app {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.muted {
+  color: var(--muted);
+}
+.workspace {
+  display: grid;
+  grid-template-columns: var(--sidebar-width, 280px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.sidebar {
+  background: var(--surface-subtle);
+
+  padding: 0 20px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* A strip as tall as the canvas bar beside it, in the sidebar's colour. */
+  min-height: 36px;
+  margin: 0 -20px 8px;
+  padding: 4px 12px 4px 20px;
+}
+/* A section heading: the same in the sidebar, the explorer and the menus. */
+.eyebrow {
+  font-size: var(--type-small);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--muted);
+}
+.workspace--sidebar-collapsed .sidebar {
+  padding: 0;
+  overflow: visible;
+}
+.workspace--sidebar-collapsed .sidebar > :not(.sidebar-resize) {
+  display: none;
+}
+.code-split {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+.code-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.code-pane[hidden] {
+  display: none;
+}
+.code-pane__title {
+  padding: 6px 16px;
+  font-size: var(--type-small);
+  color: var(--muted);
+  background: var(--surface-toolbar);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.code-pane__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.code-pane__title > span:first-child {
+  flex: none;
+}
+.code-pane__rules {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.code-pane__rule {
+  flex: none;
+  display: inline-flex;
+  gap: 5px;
+  padding: 1px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--selected);
+  color: var(--link);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--type-small);
+  line-height: 18px;
+}
+.code-pane__rule:active {
+  background: var(--surface-raised);
+}
+@media (hover: hover) and (pointer: fine) {
+  .code-pane__rule:hover {
+    background: var(--surface-raised);
+  }
+}
+.code-pane__rule-file,
+.code-pane__rule-origin {
+  color: var(--muted);
+  font-family: inherit;
+}
+.code-pane__rule-origin {
+  font-family: system-ui, sans-serif;
+}
+/* Rules the cascade could not settle (a state, an unmet or unverified condition). */
+.code-pane__rule--neutral {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+/* Rules whose every declaration loses: listed last, crossed out. */
+.code-pane__rule--overridden {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--muted);
+}
+.code-pane__rule--overridden .code-pane__rule-selector {
+  text-decoration: line-through;
+}
+/* On a phone (theme.css's --size-tap switch) a chip is 44 px to tap and 28 px to see: a clear band above and below the
+   pill takes the finger. The title keeps its top padding, where the code's resize grip (code-resize.css) reaches over
+   it, so all 44 px are the chip's; the band below takes the bottom padding. With the second pane open both titles are
+   that tall, so their code starts level. */
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  .has-secondary .code-pane__title {
+    box-sizing: border-box;
+    min-block-size: calc(var(--size-tap) + var(--space-2xs));
+  }
+  .code-pane__rules {
+    margin-block-end: calc(-1 * var(--space-2xs));
+  }
+  .code-pane__rule {
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    block-size: var(--size-tap);
+    /* A short selector (p, h1) is as wide as a finger too. */
+    min-inline-size: var(--size-tap);
+    padding-block: 0;
+    padding-inline: calc(var(--space-xs) + var(--space-4xs));
+    border-block: calc((var(--size-tap) - var(--size-compact)) / 2) solid transparent;
+    /* Round ends on the 28 px pill inside the clear band: the browser halves these radii to fit the box, so the
+       corners are as wide as half the pill and as tall as half the 44 px chip, and round once the band is taken off. */
+    border-radius: var(--size-compact) / var(--size-tap);
+    background-clip: padding-box;
+  }
+  /* The focus ring goes round the pill a person sees, not the clear band. The transparent outline stays for forced
+     colours, which drop box shadows and paint it in a system colour. */
+  .code-pane__rule:focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: calc((var(--size-compact) - var(--size-tap)) / 2);
+    box-shadow: var(--focus-ring-inset);
+  }
+  /* Forced colours paint the transparent band too: in the page's own colour it shows no bar above and below the pill. */
+  @media (forced-colors: active) {
+    .code-pane__rule { border-color: Canvas; }
+  }
+}
+.code-pane > .workspace-content {
+  flex: 1;
+}
+.sidebar-hint {
+  font-size: var(--type-small);
+  line-height: 1.7;
+  margin: 16px 0;
+}
+#files {
+  flex: 1;
+  overflow: auto;
+  max-height: calc(100dvh - 390px);
+  min-height: 140px;
+  margin: 0 -8px;
+}
+main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+main > .code-split {
+  flex: 1;
+}
+#breadcrumb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-content {
+  max-height: 100%;
+  overflow: auto;
+  min-height: 0;
+}
+@media (max-width: 1050px) {
+  .workspace {
+    grid-template-columns: var(--sidebar-width, 240px) minmax(0, 1fr);
+  }
+}
+@media (max-width: 650px) {
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* The shown sidebar leaves room at its bottom for its handle bar
+     (sidebar-resize.css); the hidden one keeps a strip for it. */
+  .sidebar {
+    padding: 0 18px 28px;
+  }
+  .workspace--sidebar-collapsed .sidebar {
+    min-height: 20px;
+  }
+  .sidebar-heading {
+    margin: 0 -18px 8px;
+    padding-left: 18px;
+  }
+  #files {
+    max-height: 240px;
+    min-height: 30px;
+  }
+  .sidebar-hint {
+    margin: 5px 0;
+  }
+  .workspace-content {
+    max-height: none;
+    min-height: 350px;
+  }
+}
+
+/* Keep announcements available without a visible status footer. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

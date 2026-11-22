@@ -59,7 +59,11 @@
     "src/page-builder/media-picker.css": { "spacing": 134, "radii": 29, "shadows": 9, "timings": 6, "localProperties": 14, "zIndex": 16, "fontSizes": 3 },
     "src/page-builder/media-spot-popup.css": { "spacing": 4, "radii": 1 },
     "src/preview-visit.css": { "spacing": 2, "zIndex": 1 },
-    "src/style.css": { "spacing": 53, "radii": 4, "shadows": 1, "timings": 2, "fontSizes": 6 },
+    "src/screens/explorer.css": { "timings": 1 },
+    "src/screens/notices.css": { "spacing": 5 },
+    "src/screens/topbar.css": { "spacing": 1, "radii": 1, "fontSizes": 3 },
+    "src/screens/welcome.css": { "spacing": 32, "radii": 2, "timings": 1, "localProperties": 2, "fontSizes": 3 },
+    "src/screens/workspace.css": { "spacing": 15, "radii": 1, "shadows": 1 },
     "src/tokens/framework-editor.css": { "localProperties": 8 },
     "src/ui/editor-scrollbars.css": { "radii": 2 },
     "src/ui/inline-field/inline-field.css": { "shadows": 4 }
@@ -80,6 +84,110 @@
       "from": 0,
       "to": 3,
       "reason": "TOOLS-401 slice 5: moved bare element rules from src/style.css to src/elements.css (net one-offs fell)"
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/explorer.css",
+      "kind": "timings",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/notices.css",
+      "kind": "spacing",
+      "from": 0,
+      "to": 5,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/topbar.css",
+      "kind": "spacing",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/topbar.css",
+      "kind": "radii",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/topbar.css",
+      "kind": "fontSizes",
+      "from": 0,
+      "to": 3,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/welcome.css",
+      "kind": "spacing",
+      "from": 0,
+      "to": 32,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/welcome.css",
+      "kind": "radii",
+      "from": 0,
+      "to": 2,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/welcome.css",
+      "kind": "timings",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/welcome.css",
+      "kind": "localProperties",
+      "from": 0,
+      "to": 2,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/welcome.css",
+      "kind": "fontSizes",
+      "from": 0,
+      "to": 3,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/workspace.css",
+      "kind": "spacing",
+      "from": 0,
+      "to": 15,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/workspace.css",
+      "kind": "radii",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
+    },
+    {
+      "date": "2026-11-22",
+      "file": "src/screens/workspace.css",
+      "kind": "shadows",
+      "from": 0,
+      "to": 1,
+      "reason": "TOOLS-401 redistributes the existing style.css rules into screen files. No CSS declarations were added; the two existing Button hooks now count as unlayered screen properties."
     }
   ]
 }
