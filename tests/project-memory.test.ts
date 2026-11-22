@@ -38,3 +38,10 @@ test("removing a project only hides its card until it is opened again", () => {
   keepOpenedProject(memory, "lex", repo(1), "main");
   assert.equal(readProjects(memory, "lex")[0].hidden, false);
 });
+test("a late thumbnail from another open tab cannot restore a removed card", () => {
+  const memory = store();
+  keepOpenedProject(memory, "lex", repo(1), "main");
+  hideProject(memory, "lex", 1);
+  keepOpenedProject(memory, "lex", repo(1), "main", "data:image/webp;base64,YQ==");
+  assert.equal(readProjects(memory, "lex")[0].hidden, true);
+});
