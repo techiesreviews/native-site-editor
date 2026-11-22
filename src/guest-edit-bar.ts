@@ -102,6 +102,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   const thumbnails = new Map<string, string>();
   const wanted = new Map<string, number>();
   const waiting = new Map<string, Set<(url: string | undefined) => void>>();
+  let thumbnailRetry: ReturnType<typeof setInterval> | undefined;
   // Each request waiting for its answer from Lex's tab, by number.
   const asks = createGuestAsks(send);
   // The address typed into the link's field, sent when the field closes (one Undo step for Lex).
@@ -171,19 +172,20 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       const list = waiting.get(path) ?? new Set();
       waiting.set(path, list);
       const done = (url: string | undefined) => {
-        clearTimeout(timer);
         list.delete(done);
         if (!list.size && waiting.get(path) === list) waiting.delete(path);
+        if (!waiting.size) { clearInterval(thumbnailRetry); thumbnailRetry = undefined; }
         resolve(url);
       };
-      const retry = () => { want([path]); timer = setTimeout(retry, WANT_MS); };
-      let timer = setTimeout(retry, WANT_MS);
       list.add(done);
+      thumbnailRetry ??= setInterval(() => want([...waiting.keys()]), WANT_MS);
       want([path]);
     });
   }
 
   function stopThumbnails() {
+    clearInterval(thumbnailRetry);
+    thumbnailRetry = undefined;
     for (const list of [...waiting.values()]) for (const done of [...list]) done(undefined);
   }
 
