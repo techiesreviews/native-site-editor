@@ -32,6 +32,71 @@ test('Remove from list hides only the card and keeps the repository available @s
   await expect(page.locator(`.project-overview [data-open="${id}"]`)).toHaveCount(1);
 });
 
+test('removing a project in one tab keeps it hidden when another tab returns to projects @smoke', async ({ page, context, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  const other = await context.newPage();
+  try {
+    await other.goto(`${baseURL}/`);
+    await other.locator('.project-overview [data-open="501"]').click();
+    await expect(other.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+    await page.getByRole('button', { name: 'Options for native-demo', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Remove from list', exact: true }).click();
+    await expect(page.locator('.project-overview [data-open="501"]')).toHaveCount(0);
+    const hidden = () => other.evaluate(() => {
+      const projects = JSON.parse(localStorage.getItem('native-site-editor:projects:v1:native-demo-user') ?? '[]');
+      return projects.find((project: { repo: { id: number }; hidden?: boolean }) => project.repo.id === 501)?.hidden;
+    });
+    expect(await hidden()).toBe(true);
+    await other.locator('.repository-menu__trigger').click();
+    await other.locator('#repository-actions').getByRole('button', { name: 'All projects', exact: true }).click();
+    await expect(other.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
+    expect(await hidden()).toBe(true);
+    await expect(other.locator('.project-overview [data-open="501"]')).toHaveCount(0);
+  } finally { await other.close(); }
+});
+
+declare global {
+  interface Window { projectPictureGate: { held: boolean; release(): void } }
+}
+
+test('sign-out in another tab blocks a held thumbnail from recreating project memory @smoke', async ({ page, context, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  const other = await context.newPage();
+  await other.clock.install();
+  await other.addInitScript(() => {
+    if (window !== window.top) return;
+    let held: MessageEvent | undefined, waiting = true;
+    window.projectPictureGate = { held: false, release() {
+      waiting = false;
+      if (held) window.dispatchEvent(new MessageEvent('message', { data: held.data, source: held.source, origin: held.origin }));
+    } };
+    window.addEventListener('message', event => {
+      if (!waiting || event.data?.type !== 'picture-result') return;
+      event.stopImmediatePropagation();
+      held = event;
+      window.projectPictureGate.held = true;
+    }, true);
+  });
+  const memory = () => other.evaluate(() => localStorage.getItem('native-site-editor:projects:v1:native-demo-user'));
+  try {
+    await other.goto(`${baseURL}/`);
+    await other.locator('.project-overview [data-open="501"]').click();
+    await expect.poll(() => other.evaluate(() => window.projectPictureGate.held)).toBe(true);
+    // Keep the picture's timeout paused while the other tab completes sign-out.
+    await other.clock.pauseAt(await other.evaluate(() => Date.now() + 1000));
+    await page.route('**/api/session', route => route.fulfill({ json: { configured: true, user: null, installUrl: null } }));
+    await page.route('**/auth/login*', route => route.abort());
+    await page.locator('.repository-menu__trigger').click();
+    await page.getByRole('button', { name: 'Sign out of native-demo-user', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Sign in to open your sites', exact: true })).toBeVisible();
+    await expect.poll(memory).toBeNull();
+    await other.evaluate(() => window.projectPictureGate.release());
+    // Settle the released frame reply with the controlled clock, without reaching its timeout.
+    await other.clock.runFor(50);
+    expect(await memory()).toBeNull();
+  } finally { await other.close(); }
+});
+
 test('a new browser distinguishes a pending and failed list from an empty account @smoke', async ({ page, baseURL }) => {
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });

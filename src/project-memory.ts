@@ -29,18 +29,26 @@ export function keepProjects(store: Store, login: string, list: Repository[]) {
 }
 
 export function keepOpenedProject(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
+  rememberProject(store, login, repo, branch, picture, !picture);
+}
+
+export function keepProjectPicture(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
+  rememberProject(store, login, repo, branch, picture);
+}
+
+function rememberProject(store: Store, login: string, repo: Repository, branch: string, picture?: string, reopening = false) {
   const previous = new Map(readProjects(store, login).map(project => [project.repo.id, project])), old = previous.get(repo.id);
   previous.delete(repo.id);
-  save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(!picture ? { hidden: false } : {}), ...(picture && picture.length <= 120000 ? { picture } : {}) },
+  save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(reopening ? { hidden: false } : {}), ...(picture && picture.length <= 120000 ? { picture } : {}) },
     ...previous.values()]);
 }
 
 export function hideProject(store: Store, login: string, id: number) {
-  save(store, login, readProjects(store, login).map(project => project.repo.id === id ? { ...project, hidden: true } : project));
+  return save(store, login, readProjects(store, login).map(project => project.repo.id === id ? { ...project, hidden: true } : project));
 }
 
 function save(store: Store, login: string, projects: ProjectMemory[]) {
   const recent = [...projects].sort((a, b) => (b.opened ?? 0) - (a.opened ?? 0)).slice(0, 12).map(p => p.repo.id);
   const kept = projects.map(p => recent.includes(p.repo.id) ? p : { ...p, picture: undefined });
-  try { store.setItem(key(login), JSON.stringify(kept)); } catch { /* Editing works without a kept overview. */ }
+  try { store.setItem(key(login), JSON.stringify(kept)); return true; } catch { return false; /* Editing works without a kept overview. */ }
 }

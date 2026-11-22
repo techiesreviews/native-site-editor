@@ -108,10 +108,18 @@ export function asWarmCopy(value: Partial<WarmCopy> | undefined): WarmCopy | und
 // Signed out here or in another tab: this page keeps nothing more in that storage (a tab leaving or a late timer included).
 const forgotten = new WeakSet<Factory>();
 const SIGNED_OUT = "native-site-editor-warm-copy";
+const forgetListeners = new Set<() => void>();
+export function onWarmCopyForgotten(listener: () => void) {
+  forgetListeners.add(listener);
+  return () => forgetListeners.delete(listener);
+}
 try {
   const heard = new BroadcastChannel(SIGNED_OUT);
   // A keep of this tab that raced the other tab's delete is undone too.
-  heard.onmessage = () => { if (globalThis.indexedDB) { forgotten.add(globalThis.indexedDB); void remove(globalThis.indexedDB); } };
+  heard.onmessage = () => {
+    if (globalThis.indexedDB) { forgotten.add(globalThis.indexedDB); void remove(globalThis.indexedDB); }
+    for (const listener of forgetListeners) listener();
+  };
   // Node's channel would keep a process (the unit tests) running; a browser's has no unref.
   (heard as { unref?: () => void }).unref?.();
 } catch { /* no other tabs to hear */ }
@@ -126,6 +134,7 @@ export function writeWarmCopy(copy: WarmCopy, factory: Factory | undefined = glo
 /** Sign-out: the copy goes, and neither this page nor another open tab keeps one again. */
 export function forgetWarmCopy(factory: Factory | undefined = globalThis.indexedDB): Promise<unknown> {
   if (factory) forgotten.add(factory);
+  for (const listener of forgetListeners) listener();
   try { const channel = new BroadcastChannel(SIGNED_OUT); channel.postMessage("signed-out"); channel.close(); } catch { /* no other tabs */ }
   return remove(factory);
 }
