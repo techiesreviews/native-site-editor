@@ -1,7 +1,6 @@
 // The opening project overview: cached summaries, search, list/grid and explicit site opening.
 import { button, node } from "../ui/dom";
 import { projectCard } from "../ui/project-card/project-card";
-import { textButton } from "../ui/text-button/text-button";
 import { reported } from "../ui/report-failure";
 import listIcon from "@phosphor-icons/core/regular/list.svg?raw";
 import gridIcon from "@phosphor-icons/core/regular/squares-four.svg?raw";
@@ -60,7 +59,7 @@ export function createProjectOverview(options: {
     }
     bar.hidden = false;
     if (!filtered.length) {
-      results.append(node("p", "muted", `No match for “${search.value.trim()}”`), textButton("Clear search", () => { search.value = ""; draw(); search.focus(); }));
+      results.append(node("p", "muted", `No match for “${search.value.trim()}”`), button("Clear search", () => { search.value = ""; draw(); search.focus(); }, "text-button"));
       return;
     }
     const cards = node("div", `project-overview__${view}`);

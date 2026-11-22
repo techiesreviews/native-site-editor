@@ -7,9 +7,8 @@ import type { readWorkspace } from "./workspace-state";
 import { createProjectOverview } from "./components/project-overview";
 import { draftStore } from "./drafts";
 import { readProjects, keepProjects, keepOpenedProject, type ProjectMemory } from "./project-memory";
-import { node } from "./ui/dom";
+import { button, node } from "./ui/dom";
 import { progress } from "./ui/progress/progress";
-import { textButton } from "./ui/text-button/text-button";
 import "./ui/progress/progress.css";
 
 export function createProjectOverviewHost(options: {
@@ -60,7 +59,7 @@ export function createProjectOverviewHost(options: {
       finishOpening();
       opening = node("section", "project-opening");
       opening.append(node("h1", "", `Opening ${repo.name}…`), progress({ label: `Opening ${repo.name}` }),
-        node("p", "muted", `${repo.full_name} · ${branch}`), textButton("Back to projects", () => options.back()));
+        node("p", "muted", `${repo.full_name} · ${branch}`), button("Back to projects", () => options.back(), "text-button"));
       options.main().prepend(opening);
     },
     finishOpening,
