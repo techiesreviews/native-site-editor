@@ -108,6 +108,7 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/agent-records.ts", match: { rule: "scope-compare", function: "attempt" }, reason: "A stored draft record belongs to the workspace key IndexedDB keeps it under." },
   { file: "src/agent-records.ts", match: { rule: "scope-compare", function: "settle" }, reason: "A stored receipt belongs to the workspace key IndexedDB keeps it under." },
   { file: "src/agent-records.ts", match: { rule: "scope-compare", function: "reconcile" }, reason: "A command's workspace against the store's key for this transaction (IndexedDB)." },
+  { file: "src/controllers/boot-controller.ts", match: { rule: "same-workspace", function: "planRepositoryOpen" }, reason: "Looks the linked repository up in the listing by its id, not a comparison of two workspaces.", count: 1 },
   { file: "src/boot-memory.ts", match: { rule: "same-workspace", function: "memoryMatches" }, reason: `${FOLLOW_UP} boot memory also requires the remembered repository name (slice 21 kept that rule beside \`same\`).` },
   { file: "src/agent-recovery.ts", match: { rule: "load-compare", function: "current" }, reason: `${OWN} the agent recovery's own reconnect counter.` },
   { file: "src/agent-recovery.ts", match: { rule: "load-compare", function: "attemptAlone" }, reason: `${OWN} the agent recovery's own reconnect counter.`, count: 2 },
