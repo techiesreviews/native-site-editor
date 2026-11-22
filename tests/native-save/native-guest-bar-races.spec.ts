@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { createGuestEditBar } from "../../src/guest-edit-bar";
 import type { GuestMessage } from "../../src/live-session";
+import { GUEST_RENDERS_KEPT } from "../../src/live-session";
 
 // Default fixture group. Exercise the real guest bar and Media picker with held host replies,
 // without the relay's encryption or network timing obscuring which reply crosses a render.
@@ -179,6 +180,35 @@ test("a read crossing a render keeps its original render for Bold and Text size 
     await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({
       t: "change", seen: 0, change: { kind: control === "Bold" ? "bold" : "size" },
     });
+    await page.evaluate(() => window.guestBarRace.bar.close());
+  }
+});
+
+test("ongoing renders refresh a text proof before the host forgets it", async ({ page }) => {
+  for (const control of ["Bold", "Text size"]) {
+    await mount(page);
+    await page.evaluate(() => window.guestBarRace.select("p", true));
+    await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+    await expect(bar(page).getByRole("button", { name: "Bold", exact: true })).toHaveAttribute("aria-pressed", "false");
+    for (let render = 1; render <= GUEST_RENDERS_KEPT + 5; render++) {
+      await page.evaluate(text => {
+        window.guestBarRace.select("p", true);
+        window.guestBarRace.answer(text);
+      }, source("Plain"));
+      await page.clock.runFor(200);
+      if (render === Math.ceil(GUEST_RENDERS_KEPT / 2)) {
+        expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+      }
+    }
+    const requests = await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length);
+    expect(requests).toBe(3);
+    if (control === "Bold") await bar(page).getByRole("button", { name: "Bold", exact: true }).click();
+    else await bar(page).getByRole("combobox", { name: "Text size" }).selectOption("1.25rem");
+    const change = await page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"));
+    expect(change?.t).toBe("change");
+    if (change?.t !== "change") throw new Error("The text change was not sent.");
+    expect(change.seen).toBeGreaterThan(GUEST_RENDERS_KEPT + 6 - GUEST_RENDERS_KEPT);
+    expect(change.seen).toBeLessThanOrEqual(GUEST_RENDERS_KEPT + 6);
     await page.evaluate(() => window.guestBarRace.bar.close());
   }
 });

@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { openEditor, openPages } from "../support/scenarios";
 import { clickOnText } from "./click-text";
 import { editorMounted, storedDraft } from "./drafts";
+import { GUEST_RENDERS_KEPT } from "../../src/live-session";
 
 // Edit together (slice 30, ticket 58; CONTEXT.md "Synced session"): Lex shares the page he shows from the project
 // menu's Edit together row (one row, as Connect to MCP: its dot and label are the state, the row the only control), and
@@ -532,6 +533,46 @@ test("guests change a heading's level, a paragraph's text size and bold from the
   await expect(annaFrame.locator(".hero h1")).toHaveText(heading, { timeout: 20_000 });
   await expect(annaFrame.locator(".hero p.lead strong")).toHaveCount(0);
 
+  await anna.context.close();
+  expect(pageErrors).toEqual([]);
+});
+
+test("guest Bold and Text size still reach Lex after more than 50 ongoing renders elsewhere", async ({ page: lex, browser, baseURL, context }) => {
+  test.setTimeout(120_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openEditor(lex, baseURL);
+  await editorMounted(lex);
+  const link = await share(lex), anna = await guest(browser);
+  const annaFrame = await joins(anna, link, "Anna");
+  await annaFrame.locator(".hero p.lead").click();
+  const bar = guestBar(anna.page), bold = bar.getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  for (const control of ["Bold", "Text size"]) {
+    // Keep edits 200 ms apart so the 1.2 s quiet period never arrives. The selected paragraph stays unchanged.
+    await lex.evaluate(async ({ count, control }) => {
+      const editor = await import("/src/components/source-editor.ts");
+      for (let render = 1; render <= count; render++) {
+        const text = editor.getMountedSource("index.html") ?? "";
+        const found = /(<h1\b[^>]*data-key="hero-title"[^>]*>)([^<]*)(<\/h1>)/.exec(text);
+        if (!found || found.index === undefined) throw new Error("The heading is not in the source.");
+        const start = found.index + found[1]!.length;
+        editor.replaceActiveRange({ path: "index.html", start, end: start + found[2]!.length, expected: found[2]!, text: `${control} ${render}` });
+        // fixed-wait: space edits 200 ms apart to keep the guest's 1.2 s reread debounce from settling.
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }, { count: GUEST_RENDERS_KEPT + 5, control });
+    await expect(annaFrame.locator(".hero h1")).toHaveText(`${control} ${GUEST_RENDERS_KEPT + 5}`);
+    await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+    if (control === "Bold") {
+      await bold.click();
+      await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('data-key="hero-lead"><strong>Edit plain HTML');
+    } else {
+      await bar.getByRole("combobox", { name: "Text size" }).selectOption("l");
+      await expect.poll(() => source(lex), { timeout: 20_000 }).toContain('data-key="hero-lead" style="font-size: 1.25rem"><strong>Edit plain HTML');
+    }
+    await expect(bar.locator(".edit-bar__warning")).toHaveCount(0);
+    await expect(bold).not.toHaveAttribute("aria-disabled", "true", { timeout: 20_000 });
+  }
   await anna.context.close();
   expect(pageErrors).toEqual([]);
 });
