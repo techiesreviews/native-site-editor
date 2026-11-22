@@ -41,6 +41,7 @@ async function openCreateSite(page: Page, baseURL: string | undefined) {
   await control(page, baseURL, { repositories: "none" });
   await page.goto(`${baseURL}/`);
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
 
@@ -91,11 +92,9 @@ test("the sign-in screen shows a loading state first, then one Continue with Git
   await expect(button).toBeVisible();
   await expect(button).toHaveAttribute("href", "/auth/login");
   expect(Math.abs((await card.boundingBox())!.height - before!.height), "the card does not jump").toBeLessThan(80);
-  // The welcome page (TOOLS-188): one question and one card, GitHub's.
-  await expect(page.getByRole("heading", { level: 1, name: "Where does your site live?" })).toBeVisible();
-  await expect(page.getByText("Welcome to Native Site Editor")).toBeVisible();
-  await expect(page.locator(".welcome-page__choice")).toHaveCount(1);
-  await expect(page.getByRole("heading", { level: 2, name: "On GitHub" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Sign in to open your sites" })).toBeVisible();
+  await expect(page.getByText("Your sites stay in your GitHub repositories.")).toBeVisible();
+  await expect(page.locator(".welcome-page__choice")).toHaveCount(0);
   // One way in: no second button.
   await expect(page.getByRole("button", { name: "Create your site" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Sign in with GitHub" })).toHaveCount(0);
@@ -149,11 +148,11 @@ test("the welcome page has the slim top bar: No projects yet, whose menu adds a 
   }
 });
 
-test("the welcome pill's words are readable in light and dark", async ({ page, baseURL }) => {
+test("the plain welcome heading is readable in light and dark", async ({ page, baseURL }) => {
   // TOOLS-188 new-user test: in dark mode the pill's blue words sat on a near-black pill (20b-phone-welcome-dark).
   await signedOutSession(page);
   await page.goto(`${baseURL}/`);
-  const pill = page.getByText("Welcome to Native Site Editor");
+  const pill = page.getByRole("heading", { name: "Sign in to open your sites" });
   await expect(pill).toBeVisible();
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
@@ -162,7 +161,7 @@ test("the welcome pill's words are readable in light and dark", async ({ page, b
       const canvas = document.createElement("canvas");
       canvas.width = canvas.height = 1;
       const context = canvas.getContext("2d")!;
-      return [style.color, style.backgroundColor].map(colour => {
+      return [style.color, getComputedStyle(document.documentElement).backgroundColor].map(colour => {
         context.clearRect(0, 0, 1, 1);
         context.fillStyle = colour;
         context.fillRect(0, 0, 1, 1);
@@ -212,6 +211,9 @@ for (const retry of ["menu", "Reload"] as const) test(`${retry} recovers an init
   retrySucceeds = retry === "menu";
   await page.locator(".repository-menu__trigger").click();
   if (retry === "Reload") await page.getByRole("button", { name: "Reload repositories", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No sites in your list", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site", exact: true })).toBeVisible();
   await expect(page.locator("#notice")).toBeHidden();
   await expect(page.locator("#content")).not.toContainText("Repositories could not be loaded.");

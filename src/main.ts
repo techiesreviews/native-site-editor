@@ -389,7 +389,7 @@ const workspace = createWorkspaceMount({
   // Declared further down: read at call time.
   get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; }, get agentCommands() { return agentCommands; },
   account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),
-    choose: () => chooseRepository(), load: () => loadSnapshot() },
+    choose: (resume) => chooseRepository(resume), load: () => loadSnapshot(), overview: () => { void loadRepositories(repositories); } },
 });
 const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, mountWorkspace, closeWorkspace,
   setupScope, showDirectory } = workspace;
@@ -425,6 +425,8 @@ const workspaceBoot = createWorkspaceBoot({
   get user() { return info?.user; }, get repositories() { return repositories; },
   source: () => location.origin + location.pathname,
   sessionTag: () => boot.sessionTag(),
+  showOpening: (repo, branch) => workspace.showOpening(repo, branch),
+  finishOpening: () => workspace.finishOpening(),
   draftsReady: () => boot.draftsReady(),
   storage, element, node, options, draftsOf: (scope) => draftStore().list(scope), deactivateNative, activateNativeSite,
 });
@@ -445,6 +447,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get repositoryMenu() { return workspace.repositoryMenu; }, get siteActions() { return workspace.siteActions; },
   nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage, chooseProject: () => workspace.chooseProject(),
   removeFinishStarter, showWelcome, knownRepositories, rememberRepositories,
+  showProjects: (list, message) => workspace.showProjects(list, message),
 });
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
@@ -464,7 +467,7 @@ const boot = createBootController({
   readSession: (early) => apiResponse<SessionInfo>("session", undefined, early),
   readRepositories: (refresh, early) => apiResponse<Repository[]>("repositories", refresh ? { refresh: "1" } : undefined, early),
   loadDrafts: (login) => draftStore().load(login), warmCopy: (login) => workspaceBoot.takeWarmCopy(login),
-  onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); },
+  onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); workspace.showProjects(); },
   session: () => info,
   // The source cache keys by account and drops another account's entries itself.
   adoptSession: (session) => { info = session; },

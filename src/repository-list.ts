@@ -58,6 +58,7 @@ export interface RepositoryListPorts {
   showWelcome(): void;
   knownRepositories(): number[] | undefined;
   rememberRepositories(list: Repository[]): void;
+  showProjects?(list?: Repository[], message?: string): void;
 }
 
 export function createRepositoryList(ports: RepositoryListPorts) {
@@ -103,6 +104,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
       const knownBefore = ports.boot.takeRefresh() ? ports.knownRepositories() ?? [] : undefined;
       ports.rememberRepositories(result);
+      ports.showProjects?.(result);
       const plan = planRepositoryOpen({
         list: ports.repositories,
         linked: readWorkspaceUrl(),
@@ -111,6 +113,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         remembered: ports.user ? readWorkspace(ports.user.login) : undefined,
       });
       if (plan.kind === "empty") {
+        if (ports.showProjects) return;
         options(ports.repositorySelect, [
           { value: "", label: "No selected repositories" },
         ]);
@@ -146,6 +149,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
         await ports.chooseRepository(plan.resume);
         return;
       }
+      if (ports.showProjects) { status("Choose a project to start."); return; }
       const panel = node("section", "welcome");
       panel.append(
         node("h1", "", "Open a project"),
@@ -161,6 +165,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     } catch (error) {
       if (at.holds()) {
         ports.boot.failed();
+        ports.showProjects?.(undefined, "Can’t reach GitHub. Reload projects to try again.");
         options(ports.repositorySelect, [
           { value: "", label: "Repositories unavailable" },
         ]);

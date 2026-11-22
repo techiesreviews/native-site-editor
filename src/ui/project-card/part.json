@@ -1,0 +1,6 @@
+{
+  "name": "Project card",
+  "for": "A saved project's picture, name, source and open action in a list, grid or featured card.",
+  "use": "`projectCard(project, { mode, open, more, unsaved })` from `src/ui/project-card/project-card.ts`.",
+  "variants": "featured, row, grid"
+}

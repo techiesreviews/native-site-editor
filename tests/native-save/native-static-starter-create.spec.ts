@@ -19,6 +19,7 @@ test('Create site commits the native starter and every public page works without
   await page.request.post(`${baseURL}/__demo/onboarding`, { data: { reset: true, repositories: 'none', installed: false } });
   await page.goto(baseURL!);
   await page.getByRole('link', { name: 'Continue with GitHub' }).click();
+  await page.getByRole('button', { name: 'Add from GitHub', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Create your site' })).toBeVisible();
   await page.getByLabel('Repository name').fill('native-proof');
   await page.getByRole('radio', { name: /Starter site/ }).check();

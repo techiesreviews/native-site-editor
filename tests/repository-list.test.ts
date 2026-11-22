@@ -213,14 +213,14 @@ test("a refused account switch shows the server's reason and stays on the page",
   assert.deepEqual(assigned, []);
 });
 
-test("the listing opens the account's remembered repository where it was left", async () => {
+test("the listing leaves the account's remembered repository closed until clicked", async () => {
   const resume = { repoId: B.id, branch: "dev", path: "about.html" };
   pageStorage.setItem("astro-site-editor:workspace:v1:lex", JSON.stringify(resume));
   try {
     const { ports, list, chosen, shown } = fixture([A, B]);
     await list.loadRepositories();
-    assert.deepEqual(chosen, [resume]);
-    assert.equal(ports.repositorySelect.value, String(B.id));
+    assert.deepEqual(chosen, []);
+    assert.equal(ports.repositorySelect.value, "");
     // The file selection counter is the host's, written through its setter.
     assert.equal(ports.fileGeneration, 1);
     assert.deepEqual(shown.files, []);
@@ -418,7 +418,7 @@ test("a listing without the kept repository, or with it renamed, opens the plain
     await settle();
     assert.equal(f.calls.loading, 2, `${JSON.stringify(listed)}: the plain listing runs`);
     assert.deepEqual(f.ports.repositories, listed);
-    assert.equal(f.warmed.at(-1), undefined, "and opens without the kept copy");
+    assert.equal(f.warmed.length, 1, "a root visit returns to the overview without reopening the kept site");
   }
 });
 

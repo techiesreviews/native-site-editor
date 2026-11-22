@@ -45,6 +45,7 @@ export function createRepositoryMenu(options: {
   onAccessChanged: () => void;
   onSwitchAccount: (login: string) => void;
   onSignOut: () => void;
+  onOverview?: () => void;
   onSiteSettings?: () => void;
   /** A row with finished work clicked: its project and branch open with its changes. */
   onNote?: (note: FinishedNote) => void;
@@ -103,6 +104,7 @@ export function createRepositoryMenu(options: {
   branch.append(node("option", "", "—"));
   const add = accessLink("Add repositories", "repository-menu__add");
   sites.append(heading, search, list, empty, select, branch);
+  if (options.onOverview) sites.prepend(button("All projects", options.onOverview, "text-button repository-menu__action"));
   if (add) sites.append(add);
   // The App's installations/new page lets the user pick the account or organisation.
   const another = options.installUrl ? anotherAccountLink(options.installUrl) : undefined;
@@ -421,8 +423,8 @@ export function createRepositoryMenu(options: {
     actions.hidden = !repo || (!showSiteActions && !options.onSiteSettings && !shares.length);
     siteSlot.hidden = !showSiteActions;
     repository.textContent = repo?.owner.login ?? "GitHub connected";
-    name.textContent = repo?.name ?? "Choose a project";
-    badge.replaceChildren(repo ? initial(repo.name) : node("span", "repository-menu__initial", "·"));
+    name.textContent = repo?.name ?? (repositories.length ? "All projects" : "No projects yet");
+    badge.replaceChildren(repo ? initial(repo.name) : node("span", "repository-menu__initial", "n"));
     currentFullName = repo?.full_name;
     label();
     render();
@@ -452,11 +454,13 @@ export function createRepositoryMenu(options: {
   /** The repositories to list, or none with a message while loading or after a failure. */
   function setRepositories(next: Repository[], message?: string) {
     repositories = next;
+    if (currentId === undefined) name.textContent = next.length ? "All projects" : "No projects yet";
     if (confirming !== undefined && !next.some((repo) => repo.id === confirming)) confirming = undefined;
     search.hidden = next.length < 6;
     empty.hidden = Boolean(next.length);
     if (!next.length) empty.textContent = message ?? "This editor can't use any of your repositories yet. Add one on GitHub.";
     render();
+    label();
   }
   setRepository();
   return {

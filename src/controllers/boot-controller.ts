@@ -40,10 +40,9 @@ export function planRepositoryOpen(input: {
     const added = list.filter((repo) => !known.has(repo.id));
     if (added.length === 1 && !linked) return { kind: "open", id: added[0].id };
   }
-  const previous = linked ?? input.remembered;
+  const previous = linked;
   const remembered = previous && list.find((repo) => repo.id === previous.repoId);
   if (remembered) return { kind: "open", id: remembered.id, resume: previous };
-  if (list.length === 1) return { kind: "open", id: list[0].id };
   return { kind: "choose" };
 }
 
@@ -192,7 +191,7 @@ export function createBootController(ports: BootPorts) {
         const hooks = { onStarted: (started: SessionStamp) => { handoff = { at: started, session }; } };
         // A repeat visit shows the site this browser showed last at once; the listing comes behind it (TOOLS-242),
         // taken while this boot's session is the one adopted (the open itself begins loads of its own).
-        const copy = installed ? undefined : await ports.warmCopy(session.user.login);
+        const copy = installed || !new URL(ports.url()).hash ? undefined : await ports.warmCopy(session.user.login);
         if (!current()) return;
         if (copy) {
           const held = () => ports.source() === source && ports.session() === session;

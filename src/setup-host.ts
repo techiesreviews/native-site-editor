@@ -16,7 +16,6 @@ import { createSetupEntryController, type SetupEntryPorts } from "./controllers/
 import type { DraftScope } from "./drafts";
 import type { createSetupActions } from "./setup-actions";
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
-import { iconMarkup } from "./icons";
 import { button, link, node } from "./ui/dom";
 import type { SessionStamp } from "./workspace-session";
 
@@ -53,27 +52,17 @@ export interface SetupHostPorts {
 
 // Addresses of the editor itself, independent of the opened site.
 export const EDITOR_LOGIN = "/auth/login";
-const WELCOME_PICTURE = "/onboarding/first-visit-on-github.webp";
 
 /**
- * The first page: where the site lives, with one card (GitHub) and its action
- * area. The same page for a visitor (the login page) and for a signed-in
- * account with nothing to open yet. While the session is checked the picture
- * stays out (its box keeps the size), so an editing session never loads it.
+ * The first page for a visitor or an account without projects. Its one action
+ * leads to GitHub or the account's setup flow.
  */
-function welcomeMarkup(titleId: string, actionId: string, picture = true) {
+function welcomeMarkup(titleId: string, actionId: string, signedIn = false) {
   return `
-      <p class="welcome-page__hello">Welcome to Native Site Editor</p>
-      <h1 id="${titleId}">Where does your site live?</h1>
-      <div class="welcome-page__choices">
-        <article class="welcome-page__choice">
-          <div class="welcome-page__picture">${picture ? `<img src="${WELCOME_PICTURE}" alt="" width="1536" height="768">` : ""}</div>
-          <div class="welcome-page__body">
-            <h2>${iconMarkup("github-logo", 20)}On GitHub</h2>
-            <div id="${actionId}" class="login-action"></div>
-          </div>
-        </article>
-      </div>`;
+      <span class="welcome-page__mark" aria-hidden="true">n</span>
+      <h1 id="${titleId}">${signedIn ? "No sites in your list" : "Sign in to open your sites"}</h1>
+      <p>${signedIn ? "Pick a repository from GitHub to open it here." : "Your sites stay in your GitHub repositories."}</p>
+      <div id="${actionId}" class="login-action"></div>`;
 }
 
 export function createSetupHost(ports: SetupHostPorts) {
@@ -91,7 +80,7 @@ export function createSetupHost(ports: SetupHostPorts) {
     // likely has projects. Then its menu loads, so only a signed-out visitor fetches it.
     ports.app.innerHTML = `
     <header class="welcome-bar" id="welcome-bar" aria-hidden="true"></header>
-    <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action", !checking)}
+    <main class="login-card welcome-page" aria-labelledby="login-title" data-mode="${mode}">${welcomeMarkup("login-title", "login-action")}
       <div id="notice" class="login-notice" role="alert" hidden></div>
     </main>
   `;
@@ -324,7 +313,7 @@ export function createSetupHost(ports: SetupHostPorts) {
     if (!ports.info.user || ports.repositories.length) return;
     const page = node("section", "welcome-page");
     page.setAttribute("aria-labelledby", "welcome-title");
-    page.innerHTML = welcomeMarkup("welcome-title", "welcome-action");
+    page.innerHTML = welcomeMarkup("welcome-title", "welcome-action", true);
     ports.content.replaceChildren(page);
     // Signed in already: the GitHub card goes straight to the Setup wizard.
     ports.element("welcome-action").append(button("Continue with GitHub", () => setupEntry.open(), "button primary login-button"));

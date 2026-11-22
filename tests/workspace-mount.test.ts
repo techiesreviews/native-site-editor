@@ -17,7 +17,7 @@ class FakeElement {
   children: FakeElement[] = [];
   listeners = new Map<string, (() => unknown)[]>();
   className = ""; textContent = ""; innerHTML = ""; id = ""; type = ""; value = "";
-  disabled = false; open = false;
+  disabled = false; open = false; dataset: Record<string, string> = {};
   constructor(readonly tag = "div") {}
   setAttribute() {}
   append(...children: FakeElement[]) { this.children.push(...children); }
@@ -35,7 +35,9 @@ class FakeElement {
 }
 let focused: FakeElement | undefined;
 const fakeGlobals = globalThis as Record<string, unknown>;
-const saved = ["document", "matchMedia", "window", "requestAnimationFrame"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+const saved = ["document", "matchMedia", "window", "requestAnimationFrame", "location", "localStorage"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+Object.defineProperty(globalThis, "location", { configurable: true, value: { hash: "#repo=501&branch=main" } });
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: () => null, setItem: () => {} } });
 fakeGlobals.document = { createElement: (tag: string) => new FakeElement(tag), getElementById: () => null };
 fakeGlobals.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 const windowListeners = new Map<string, (() => void)[]>();
@@ -66,6 +68,7 @@ function make(kind: string) {
 const last = (kind: string) => made.filter((record) => record.kind === kind).at(-1)!;
 fakeGlobals.workspaceMountStubs = {
   preview: make("preview"), structure: make("structure"), rail: make("rail"), dropdown: make("dropdown"), menu: make("menu"),
+  overview: make("overview"),
   siteActions: make("siteActions"), sidebar: make("sidebar"), rowMenu: make("rowMenu"), resize: make("resize"),
   // Set: the code editor (Monaco) chunk fails to load.
   codeEditorFails: false,
@@ -76,6 +79,7 @@ fakeGlobals.workspaceMountStubs = {
 const stubGlobals = fakeGlobals.workspaceMountStubs as { codeEditorFails: boolean; refused: string[]; refusedNear: unknown[] };
 const stub = (name: string, kind: string) => `export const ${name} = (...args) => globalThis.workspaceMountStubs.${kind}(...args);`;
 const stubs: Record<string, string> = {
+  "components/project-overview.ts": stub("createProjectOverview", "overview"),
   "components/native-preview.ts": stub("createNativePreview", "preview"),
   "components/page-structure.ts": stub("createPageStructure", "structure"),
   "components/block-rail.ts": stub("mountBlockRail", "rail"),
@@ -207,7 +211,7 @@ function setup() {
     },
     setup: {
       setupController: { dispose: say("setupController.dispose") } satisfies WorkspaceMountPorts["setup"]["setupController"],
-      setupEntry: { remove: say("setupEntry.remove") },
+      setupEntry: { remove: say("setupEntry.remove"), open: async () => {} },
       startSitePanel: () => new Promise<HTMLElement>((resolve) => { state.startSite = resolve; }),
     },
     repositoryIndex: { clear: say("repositoryIndex.clear") },

@@ -628,7 +628,7 @@ test("a kept copy of a branch GitHub no longer lists opens again the plain way, 
   assert.equal(f.shown.content, "The linked branch is no longer available. Choose a branch from Pages & files.");
 });
 
-test("takeWarmCopy gives the kept copy once, for the address's or the account's last site, the same account and editor only", async () => {
+test("takeWarmCopy gives the linked site's kept copy once and does not read a site for the overview", async () => {
   const saved = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
   const { factory } = fakeIndexedDB();
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: factory });
@@ -644,7 +644,7 @@ test("takeWarmCopy gives the kept copy once, for the address's or the account's 
       return [await f.boot.takeWarmCopy(login), await f.boot.takeWarmCopy(login)];
     };
     assert.deepEqual((await take("lex", "#repo=501&branch=main")).map(Boolean), [true, false], "once");
-    assert.deepEqual((await take("Lex", "", { repoId: 501, branch: "main" })).map(Boolean), [true, false], "the account's last site, whatever the login's case");
+    assert.deepEqual((await take("Lex", "", { repoId: 501, branch: "main" })).map(Boolean), [false, false], "the overview does not load the account's last site");
     assert.equal((await take("sam", "#repo=501&branch=main"))[0], undefined, "another account");
     assert.equal((await take("lex", "#repo=502&branch=main"))[0], undefined, "another repository");
     assert.equal((await take("lex", "#repo=501&branch=next"))[0], undefined, "another branch");

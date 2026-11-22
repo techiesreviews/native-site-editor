@@ -50,7 +50,7 @@ export function mountCodeResize(main: HTMLElement, pane: HTMLElement, onOpen?: (
     main.classList.toggle("code-collapsed", shut);
     const { minimum, maximum } = bounds();
     const px = Math.round(shut ? 0 : Math.max(minimum, Math.min(maximum, height * main.clientHeight)));
-    const contentHidden = px <= 0;
+    const contentHidden = main.classList.contains("has-preview") && px <= 0;
     if (contentHidden && pane.contains(document.activeElement) && document.activeElement !== handle) handle.focus();
     main.style.setProperty("--code-height", `${px}px`);
     for (const child of pane.children as HTMLCollectionOf<HTMLElement>) {
