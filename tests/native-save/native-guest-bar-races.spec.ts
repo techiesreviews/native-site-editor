@@ -78,6 +78,7 @@ test("a guest can use a thumbnail arriving after 15 seconds without reopening th
   await page.clock.runFor(15_001);
   expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want" && message.paths.includes("images/slow.png")).length)).toBe(2);
   expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want" && message.paths.includes("images/missing.png")).length)).toBe(2);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want").length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.picture());
   await expect(tile.locator("img")).toHaveAttribute("src", /^blob:/);
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
