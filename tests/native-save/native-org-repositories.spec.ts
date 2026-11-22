@@ -38,11 +38,12 @@ async function openOrgSite(page: Page, baseURL: string | undefined) {
   await expect(page.locator(".native-preview-frame")).toBeVisible({ timeout: 30_000 });
 }
 
-/** An account with no repository: the Setup wizard opens on Create your site. */
+/** An account with no repository enters creation from the project overview. */
 async function openCreateSite(page: Page, baseURL: string | undefined) {
   await control(page, baseURL, { org: true, repositories: "none" });
   await page.goto(`${baseURL}/`);
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
 const ready = (page: Page) => expect(page.getByRole("heading", { name: "Your site is ready" })).toBeVisible({ timeout: 30_000 });

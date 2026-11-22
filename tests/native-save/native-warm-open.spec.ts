@@ -315,7 +315,7 @@ test("the project menu's own list, landing first without the kept repository, ta
   release();
   await expect(page.locator("#notice")).toContainText("The linked repository is not available to this GitHub account.", { timeout: 15_000 });
   // The kept site is closed: no project is open.
-  await expect(page.getByRole("button", { name: /^Choose a project/ })).toBeVisible();
+  await expect(page.locator(".repository-menu__trigger")).toHaveAccessibleName("All projects — repository actions");
 });
 
 test("a listing with the kept repository renamed opens it again the plain way, by its new name", async ({ page }) => {
