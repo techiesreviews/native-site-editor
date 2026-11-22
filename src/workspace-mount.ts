@@ -18,13 +18,7 @@ import { createNativePreview, type NativePreview, type NativePreviewHandlers, ty
 import { createPageStructure, type PageStructureHandlers } from "./components/page-structure";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
 import { createRepositoryMenu, type SharesMenuPort } from "./components/repository-menu";
-import { createProjectOverview } from "./components/project-overview";
-import { readProjects, keepProjects, keepOpenedProject } from "./project-memory";
-import { draftStore } from "./drafts";
 import { readWorkspace, type WorkspaceLocation } from "./workspace-state";
-import { progress } from "./ui/progress/progress";
-import { textButton } from "./ui/text-button/text-button";
-import "./ui/progress/progress.css";
 import { createRowMenu } from "./components/row-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountSiteActions } from "./components/site-actions";
@@ -201,16 +195,41 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let files: HTMLElement;
   let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
   let stopNoProject: (() => void) | undefined;
-  let overview: ReturnType<typeof createProjectOverview> | undefined;
-  let opening: HTMLElement | undefined;
+  let overview: ReturnType<typeof import("./project-overview-host").createProjectOverviewHost> | undefined;
+  let overviewLoad: Promise<typeof import("./project-overview-host")> | undefined;
   let projectPick = 0;
   const pictured = new Set<string>();
   function showProjects(list?: Repository[], message = "") {
     if (!ports.appStore.repository.value) finishOpening();
-    const login = ports.info.user?.login;
-    if (!login || !overview) return;
-    if (list) keepProjects(localStorage, login, list);
-    overview.update(readProjects(localStorage, login), message);
+    if (overview) overview.update(list, message);
+    else if (!location.hash) void ensureProjects().then(host => host?.update(list, message)).catch(notices.errorMessage);
+  }
+  function ensureProjects() {
+    const menu = repositoryMenu, login = ports.info.user?.login;
+    if (!menu || !login) return Promise.resolve(undefined);
+    return (overviewLoad ??= import("./project-overview-host").catch((error: unknown) => { overviewLoad = undefined; throw error; })).then(module => {
+      if (menu !== repositoryMenu || login !== ports.info.user?.login) return;
+      if (!overview) {
+        overview = module.createProjectOverviewHost({ login, main: () => ports.element("main"), back: backToProjects,
+          open: async project => {
+            const pick = ++projectPick, at = session.begin();
+            await ports.boot.ensureList();
+            if (!at.holds() || pick !== projectPick || !overview?.root.isConnected) return;
+            const repo = ports.repositories.find(repo => repo.id === project.repo.id);
+            if (!repo) { showProjects(ports.repositories, "This project is no longer available."); return; }
+            repositorySelect.value = String(repo.id);
+            const previous = readWorkspace(login);
+            await ports.account.choose({ repoId: repo.id, branch: project.branch,
+              ...(previous?.repoId === repo.id && previous.branch === project.branch ? { path: previous.path } : {}) });
+          },
+          add: () => { if (ports.repositories.length) chooseProject(); else void ports.setup.setupEntry.open().catch(notices.errorMessage); },
+        });
+        ports.app.append(overview.root);
+        overview.root.hidden = Boolean(ports.appStore.repository.value || location.hash);
+        overview.update(ports.repositories.length ? ports.repositories : undefined);
+      }
+      return overview;
+    });
   }
   function backToProjects() {
     projectPick++;
@@ -224,15 +243,12 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   }
   function showOpening(repo: Repository, branch: string) {
     finishOpening();
-    opening = node("section", "project-opening");
-    opening.append(node("h1", "", `Opening ${repo.name}…`), progress({ label: `Opening ${repo.name}` }),
-      node("p", "muted", `${repo.full_name} · ${branch}`), textButton("Back to projects", backToProjects));
+    if (!overview) return;
     content.replaceChildren();
-    ports.element("main").prepend(opening);
+    overview.showOpening(repo, branch);
   }
   function finishOpening() {
-    opening?.remove();
-    opening = undefined;
+    overview?.finishOpening();
   }
   /** The project list: the project menu opened, the explorer closed (the welcome's and the empty panel's Choose a project).
    * As its own button opens it, it is held open (a scroll or the pointer leaving keeps it); the focus goes to the first project,
@@ -345,26 +361,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     ports.app.className = "";
     ports.app.innerHTML = workspaceMarkup();
     pictured.clear();
-    overview = createProjectOverview({
-      open: async project => {
-        const pick = ++projectPick;
-        const at = session.begin();
-        // Cached summaries are navigation hints. Check access against a fresh authenticated listing before opening.
-        await ports.boot.ensureList();
-        if (!at.holds() || pick !== projectPick || !overview?.root.isConnected) return;
-        const repo = ports.repositories.find(repo => repo.id === project.repo.id);
-        if (!repo) { showProjects(ports.repositories, "This project is no longer available."); return; }
-        repositorySelect.value = String(repo.id);
-        const previous = ports.info.user && readWorkspace(ports.info.user.login);
-        await ports.account.choose({ repoId: repo.id, branch: project.branch,
-          ...(previous?.repoId === repo.id && previous.branch === project.branch ? { path: previous.path } : {}) });
-      },
-      add: () => { if (ports.repositories.length) chooseProject(); else void ports.setup.setupEntry.open().catch(notices.errorMessage); },
-      unsaved: project => Boolean(ports.info.user && draftStore().list({ account: ports.info.user.login, repoId: project.repo.id, repo: project.repo.full_name, branch: project.branch }).length),
-    });
-    ports.app.append(overview.root);
+    overview = undefined;
+    overviewLoad = undefined;
     if (!location.hash) ports.app.dataset.overview = "";
-    showProjects(undefined, "Checking GitHub…");
 
     ports.element("changes").addEventListener("toggle", () => {
       document.getElementById("history-button")?.setAttribute("aria-expanded", String(ports.element("changes").matches(":popover-open")));
@@ -386,6 +385,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     ports.element("repository-menu").append(repositoryMenu.root);
     // This top bar, while it is shown (the project tile stays in it).
     const topBar = repositoryMenu.root;
+    if (!location.hash) showProjects(undefined, "Checking GitHub…");
     media.mediaController.disposeGallery();
     siteActions = mountSiteActions({ statusHost: ports.element("change-status"), menuHost: ports.element("site-actions"), siteFiles: () => ports.site.files(), announce: notices.announce });
     const menuPanel = ports.element("repository-actions");
@@ -492,7 +492,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (showing) ports.app.dataset.overview = "";
       else delete ports.app.dataset.overview;
       if (overview) overview.root.hidden = !showing;
-      if (repo && ports.info.user && ports.appStore.branch.value) keepOpenedProject(localStorage, ports.info.user.login, repo, ports.appStore.branch.value);
+      if (repo && ports.appStore.branch.value) overview?.remember(repo, ports.appStore.branch.value);
     });
     codePanes.mountResize(ports.element("main"), ports.element("code-split"), ports.element("secondary-pane"));
     // A selection inside a component's template gets Select card once the runtime says which card.
@@ -573,9 +573,12 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         if (repository && branch && login && pictureKey && structure.items.length && !pictured.has(pictureKey)) {
           pictured.add(pictureKey);
           const at = session.begin();
-          void ports.nativePreview?.picture({ path: structure.path, width: 1280, height: 800 }).then(picture => {
-            if (at.holds()) keepOpenedProject(localStorage, login, repository, branch, `data:${picture.mimeType};base64,${picture.data}`);
-          }, () => { /* A project without a kept picture shows its initial. */ });
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (!at.holds()) return;
+            void ensureProjects().then(host => {
+              if (at.holds() && ports.nativePreview) host?.picture(ports.nativePreview, structure.path, repository, branch, () => at.holds());
+            }).catch(notices.errorMessage);
+          }));
         }
         ports.previewShare?.painted();
         const path = structure.path, source = structure.paintedSource, scope = session.draftScope();
@@ -714,6 +717,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   // Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
   function closeWorkspace() {
     finishOpening();
+    overview?.destroy();
     overview = undefined;
     delete ports.app.dataset.overview;
     ports.workspaceBoot.dropGuess();

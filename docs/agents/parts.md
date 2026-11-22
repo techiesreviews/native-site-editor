@@ -426,6 +426,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Video moment | The shared Use this moment encoder, loaded only for video stills. | `src/page-builder/video-moment.ts` | none yet |
 | Pages and files explorer | The Files explorer's own actions: Create (the + dialog), a row's menu, renaming and dropping. | `src/pages-and-files-explorer.ts` | `tests/await-race-guard.test.ts`, `tests/pages-and-files-host.test.ts` |
 | Preview visit | A preview link's page, on the preview Worker's address (worker/preview-host.ts), never the editor's: a customer sees the real site, its own scripts running, as Lex edits it. | `src/preview-visit.ts` `src/preview-visit.css` | `tests/frame-guard.test.ts` |
+| Project overview host | The overview's optional UI and browser memory, loaded for the overview or after the first site paint. | `src/project-overview-host.ts` | none yet |
 | Repository list | The repository list and the account: listing the selected repositories and opening the planned one (loadRepositories), listing them again after a visit to GitHub's access page (refreshRepositoryList), switching… | `src/repository-list.ts` | `tests/repository-list.test.ts`, `tests/workspace-session-guard.test.ts` |
 | Explorer | The editor's explorer screen layout and overrides, above the component layers. | `src/screens/explorer.css` | none yet |
 | Notices | The editor's notices screen layout and overrides, above the component layers. | `src/screens/notices.css` | none yet |
