@@ -14,10 +14,10 @@ const OPTIMISER_SIDE = "The image optimisation worker endpoint replies to its ow
 const AUDIO = "The audio preparation Worker receives one file and returns its result independently of the preview.";
 const AUDIO_SIDE = "The audio preparation worker endpoint replies to its owner, not to the preview frame.";
 const REQUESTS = "Same-origin BroadcastChannel naming only the workspace whose Ask agent requests changed, so this browser's other tabs reload them; no preview frame (agent-watch tests and native-agent-quiet.spec).";
-const SIGNED_OUT = "Same-origin BroadcastChannel saying only that this browser signed out, so other editor tabs keep no copy of the site again (TOOLS-242, src/warm-copy.ts); no preview frame (warm-copy.test.ts).";
+const SIGNED_OUT = "Same-origin BroadcastChannel identifying which browser account signed out, or all accounts, so other editor tabs stop retaining its project memory and site copy (TOOLS-242, src/warm-copy.ts); no preview frame (warm-copy.test.ts).";
 const postAllowlist: AllowlistEntry[] = [
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
-  { file: "src/warm-copy.ts", match: "channel", reason: SIGNED_OUT },
+  { file: "src/warm-copy.ts", match: "signOutChannel", reason: SIGNED_OUT },
   { file: "src/components/agent-menu.ts", match: "channel", reason: REQUESTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
   { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE, count: 9 },
