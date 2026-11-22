@@ -38,7 +38,7 @@ async function mount(page: Page) {
     const photo = document.createElement("canvas"); photo.width = 20; photo.height = 10;
     const url = photo.toDataURL("image/png");
     const bar = createGuestEditBar({ canvas, frame, frameLink, send: message => { sent.push(message); }, me: "anna", picture: path => path === "images/current.png" ? url : undefined });
-    bar.receive({ t: "context", context: { path: "index.html", links: [], pictures: ["images/slow.png", "images/missing.png"] } });
+    bar.receive({ t: "context", context: { path: "index.html", links: [], pictures: ["images/slow.png", "images/missing.png"], sizes: { kind: "inline", sizes: [{ value: "1.25rem", label: "Large" }] } } });
     const answer = (source: string, ask?: number) => {
       const requests = sent.filter((message): message is Extract<GuestMessage, { t: "sources" }> => message.t === "sources");
       const asked = ask === undefined ? requests.at(-1) : requests.find(message => message.ask === ask);
@@ -110,7 +110,7 @@ test("a guest can use a thumbnail arriving after 15 seconds without reopening th
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
 
-test("an old text read cannot repaint Bold after Lex renders the same paragraph (SL-2)", async ({ page }) => {
+test("an older text read cannot repaint Bold over a newer read (SL-2)", async ({ page }) => {
   await mount(page);
   await page.evaluate(() => window.guestBarRace.select("p"));
   await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
@@ -121,11 +121,11 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await page.clock.runFor(1_201);
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.select("p", true));
-  await expect(bold).toHaveAttribute("aria-disabled", "true");
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
   expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(text => window.guestBarRace.answer(text, 2), source("<strong>Old bold</strong>"));
-  // The old answer must not flash Bold on while the current read waits.
-  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  // A read crossing a render stays usable, with its original render as the write's proof.
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
   await page.clock.runFor(1_201);
   await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
   await page.evaluate(text => window.guestBarRace.answer(text), source("<strong>Current bold</strong>"));
@@ -138,6 +138,50 @@ test("an old text read cannot repaint Bold after Lex renders the same paragraph 
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
 
+test("Bold and Text size stay usable during continuous renders without repeated source reads (R1-1)", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p"));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  const size = bar(page).getByRole("combobox", { name: "Text size" });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  for (let render = 0; render < 15; render++) {
+    await page.evaluate(text => {
+      window.guestBarRace.select("p", true);
+      window.guestBarRace.answer(text);
+    }, source("Plain"));
+    await page.clock.runFor(200);
+    await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+    await expect(size).not.toHaveAttribute("aria-disabled", "true");
+  }
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBeLessThanOrEqual(3);
+  await bold.click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({
+    t: "change", seen: 0, change: { kind: "bold", on: true },
+  });
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
+test("a read crossing a render keeps its original render for Bold and Text size writes", async ({ page }) => {
+  for (const control of ["Bold", "Text size"]) {
+    await mount(page);
+    await page.evaluate(() => {
+      window.guestBarRace.select("p");
+      window.guestBarRace.select("p", true);
+    });
+    await page.evaluate(text => window.guestBarRace.answer(text), source("<strong>Read bold</strong>"));
+    const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+    await expect(bold).toHaveAttribute("aria-pressed", "true");
+    await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+    if (control === "Bold") await bold.click();
+    else await bar(page).getByRole("combobox", { name: "Text size" }).selectOption("1.25rem");
+    await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({
+      t: "change", seen: 0, change: { kind: control === "Bold" ? "bold" : "size" },
+    });
+    await page.evaluate(() => window.guestBarRace.bar.close());
+  }
+});
+
 test("heading level stays usable while a new render waits for its text read", async ({ page }) => {
   await mount(page);
   const heading = source("Heading").replace("<p>", "<h2>").replace("</p>", "</h2>");
@@ -147,11 +191,11 @@ test("heading level stays usable while a new render waits for its text read", as
   for (let render = 0; render < 5; render++) {
     await page.evaluate(() => window.guestBarRace.select("h2", true));
     expect(await bar(page).getByRole("combobox", { name: "Heading level" }).getAttribute("aria-disabled")).not.toBe("true");
-    expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+    expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(1);
     await page.clock.runFor(200);
   }
-  await page.evaluate(text => window.guestBarRace.answer(text, 2), heading);
-  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  await page.clock.runFor(1_201);
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(text => window.guestBarRace.answer(text), heading);
   await expect(bar(page).getByRole("button", { name: "Bold", exact: true })).not.toHaveAttribute("aria-disabled", "true");
   await page.evaluate(() => window.guestBarRace.bar.close());

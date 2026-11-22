@@ -132,7 +132,6 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let typedShown = 0;
   let typedTimer: ReturnType<typeof setTimeout> | undefined;
   const typingAhead = () => typedSent > typedShown;
-  const textStale = () => Boolean(text && text.on !== seen) || selectedSeen !== seen;
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
   status.className = "live-guest__said";
@@ -328,8 +327,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
-    const ticket = ++reading;
     if (textReading?.key === key(target)) { textReading.again = true; return; }
+    const ticket = ++reading;
     const mine = { key: key(target), again: false };
     textReading = mine;
     try {
@@ -339,7 +338,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       ]);
       const found = await elementAt(files, target);
       // A change on its way shows on the bar until it is answered, and the sources are read again then.
-      if (ticket !== reading || on !== seen || !still(target) || sending?.key === key(target)) return;
+      if (ticket !== reading || !still(target) || sending?.key === key(target)) return;
       const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
       if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
       text = {
@@ -352,7 +351,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     } finally {
       if (textReading === mine) {
         textReading = undefined;
-        if (mine.again && !closed && selected && selected.tag !== "img" && context?.path === selected.path) void readText(selected);
+        if (mine.again && !closed && selected && selected.tag !== "img" && context?.path === selected.path) {
+          clearTimeout(reread);
+          reread = setTimeout(() => { if (still(target)) void readText(selected!); }, REREAD_MS);
+        }
       }
     }
   }
@@ -362,7 +364,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead() || selectedSeen !== seen;
     // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
-      if (sending?.key === key(at) || typingAhead() || selectedSeen !== seen || next.kind !== "heading" && textStale()) { render(); return; }
+      if (sending?.key === key(at) || typingAhead() || selectedSeen !== seen) { render(); return; }
+      // Bold and size depend on the sources read, not a newer render that may contain different text.
+      const on = next.kind === "heading" ? selectedSeen : text?.on;
+      if (on === undefined) return;
       const mine: NonNullable<typeof sending> = { key: key(at), ...next.kind === "heading" ? { level: next.level } : {} };
       sending = mine;
       if (shown && text?.key === key(at)) text = { ...text, ...shown };
@@ -374,7 +379,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         render();
         if (still(at)) void readText(selected!);
       };
-      void write(next).then((reason) => {
+      void write(next, on).then((reason) => {
         answered(at, reason);
         if (sending !== mine) return;
         // Written: settled by the render that shows it (`select`), which Lex's tab sends after its answer; a render
@@ -394,10 +399,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (state?.size !== undefined && scale) {
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting: waiting || textStale(), onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting, onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
     }
     if (state?.bold !== undefined) controls.push({
-      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting: waiting || textStale(),
+      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting,
       className: "edit-bar__format edit-bar__format--strong",
       onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
     });
@@ -465,8 +470,8 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     render();
     clearTimeout(reread);
     if (!next || next.tag === "img" || context?.path !== next.path) return;
-    // Refresh a stale text state at once once our typing catches up; other refreshes wait for typing to pause.
-    if (moved || shown || !typingAhead() && textStale()) void readText(next);
+    // A new selection or settled change reads at once; other refreshes wait for renders to pause.
+    if (moved || shown) void readText(next);
     else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
   }
 
