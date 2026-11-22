@@ -1,6 +1,6 @@
 {
   "screen": "catalogue",
-  "name": "component-css",
+  "name": "F-catalogue-01",
   "steps": [
     "click exactly \"Sharing row\"",
     "expect visible \"src/ui/share-row/share-row.css\""

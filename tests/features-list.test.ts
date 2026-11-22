@@ -13,7 +13,7 @@ const AREAS = [
   "Sign-in and setup", "Repositories and branches", "Pages and files", "Page editing on the canvas",
   "Edit bar", "Page Structure", "Components and Edit component mode", "Media and the image popup",
   "Code panes", "Versions and history", "Publish and discard", "Agents menu and agent connection", "Inbox",
-  "Command palette", "Phone layout",
+  "Command palette", "Phone layout", "Design board",
 ];
 
 type Feature = {
