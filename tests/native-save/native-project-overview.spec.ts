@@ -34,6 +34,13 @@ test('the root opens projects without loading a site, then opens only the clicke
   await page.getByRole('button', { name: 'Grid', exact: true }).click();
   await page.reload();
   await expect(page.locator('.project-overview')).toHaveAttribute('data-view', 'grid');
+  await page.locator('.project-card--grid').first().hover();
+  const gridName = page.locator('.project-card--grid .project-card__open').first();
+  await expect.poll(() => gridName.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return element === hit || element.contains(hit);
+  })).toBe(true);
   await page.getByRole('searchbox', { name: 'Search projects', exact: true }).fill('no-such-project');
   await expect(page.getByText('No match for “no-such-project”', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Clear search', exact: true }).click();
