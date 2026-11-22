@@ -5,6 +5,7 @@ import type { createProjectOverview } from "../src/components/project-overview.t
 import type { createProjectOverviewHost } from "../src/project-overview-host.ts";
 import { forEachAwait } from "./support/await-race.ts";
 import { sameBranch } from "../src/workspace-session.ts";
+import { readProjects } from "../src/project-memory.ts";
 
 type ViewOptions = Parameters<typeof createProjectOverview>[0];
 declare global { var overviewHostTest: { options?: ViewOptions; root: { isConnected: boolean; hidden: boolean } }; }
@@ -44,7 +45,8 @@ function fixture(ensureList: () => Promise<void> = async () => {}) {
       session: fake({}) },
   };
   const host = createHost(options), callbacks = globalThis.overviewHostTest.options!;
-  return { host, open: (project: Parameters<ViewOptions["open"]>[0]) => callbacks.open(project), root, selected, chosen };
+  return { host, open: (project: Parameters<ViewOptions["open"]>[0]) => callbacks.open(project),
+    remove: (project: Parameters<ViewOptions["remove"]>[0]) => callbacks.remove(project), root, selected, chosen };
 }
 test("a project choice survives listing recovery but cancels on actual navigation", async () => {
   for (const change of ["cancel", "hidden", "removed"] as const) {
@@ -71,4 +73,19 @@ test("a picture completing after workspace disposal cannot recreate cleared acco
   finish({ data: "YQ==", mimeType: "image/webp", width: 1280, height: 800, viewport: 1280 });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(values.size, 0);
+});
+
+test("a picture beginning after another tab removes a project preserves that removal", async () => {
+  values.clear();
+  const first = fixture();
+  first.host.update([repo]);
+  const other = fixture();
+  first.remove({ repo, branch: "main" });
+  const memory = globalThis.localStorage;
+  assert.equal(readProjects(memory, "lex")[0].hidden, true);
+  other.host.picture({ picture: async () => ({ data: "YQ==", mimeType: "image/webp", width: 1280, height: 800, viewport: 1280 }) },
+    "index.html", repo, "main", () => true);
+  assert.equal(readProjects(memory, "lex")[0].hidden, true, "preparing a picture cannot reopen the project");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(readProjects(memory, "lex")[0].hidden, true, "the completed picture keeps the removal too");
 });

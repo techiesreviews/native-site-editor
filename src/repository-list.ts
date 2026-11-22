@@ -282,6 +282,16 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     }
   }
 
+  function forgetProjects(all = false) {
+    try {
+      const memory = storage("local"), prefix = "native-site-editor:projects:v1:";
+      for (let index = memory.length - 1; index >= 0; index--) {
+        const key = memory.key(index);
+        if (key?.startsWith(prefix) && (all || key === prefix + ports.user?.login.toLowerCase())) memory.removeItem(key);
+      }
+    } catch { /* Storage disabled: no project memory can be kept. */ }
+  }
+
   async function disconnect() {
     cleanSources.clear();
     try {
@@ -291,13 +301,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       // 204: that was the last account on this browser, so nothing continues by itself next time.
       if (response.status === 204) forgetSignedIn(storage("local"));
       forgetBootMemory(storage("local"));
-      try {
-        const memory = storage("local"), prefix = "native-site-editor:projects:v1:";
-        for (let index = memory.length - 1; index >= 0; index--) {
-          const key = memory.key(index);
-          if (key?.startsWith(prefix) && (response.status === 204 || key === prefix + ports.user?.login.toLowerCase())) memory.removeItem(key);
-        }
-      } catch { /* Storage disabled: no project memory can be kept. */ }
+      forgetProjects(response.status === 204);
       // Gone before the page leaves: the next one on this browser sees none of this site. A storage that never
       // answers holds the sign-out back no longer than the boot's own bound (other tabs heard it already).
       await withinWait(forgetWarmCopy());
@@ -307,5 +311,5 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     }
   }
 
-  return { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccount, disconnect };
+  return { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccount, disconnect, forgetProjects };
 }

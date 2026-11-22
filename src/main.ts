@@ -14,6 +14,7 @@ import { setErrorReporter } from "./ui/report-failure";
 import { retainWorkspaceLink, resumeWorkspaceLink } from "./workspace-state";
 import { createSetupHost, EDITOR_LOGIN } from "./setup-host";
 import { createRepositoryList } from "./repository-list";
+import { onWarmCopyForgotten } from "./warm-copy";
 import { createVersionView } from "./version-view";
 import { draftKey, draftStore } from "./drafts";
 import type { createNativePreview } from "./components/native-preview";
@@ -436,7 +437,7 @@ window.addEventListener("focus", () => void checkNewRepositories());
 document.addEventListener("visibilitychange", () => void checkNewRepositories());
 
 // The repository list, account switching and sign-out (src/repository-list.ts).
-const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccount, disconnect } = createRepositoryList({
+const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccount, disconnect, forgetProjects } = createRepositoryList({
   appStore, repositoryIndex, mediaHistoryHome, cleanSources, workspaceBoot, setup, setupEntry, setupController,
   get boot() { return boot; }, get user() { return info?.user; },
   get repositories() { return repositories; }, set repositories(value) { repositories = value; },
@@ -448,6 +449,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   removeFinishStarter, knownRepositories, rememberRepositories,
   showProjects: (list, message, failed) => workspace.showProjects(list, message, failed),
 });
+onWarmCopyForgotten(() => { workspace.stopProjectMemory(); forgetProjects(); });
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
 draftStore().baseline = (scope, path) => {
