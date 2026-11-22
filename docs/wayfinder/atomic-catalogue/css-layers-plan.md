@@ -52,8 +52,8 @@ Rules that matter for every slice:
 | --- | --- |
 | `src/theme.css`: the framework's tokens (generated) and the editor's role tokens | `tokens`: done in slice 4 |
 | `src/style.css`: `button`, `select`, `a` base | `elements`: done in the pilot |
-| `src/style.css`: `select` box, focus rings | `elements` (slice 5) |
-| `src/utilities.css`: the reset (`*` box sizing, `body`, headings) | `elements` (slice 5) |
+| `src/style.css`: `select` box, focus rings | `elements` (`src/elements.css`): done in slice 5 |
+| `src/utilities.css`: the reset (`*` box sizing, `body`, headings) | `elements` (`src/elements.css`): done in slice 5 |
 | `src/utilities.css`: the old site foundation (`.section`, `.container`, `.image`, `.content`) and its examples | removed in the pilot: nothing in the editor or on the board used them |
 | `src/style.css` and `src/theme.css`: `.button`, `.primary`, `.secondary`; `src/utilities.css` `.button` | `src/ui/button/button.css`: done in the pilot |
 | `src/style.css`: `.icon-button`, `.text-button`, `.text-link` | `src/ui/icon-button/icon-button.css`, `src/ui/text-button/text-button.css`: done in slice 2 |
@@ -80,8 +80,7 @@ Rules that matter for every slice:
    files. Inline field loads in `src/ui/parts.css` at boot (and in `src/live-guest.ts` for the guest edit bar); the
    other five join `src/ui/parts.css` when their swap slices bring them into editor screens, keeping boot flat.
 4. **Tokens** (done). `src/theme.css` (and the generator's output) on `@layer tokens`.
-5. **Elements** (open). The rest of the bare element rules onto `elements`; what is left of `src/utilities.css` (the
-   reset) folded in.
+5. **Elements** (done). The rest of the bare element rules onto `elements` in `src/elements.css`; what was left of `src/utilities.css` (the reset) folded in.
 6. **Molecules** (open). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
 7. **Screen layout** (open). `src/style.css` split by screen into unlayered editor files; it keeps only the order line
    and its imports. Waits for the top bar work (ticket 66 and the phone layout) to land.

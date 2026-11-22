@@ -5,7 +5,6 @@ import { createBootController } from "./controllers/boot-controller";
 import { batch } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
 import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
-import "./utilities.css";
 import "./style.css";
 import "./theme.css";
 import "./ui/parts.css";

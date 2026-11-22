@@ -10,7 +10,7 @@
       "files": [
         "src/theme.css",
         "src/tokens/framework-editor.css",
-        "src/utilities.css"
+        "src/elements.css"
       ]
     },
     {

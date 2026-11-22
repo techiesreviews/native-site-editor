@@ -1,0 +1,105 @@
+/* The editor's bare HTML element defaults and reset, on the elements layer (docs/wayfinder/atomic-catalogue/css-layers-plan.md).
+   No classes sit here: components on the components layer and the editor's unlayered screen CSS both win over these. */
+@layer tokens, elements, components;
+
+@layer elements {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  :root {
+    font-family:
+      Inter,
+      ui-sans-serif,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    color: var(--text);
+    background: var(--background);
+    font-synthesis: none;
+    font-size: 14px;
+    line-height: 1.5;
+    color-scheme: light dark;
+  }
+
+  body {
+    margin: 0;
+    font-family: inherit;
+    font-size: var(--type-base);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin-block: 0;
+  }
+
+  h1 {
+    font-size: clamp(30px, 3.6vw, 49px);
+    font-weight: 500;
+    letter-spacing: -0.055em;
+    line-height: 1.12;
+    margin: 0 0 22px;
+    white-space: pre-line;
+  }
+
+  dt {
+    color: var(--muted);
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  button,
+  a,
+  select {
+    font: inherit;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  /* Bare icon and text buttons have no fill and fade; a Button is plain instead (src/ui/button/button.css). */
+  button:disabled:where(:not(.button)),
+  select:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  select:focus-visible,
+  summary:focus-visible,
+  pre:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  select {
+    width: 100%;
+    background: var(--surface);
+    border: 0;
+    border-radius: var(--radius);
+    height: var(--size-control);
+    padding: 0 calc(var(--space-xs) + var(--space-4xs));
+    font-size: var(--type-base);
+    text-overflow: ellipsis;
+  }
+
+  @media (max-width: 650px) {
+    h1 {
+      font-size: 37px;
+    }
+  }
+}

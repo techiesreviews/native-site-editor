@@ -143,7 +143,7 @@ Behaviour or looks several screens use. Reuse them the same way.
 - **For:** The colours (light and dark), spacing, type sizes, corners, shadows and timings every part and screen styles with.
 - **Use:** `var(--token)` in CSS; never a hand-typed px, colour or duration (the one-offs count, `scripts/agents/one-offs.mjs`, and `scripts/check-colours.mjs` hold this).
 - **Code:** none (styles only)
-- **Styles:** `src/theme.css`, `src/tokens/framework-editor.css`, `src/utilities.css`
+- **Styles:** `src/theme.css`, `src/tokens/framework-editor.css`, `src/elements.css`
 - **Tests:** `tests/editor-css-layers.test.ts`, `tests/preview-menu.test.ts`, `tests/theme-scheme.test.ts`, `tests/theme-tokens.test.ts`
 
 ### Dropdown
