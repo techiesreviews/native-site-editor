@@ -170,18 +170,18 @@ test("the login page clears the workspace first and keeps one card for every sta
   assert.match(f.app.innerHTML, /data-mode="loading"/);
   assert.match(f.action.text(), /Checking your account…/);
   // An editing session passes through this state: the welcome picture is not loaded for it.
-  assert.match(f.app.innerHTML, /<div class="welcome-page__picture"><\/div>/);
+  assert.doesNotMatch(f.app.innerHTML, /<img/);
   f.setup.renderLogin("auto");
   assert.doesNotMatch(f.app.innerHTML, /first-visit-on-github/);
 });
 
-test("the login page asks where the site lives, with the GitHub card only", () => {
+test("the login page offers one plain GitHub sign-in action", () => {
   const f = fixture();
   f.setup.renderLogin();
-  assert.match(f.app.innerHTML, /Welcome to Native Site Editor/);
-  assert.match(f.app.innerHTML, /<h1 id="login-title">Where does your site live\?<\/h1>/);
-  assert.match(f.app.innerHTML, /On GitHub/);
-  assert.match(f.app.innerHTML, /src="\/onboarding\/first-visit-on-github\.webp" alt=""/);
+  assert.doesNotMatch(f.app.innerHTML, /Welcome to Native Site Editor/);
+  assert.match(f.app.innerHTML, /<h1 id="login-title">Sign in to open your sites<\/h1>/);
+  assert.match(f.app.innerHTML, /Your sites stay in your GitHub repositories/);
+  assert.doesNotMatch(f.app.innerHTML, /<img/);
   assert.doesNotMatch(f.app.innerHTML, /On this computer/);
   assert.equal(f.action.all().find((element) => element.textContent === "Continue with GitHub")!.href, EDITOR_LOGIN);
 });
@@ -266,8 +266,8 @@ test("an account with no repository sees the welcome page, whose GitHub card ope
   await f.setup.showWelcome();
   const page = f.content().children[0];
   assert.equal(page.className, "welcome-page");
-  assert.match(page.innerHTML, /Where does your site live\?/);
-  assert.match(page.innerHTML, /On GitHub/);
+  assert.match(page.innerHTML, /No sites in your list/);
+  assert.match(page.innerHTML, /Pick a repository from GitHub/);
   assert.deepEqual(f.statuses, ["Connected. Create your first site."]);
   assert.equal(f.setup.waitingForRepositories, true);
   const go = f.welcomeAction.all().find((element) => element.textContent === "Continue with GitHub")!;

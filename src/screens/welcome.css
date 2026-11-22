@@ -144,20 +144,19 @@
   border-block-end: 1px solid var(--line);
   background: var(--surface);
 }
-/* The welcome page: "Where does your site live?" with one card per place (GitHub
-   for now). The same page signed out (the login page) and for a signed-in
-   account with nothing to open yet (in the workspace content). */
+/* The signed-out and empty project pages follow the overview's quiet, left-aligned copy. */
 .welcome-page {
   min-block-size: 100%;
   display: grid;
   align-content: center;
-  justify-items: center;
-  padding: calc(var(--space-l) + var(--space-xs)) var(--space-m) max(calc(var(--space-l) * 2), env(safe-area-inset-bottom));
-  text-align: center;
-  background:
-    radial-gradient(60% 50% at 15% 0%, var(--current), transparent 70%),
-    radial-gradient(55% 55% at 90% 10%, var(--surface-subtle), transparent 70%);
+  grid-template-columns: minmax(var(--space-m), 1fr) minmax(0, 440px) minmax(var(--space-m), 1fr);
+  gap: var(--space-m) 0;
+  padding-block: calc(var(--space-l) * 2);
+  text-align: start;
 }
+.welcome-page > * { grid-column: 2; justify-self: start; }
+.welcome-page > p { margin: 0; color: var(--muted); }
+.welcome-page__mark { font: var(--type-heading) Georgia, serif; color: var(--primary); }
 .welcome-page__hello {
   display: inline-flex;
   align-items: center;
@@ -173,10 +172,10 @@
   font-weight: 600;
 }
 .welcome-page h1 {
-  margin: var(--space-m) 0 calc(var(--space-l) + var(--space-3xs));
-  font-size: clamp(var(--type-heading), 4.4vw, calc(var(--type-heading) * 2));
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  margin: 0;
+  font-size: var(--type-heading);
+  font-weight: 600;
+  letter-spacing: normal;
   line-height: 1.15;
 }
 .welcome-page__choices {

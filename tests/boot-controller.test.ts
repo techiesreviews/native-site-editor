@@ -91,11 +91,11 @@ test("both reads start before the session resolves and a matching tag is adopted
   await started;
   assert.deepEqual(f.loads.map(load => load.prefetched?.map(item => item.id)), [[1]]);
   assert.equal(f.controller.onboarding(), "create");
-  assert.deepEqual(f.log.slice(2, 6), ["drafts", "enter", "warm lex", "load"]);
+  assert.deepEqual(f.log.slice(2, 5), ["drafts", "enter", "load"]);
 });
 
 test("a kept copy for the account opens before the listing answers; the listing follows with its onboarding hint (TOOLS-242)", async () => {
-  const f = fixture(), copy = keptCopy(1);
+  const f = fixture("https://editor.test/#repo=1&branch=main"), copy = keptCopy(1);
   f.setWarm(copy);
   const started = f.controller.start();
   f.sessions[0].resolve(receipt(signedIn()));
@@ -113,7 +113,7 @@ test("a kept copy for the account opens before the listing answers; the listing 
 });
 
 test("a kept copy's listing with another session's tag falls back to the session's listing", async () => {
-  const f = fixture();
+  const f = fixture("https://editor.test/#repo=1&branch=main");
   f.setWarm(keptCopy(1));
   const started = f.controller.start();
   f.lists[0].read.resolve(receipt([repo(1)], "other", "install"));
@@ -308,9 +308,9 @@ test("planRepositoryOpen decides the repository to open", () => {
     ["one added after install", { list, hashPresent: false, knownBefore: [1] }, { kind: "open", id: 2 }],
     ["added ignored with link", { list, hashPresent: true, knownBefore: [1], linked: { repoId: 1, branch: "main" } }, { kind: "open", id: 1, resume: { repoId: 1, branch: "main" } }],
     ["two added", { list, hashPresent: false, knownBefore: [] }, { kind: "choose" }],
-    ["remembered", { list, hashPresent: false, remembered: { repoId: 1, branch: "main", path: "a.html" } }, { kind: "open", id: 1, resume: { repoId: 1, branch: "main", path: "a.html" } }],
+    ["remembered", { list, hashPresent: false, remembered: { repoId: 1, branch: "main", path: "a.html" } }, { kind: "choose" }],
     ["remembered gone", { list, hashPresent: false, remembered: { repoId: 7, branch: "main" } }, { kind: "choose" }],
-    ["only one", { list: [repo(3)], hashPresent: false }, { kind: "open", id: 3 }],
+    ["only one", { list: [repo(3)], hashPresent: false }, { kind: "choose" }],
     ["choose", { list, hashPresent: false }, { kind: "choose" }],
   ];
   for (const [name, input, expected] of cases) assert.deepEqual(planRepositoryOpen(input), expected, name);

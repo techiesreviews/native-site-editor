@@ -1,0 +1,58 @@
+/* The Project card part owns the shared look of featured, row and grid projects. */
+@layer components {
+  .project-card {
+    position: relative;
+    display: grid;
+    align-items: center;
+    gap: var(--space-m);
+    padding: var(--space-s);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-panel);
+    background: var(--surface);
+    min-inline-size: 0;
+  }
+  .project-card__info { display: grid; justify-items: start; gap: var(--space-xs); min-inline-size: 0; }
+  .project-card :is(p, h1) { margin: 0; }
+  .project-card__title { font-size: var(--type-heading); font-weight: 600; letter-spacing: normal; overflow-wrap: anywhere; }
+  .project-card__source { display: flex; align-items: center; gap: var(--space-3xs); min-inline-size: 0; max-inline-size: 100%; font: var(--type-small) var(--font-mono); color: var(--muted); }
+  .project-card__source span { min-inline-size: 0; white-space: nowrap; overflow: clip; text-overflow: ellipsis; }
+  .project-card__when { font-size: var(--type-small); color: var(--muted); }
+  .project-card__picture { display: grid; place-items: center; overflow: clip; aspect-ratio: 16 / 10; background: var(--surface-subtle); border-radius: var(--radius-small); }
+  .project-card__picture img { inline-size: 100%; block-size: 100%; object-fit: cover; }
+  .project-card__initial { font: var(--type-heading) Georgia, serif; color: var(--muted); }
+  .project-card__more { position: relative; z-index: var(--layer-raised); inline-size: max(var(--size-compact), var(--size-tap)); block-size: max(var(--size-compact), var(--size-tap)); }
+  .project-card__open { --text-btn-text-color: var(--text); font-weight: 600; text-decoration: none; text-align: start; max-inline-size: 100%; overflow-wrap: anywhere; }
+  .project-card__open::after { content: ""; position: absolute; inset: 0; }
+  .project-card:has(.project-card__open:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+  .project-card--featured { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); padding: 0; overflow: clip; }
+  .project-card--featured .project-card__info { padding: var(--space-l); }
+  .project-card--featured .project-card__picture { align-self: stretch; border-inline-start: 1px solid var(--line); border-radius: 0; }
+  .project-card--featured .project-card__more,
+  .project-card--grid .project-card__more { position: absolute; inset-block-start: var(--space-xs); inset-inline-end: var(--space-xs); --icon-btn-background: var(--surface); }
+  .project-card--row { grid-template-columns: calc(var(--size-touch) * 2) minmax(0, 1fr) auto; border-radius: 0; }
+  .project-card--row .project-card__picture { grid-column: 1; grid-row: 1; }
+  .project-card--row .project-card__info { grid-column: 2; grid-row: 1; gap: var(--space-4xs); }
+  .project-card--row:first-child { border-start-start-radius: var(--radius-panel); border-start-end-radius: var(--radius-panel); }
+  .project-card--row:last-child { border-end-start-radius: var(--radius-panel); border-end-end-radius: var(--radius-panel); }
+  .project-card--row + .project-card--row { border-block-start: 0; }
+  .project-card--grid { grid-template-columns: minmax(0, 1fr); padding: 0; overflow: clip; gap: 0; }
+  .project-card--grid .project-card__picture { grid-area: 1 / 1; border-radius: 0; }
+  .project-card--grid .project-card__info { grid-area: 1 / 1; align-self: end; padding: var(--space-l) var(--space-s) var(--space-xs); background: linear-gradient(transparent, var(--media-scrim)); color: var(--on-media); opacity: 0; }
+  .project-card--grid :is(.project-card__source, .project-card__open) { --text-btn-text-color: var(--on-media); color: var(--on-media); }
+  .project-card--grid .project-card__more { opacity: 0; }
+  .project-card--grid:focus-within :is(.project-card__info, .project-card__more) { opacity: 1; }
+  .project-card:active { background: var(--hover); }
+  @media (hover: hover) and (pointer: fine) {
+    .project-card--row:hover { background: var(--hover); }
+    .project-card--grid:hover :is(.project-card__info, .project-card__more) { opacity: 1; }
+  }
+  @media (hover: none), (pointer: coarse) {
+    .project-card--grid :is(.project-card__info, .project-card__more) { opacity: 1; }
+  }
+  @media (width <= 650px) {
+    .project-card--featured { grid-template-columns: minmax(0, 1fr); }
+    .project-card--featured .project-card__info { padding: var(--space-m); }
+    .project-card--featured .project-card__picture { border-inline-start: 0; border-block-start: 1px solid var(--line); }
+    .project-card--featured .button { inline-size: 100%; }
+  }
+}

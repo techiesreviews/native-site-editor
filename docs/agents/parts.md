@@ -124,6 +124,15 @@ A part that needs a screen's piece gets it moved into `src/ui/`, or passed in by
 - **Tests:** `src/ui/progress/progress.test.ts`, `tests/catalogue-part-options.test.ts`, `tests/editor-css-layers.test.ts`
 - **Design board:** Atoms › Progress bar
 
+### Project card
+
+- **For:** A saved project's picture, name, source and open action in a list, grid or featured card.
+- **Use:** `projectCard(project, { mode, open, more, unsaved })` from `src/ui/project-card/project-card.ts`.
+- **Variants:** featured, row, grid
+- **Code:** `src/ui/project-card/project-card.ts`
+- **Styles:** `src/ui/project-card/project-card.css`
+- **Tests:** `src/ui/project-card/project-card.test.ts`
+
 ### Row menu
 
 - **For:** A menu of actions for one row (a page, a file, an element): items with an icon, a hint key, a disabled reason.
@@ -312,6 +321,7 @@ and styles, and the tests that import or name them. A screen is built from the p
 | Preview menu | Preview link in the project menu, loaded after the editor's first paint (src/preview-share.ts) and drawn when the menu first opens (src/components/repository-menu.ts). | `src/components/preview-menu.ts` | `tests/preview-menu.test.ts` |
 | Preview protocol | The editor↔preview wire, typed: what the runtime (native-preview-runtime.js) posts to the editor (`FrameMessage`) and what the editor posts to it (`HostMessage`), and the one reader that turns raw `postMessage` data… | `src/components/preview-protocol.ts` | `tests/frame-guard.test.ts`, `tests/preview-link.test.ts`, `tests/preview-protocol.test.ts`, `tests/preview-wire.test.ts`, `tests/workspace-session-guard.test.ts` |
 | Preview wire | Shared source names for the editor and its bundled preview runtime. | `src/components/preview-wire.ts` | `tests/frame-guard.test.ts`, `tests/preview-protocol.test.ts` |
+| Project overview | The opening project overview: cached summaries, search, list/grid and explicit site opening. | `src/components/project-overview.ts` `src/components/project-overview.css` | none yet |
 | Publish diff | The Save menu's comparison of one change, GitHub's version beside the draft (publish-menu.ts): loaded when first opened, so it and its look (publish-diff.css) stay out of the editor's boot. | `src/components/publish-diff.ts` `src/components/publish-diff.css` | none yet |
 | Publish menu | The Save menu: the changes to save or publish, each with its comparison, and Discard. | `src/components/publish-menu.ts` `src/components/publish-menu.css` | `tests/workspace-session-guard.test.ts` |
 | Repository menu | The project menu under the project tile: repositories, branches, site settings, sharing, download and sign out. | `src/components/repository-menu.ts` `src/components/repository-menu.css` | `tests/boot-shares-later.test.ts`, `tests/preview-menu.test.ts`, `tests/repository-menu-owners.test.ts`, `tests/repository-menu-share.test.ts` |

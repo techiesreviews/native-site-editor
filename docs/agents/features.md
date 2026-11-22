@@ -6,7 +6,7 @@ and [45](../wayfinder/software-factory/build/tickets/45-feature-tries.md)),
 and every visible slice keeps the entries it touches current (kitchen station 7, [kitchen.md](kitchen.md)).
 Rule ids (S1, B10, U4…) are in the [UX rulebook](ux-rulebook.md); domain words are in [CONTEXT.md](../../CONTEXT.md).
 
-Only what is built is listed; planned work (the project overview, local folders) joins
+Only what is built is listed; planned work (local folders) joins
 when it lands. Try features on the real starter with `scripts/agents/kit shots <screen>` (its `--help`
 lists the screens and the steps a scripted try can take).
 
@@ -31,9 +31,17 @@ its number unused.
 
 ## Sign-in and setup
 
+### F-repo-15 Project overview
+- Try: Open the editor at its root address. Search projects, switch List and Grid, and open a project. In its project menu choose All projects to return.
+- Good: The approved TOOLS-182 sketch v2: the slim bar says All projects, with no editor controls or scores. The project list appears without opening site files; a returning account sees its kept summaries while GitHub is checked. The featured site has Continue editing, other sites have compact rows, and Grid uses picture cards. Only a click opens a site's files. Search filters names and owners and offers Clear search for no matches. Returning keeps drafts. No projects offers Add from GitHub. Signed out shows a plain left-aligned sign-in block.
+- Files: `src/components/project-overview.ts`, `src/components/project-overview.css`, `src/ui/project-card/*`, `src/project-memory.ts`
+- Phone: yes
+- Spec: `tests/native-save/native-project-overview.spec.ts`
+- Steps: `scripts/agents/shots/features/F-repo-15.json`
+
 ### F-setup-01 Sign in with GitHub
 - Try: Open the editor signed out and press Continue with GitHub.
-- Good: A short loading state, then the welcome page "Where does your site live?" with one card, On GitHub, and its one button, under a slim top bar whose **No projects yet** menu offers On GitHub too (TOOLS-188); back from GitHub the editor opens without asking again, and a browser that signed in before continues by itself once. A sign-in that fails comes back to this screen with the button and one fixed message for what went wrong (expired, access not granted, not configured, today's allowance used up, or failed); words put in the address after `?error=` are never shown, only the general "GitHub sign-in failed. Try again." (TOOLS-264).
+- Good: A short loading state, then "Sign in to open your sites" with one GitHub button and plain, left-aligned copy under the slim bar. Back from GitHub, the project overview opens; a browser that signed in before continues by itself once. A failed sign-in shows one fixed message, never words supplied in the address.
 - Files: `src/setup-host.ts`, `src/auto-signin.ts`, `src/sign-in-words.ts`, `shared/sign-in-error.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`
@@ -57,7 +65,7 @@ its number unused.
 
 ### F-setup-04 Welcome page after Leave setup
 - Try: In the wizard press Leave setup (the X) on a signed-in account with no site.
-- Good: The welcome page "Where does your site live?" with its one GitHub card; Continue with GitHub opens the wizard again (TOOLS-188).
+- Good: The empty project overview says "No sites in your list"; Add from GitHub opens the wizard again.
 - Files: `src/setup-host.ts`, `src/controllers/setup-entry-controller.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-wizard.spec.ts`
@@ -210,8 +218,8 @@ its number unused.
 - Steps: none yet (a scripted try cannot make a commit on GitHub part way through; the spec does)
 
 ### F-repo-14 Choose a project with none open
-- Try: At 390 px with no project open, tap the page button, then Choose a project; or tap Choose a project on the welcome.
-- Good: The panel says no project is open and offers Choose a project, never an empty search box; both open the project list, and a project chosen there shows its Pages, Media and Files (U4).
+- Try: At 390 px, open the editor root and tap Continue editing on the overview.
+- Good: The overview shows projects directly and hides the page button until a project opens. Its Pages, Media and Files are available after the choice (U4). The project menu keeps Reload repositories reachable when GitHub is unavailable.
 - Files: `src/workspace-mount.ts`, `src/workspace-shell.ts`, `src/repository-list.ts`, `src/style.css`, `src/screens/*.css`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-project-choice.spec.ts`

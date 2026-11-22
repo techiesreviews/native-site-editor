@@ -51,6 +51,7 @@ async function startSignedOut(page: Page, baseURL: string, controls: object = {}
   await control(page, baseURL, { reset: true, repositories: "none", installed: false, ...controls });
   await page.goto(`${baseURL}/`);
   await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   // Sign in, install (GitHub's install page, never an editor screen in between), back signed in: the wizard.
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
 }
@@ -179,6 +180,7 @@ test("back from GitHub without installing the App: Connect GitHub explains the t
   await control(page, baseURL, { reset: true, repositories: "none", installed: false, cancelInstall: true });
   await page.goto(`${baseURL}/`);
   await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Connect GitHub" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Signed in as native-demo-user")).toBeVisible();
   await expect(page.getByText(/One more step on GitHub: install the editor on your account/)).toBeVisible();
@@ -214,6 +216,7 @@ test("back from GitHub without installing the App: Connect GitHub explains the t
   // The retry goes to GitHub's install page once more, in this tab, and carries on.
   await control(page, baseURL, { cancelInstall: false });
   await page.getByRole("link", { name: "Connect GitHub" }).click();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   expect((await state(page, baseURL!)).installs).toBe(1);
   await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);
@@ -223,6 +226,7 @@ test("a returning user whose App is installed skips step 1", async ({ page, base
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none" });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".wizard__step").first()).toHaveClass(/is-done/);
   await expect(page.locator(".wizard__step").nth(1)).toHaveAttribute("aria-current", "step");
@@ -249,19 +253,15 @@ test("Leave setup shows the welcome page, whose GitHub card opens setup again", 
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none" });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   // A chosen tile's check sits at the end of its label, not centred in the gap.
   const label = page.locator(".wizard-tile:has(:checked) .wizard-tile__label").first();
   const [labelBox, checkBox] = [await label.boundingBox(), await label.locator(".icon").boundingBox()];
   expect(labelBox!.x + labelBox!.width - (checkBox!.x + checkBox!.width)).toBeLessThan(8);
   await page.getByRole("button", { name: "Leave setup" }).click();
-  await expect(page.getByRole("heading", { name: "Where does your site live?" })).toBeVisible();
-  await expect(page.locator(".welcome-page__choice")).toHaveCount(1);
-  // The GitHub mark starts the card's heading, beside the words.
-  const heading = page.locator(".welcome-page h2");
-  const [headingBox, markBox] = [await heading.boundingBox(), await heading.locator(".icon").boundingBox()];
-  expect(markBox!.x - headingBox!.x).toBeLessThan(2);
-  await page.getByRole("button", { name: "Continue with GitHub" }).click();
+  await expect(page.getByRole("heading", { name: "No sites in your list" })).toBeVisible();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible();
 });
 
@@ -283,6 +283,7 @@ test("a first commit that stops after index.html is finished from the editor, wi
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none", failTree: true });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Repository name").fill("half-site");
   await page.getByRole("button", { name: "Create site" }).click();
@@ -312,6 +313,7 @@ test("when the editor cannot create the repository, the wizard finds the one mad
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none", create: "forbidden" });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Repository name").fill("manual-site");
   await page.getByRole("button", { name: "Create site" }).click();
@@ -331,6 +333,7 @@ test("retrying a name that exists and that the account can reach opens it instea
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none", create: "taken" });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   // Made by hand meanwhile (the name is taken, and the account can reach it).
   await control(page, baseURL, { add: [{ name: "retry-site", kind: "empty" }] });
@@ -343,6 +346,7 @@ test("the recovery banner belongs to its repository: switching away removes it, 
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none", failTree: true });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Repository name").fill("half-site");
   await page.getByRole("button", { name: "Create site" }).click();
@@ -381,6 +385,7 @@ test("with reduced motion the last page has no confetti, only a fade-in", async 
   await page.goto(`${baseURL}/`);
   await control(page, baseURL, { reset: true, repositories: "none" });
   await page.reload();
+  await page.getByRole("button", { name: "Add from GitHub", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Create your site" })).toBeVisible({ timeout: 30_000 });
   await page.getByLabel("Repository name").fill("calm-site");
   await page.getByRole("button", { name: "Create site" }).click();

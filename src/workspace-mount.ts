@@ -18,6 +18,13 @@ import { createNativePreview, type NativePreview, type NativePreviewHandlers, ty
 import { createPageStructure, type PageStructureHandlers } from "./components/page-structure";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
 import { createRepositoryMenu, type SharesMenuPort } from "./components/repository-menu";
+import { createProjectOverview } from "./components/project-overview";
+import { readProjects, keepProjects, keepOpenedProject } from "./project-memory";
+import { draftStore } from "./drafts";
+import { readWorkspace, type WorkspaceLocation } from "./workspace-state";
+import { progress } from "./ui/progress/progress";
+import { textButton } from "./ui/text-button/text-button";
+import "./ui/progress/progress.css";
 import { createRowMenu } from "./components/row-menu";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountSiteActions } from "./components/site-actions";
@@ -124,8 +131,9 @@ export interface WorkspaceAccountPorts {
   reload: () => Promise<unknown>;
   switchTo: (login: string) => Promise<unknown>;
   signOut: () => Promise<void>;
-  choose: () => Promise<unknown>;
+  choose: (resume?: WorkspaceLocation) => Promise<unknown>;
   load: () => Promise<unknown>;
+  overview?: () => void;
 }
 
 export interface WorkspaceMountPorts {
@@ -152,7 +160,7 @@ export interface WorkspaceMountPorts {
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
   versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
   pagesAndFiles: Pick<PagesAndFiles, "pageActions" | "mountExplorer"> & { loadPagesActions(): Promise<unknown>; filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh"> };
-  setup: { setupController: Pick<SetupHost["setupController"], "dispose">; setupEntry: Pick<SetupHost["setupEntry"], "remove">; startSitePanel: () => Promise<HTMLElement> };
+  setup: { setupController: Pick<SetupHost["setupController"], "dispose">; setupEntry: Pick<SetupHost["setupEntry"], "remove" | "open">; startSitePanel: () => Promise<HTMLElement> };
   site: WorkspaceSitePorts;
   account: WorkspaceAccountPorts;
   repositoryIndex: Pick<RepositoryIndex, "clear">;
@@ -193,6 +201,39 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let files: HTMLElement;
   let explorerDropdown: ReturnType<typeof mountDropdown> | undefined;
   let stopNoProject: (() => void) | undefined;
+  let overview: ReturnType<typeof createProjectOverview> | undefined;
+  let opening: HTMLElement | undefined;
+  let projectPick = 0;
+  const pictured = new Set<string>();
+  function showProjects(list?: Repository[], message = "") {
+    if (!ports.appStore.repository.value) finishOpening();
+    const login = ports.info.user?.login;
+    if (!login || !overview) return;
+    if (list) keepProjects(localStorage, login, list);
+    overview.update(readProjects(localStorage, login), message);
+  }
+  function backToProjects() {
+    projectPick++;
+    finishOpening();
+    repositoryMenu?.close();
+    explorerDropdown?.close();
+    history.replaceState(null, "", location.pathname + location.search);
+    closeEditor();
+    ports.site.deactivate();
+    ports.account.overview?.();
+  }
+  function showOpening(repo: Repository, branch: string) {
+    finishOpening();
+    opening = node("section", "project-opening");
+    opening.append(node("h1", "", `Opening ${repo.name}…`), progress({ label: `Opening ${repo.name}` }),
+      node("p", "muted", `${repo.full_name} · ${branch}`), textButton("Back to projects", backToProjects));
+    content.replaceChildren();
+    ports.element("main").prepend(opening);
+  }
+  function finishOpening() {
+    opening?.remove();
+    opening = undefined;
+  }
   /** The project list: the project menu opened, the explorer closed (the welcome's and the empty panel's Choose a project).
    * As its own button opens it, it is held open (a scroll or the pointer leaving keeps it); the focus goes to the first project,
    * or, with none listed yet (loading, or the list failed), to the first control shown, Reload repositories. */
@@ -303,6 +344,27 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   function mountWorkspace() {
     ports.app.className = "";
     ports.app.innerHTML = workspaceMarkup();
+    pictured.clear();
+    overview = createProjectOverview({
+      open: async project => {
+        const pick = ++projectPick;
+        const at = session.begin();
+        // Cached summaries are navigation hints. Check access against a fresh authenticated listing before opening.
+        await ports.boot.ensureList();
+        if (!at.holds() || pick !== projectPick || !overview?.root.isConnected) return;
+        const repo = ports.repositories.find(repo => repo.id === project.repo.id);
+        if (!repo) { showProjects(ports.repositories, "This project is no longer available."); return; }
+        repositorySelect.value = String(repo.id);
+        const previous = ports.info.user && readWorkspace(ports.info.user.login);
+        await ports.account.choose({ repoId: repo.id, branch: project.branch,
+          ...(previous?.repoId === repo.id && previous.branch === project.branch ? { path: previous.path } : {}) });
+      },
+      add: () => { if (ports.repositories.length) chooseProject(); else void ports.setup.setupEntry.open().catch(notices.errorMessage); },
+      unsaved: project => Boolean(ports.info.user && draftStore().list({ account: ports.info.user.login, repoId: project.repo.id, repo: project.repo.full_name, branch: project.branch }).length),
+    });
+    ports.app.append(overview.root);
+    if (!location.hash) ports.app.dataset.overview = "";
+    showProjects(undefined, "Checking GitHub…");
 
     ports.element("changes").addEventListener("toggle", () => {
       document.getElementById("history-button")?.setAttribute("aria-expanded", String(ports.element("changes").matches(":popover-open")));
@@ -310,6 +372,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     repositoryMenu = createRepositoryMenu({
       installUrl: ports.info.installUrl,
       accounts: ports.info.accounts ?? (ports.info.user ? [{ ...ports.info.user, current: true }] : []),
+      onOverview: backToProjects,
       onOpen: () => void ports.boot.ensureList(),
       onReload: () => void ports.account.reload(),
       onAccessChanged: () => void ports.account.reload(),
@@ -422,7 +485,15 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     choose.id = "explorer-choose";
     noProject.append(choose);
     stopNoProject?.();
-    stopNoProject = effect(() => { noProject.hidden = Boolean(ports.appStore.repository.value); });
+    stopNoProject = effect(() => {
+      const repo = ports.appStore.repository.value;
+      noProject.hidden = Boolean(repo);
+      const showing = !repo && !location.hash;
+      if (showing) ports.app.dataset.overview = "";
+      else delete ports.app.dataset.overview;
+      if (overview) overview.root.hidden = !showing;
+      if (repo && ports.info.user && ports.appStore.branch.value) keepOpenedProject(localStorage, ports.info.user.login, repo, ports.appStore.branch.value);
+    });
     codePanes.mountResize(ports.element("main"), ports.element("code-split"), ports.element("secondary-pane"));
     // A selection inside a component's template gets Select card once the runtime says which card.
     // A remount must not leave the old pane (parked or shown) behind.
@@ -497,6 +568,15 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
         toolsAfterPaint();
         codePanes.notePreviewPainted();
         textIndex.noteNativePainted();
+        const repository = ports.appStore.repository.value, branch = ports.appStore.branch.value, login = ports.info.user?.login;
+        const pictureKey = repository && branch && `${repository.id}/${branch}`;
+        if (repository && branch && login && pictureKey && structure.items.length && !pictured.has(pictureKey)) {
+          pictured.add(pictureKey);
+          const at = session.begin();
+          void ports.nativePreview?.picture({ path: structure.path, width: 1280, height: 800 }).then(picture => {
+            if (at.holds()) keepOpenedProject(localStorage, login, repository, branch, `data:${picture.mimeType};base64,${picture.data}`);
+          }, () => { /* A project without a kept picture shows its initial. */ });
+        }
         ports.previewShare?.painted();
         const path = structure.path, source = structure.paintedSource, scope = session.draftScope();
         // A row's move holds the workspace from this paint, and the page's editor model if it is mounted.
@@ -633,6 +713,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
 
   // Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
   function closeWorkspace() {
+    finishOpening();
+    overview = undefined;
+    delete ports.app.dataset.overview;
     ports.workspaceBoot.dropGuess();
     cancelToolsWait?.();
     cancelToolsWait = undefined;
@@ -727,7 +810,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
 
   return {
     codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor,
-    mountWorkspace, closeWorkspace, setupScope, showDirectory, loadComponentTools,
+    mountWorkspace, closeWorkspace, setupScope, showDirectory, loadComponentTools, showProjects, showOpening, finishOpening,
     get primaryHistoryScope() { return primaryHistoryScope; },
     get activeFileContext() { return activeFileContext; }, set activeFileContext(value) { activeFileContext = value; },
     get repositorySelect() { return repositorySelect; }, get branchSelect() { return branchSelect; }, get refreshButton() { return refreshButton; },

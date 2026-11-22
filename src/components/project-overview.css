@@ -1,0 +1,33 @@
+/* The project overview arranges the shared Project card, Button and search parts. */
+.project-overview {
+  display: grid;
+  align-content: start;
+  grid-template-columns: minmax(var(--space-m), 1fr) minmax(0, 980px) minmax(var(--space-m), 1fr);
+  row-gap: var(--space-m);
+  padding-block: var(--space-l);
+  flex: 1;
+  overflow: auto;
+  min-block-size: 0;
+}
+.project-overview > * { grid-column: 2; }
+.project-overview__bar { display: flex; justify-content: space-between; gap: var(--space-s); align-items: center; }
+.project-overview__bar .repository-menu__search { margin: 0; inline-size: min(50%, 280px); min-block-size: max(var(--size-control), var(--size-tap)); }
+.project-overview__layout { display: flex; gap: var(--space-3xs); }
+.project-overview__layout .button { min-block-size: max(var(--size-control), var(--size-tap)); }
+.project-overview__results { display: grid; gap: var(--space-m); align-content: start; min-inline-size: 0; }
+.project-overview__results > :is(p, h1) { margin: 0; }
+.project-overview__results > .button { justify-self: start; }
+.project-overview__list { display: grid; min-inline-size: 0; }
+.project-overview__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 272px), 1fr)); gap: var(--space-m); }
+.project-overview__state { margin: 0; color: var(--muted); }
+#app[data-overview] > :is(.workspace, #explorer),
+#app[data-overview] .topbar > :is(#explorer-toggle, .topbar-actions),
+#app[data-overview] #repository-menu::after { display: none; }
+#app[data-overview] .repository-menu__trigger { display: flex; }
+#app[data-overview] .repository-menu__caret { display: inline; }
+#app[data-overview] .project-overview { display: grid; }
+.project-overview[hidden] { display: none; }
+.project-opening { display: grid; gap: var(--space-m); inline-size: min(100%, 440px); margin-inline: auto; padding: calc(var(--space-l) * 2) var(--space-l); }
+.project-opening > :is(h1, p) { margin: 0; }
+.project-opening h1 { font-size: var(--type-title); letter-spacing: normal; }
+.project-opening .text-button { justify-self: start; }
