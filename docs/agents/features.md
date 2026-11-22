@@ -32,7 +32,7 @@ its number unused.
 ## Sign-in and setup
 
 ### F-repo-15 Project overview
-- Try: Open the editor at its root address. Search projects, switch List and Grid, and open a project. Choose All projects in the project menu, or directly in the phone's Menu, to return.
+- Try: Open the editor at its root address. Search projects, switch List and Grid, reload to keep that choice, and open a project. Choose All projects in the project menu, or directly in the phone's Menu, to return.
 - Good: The approved TOOLS-182 sketch v2: the slim bar says All projects, with no editor controls or scores. The project list appears without opening site files; a returning account sees its kept summaries while GitHub is checked. A pending or failed listing never claims the account is empty; a failed listing offers Reload repositories. The featured site has Continue editing, other sites have compact rows, and Grid uses picture cards with visible names when no picture is kept. Only a click opens a site's files. Search covers every repository, filters names and owners and offers Clear search for no matches. Returning keeps drafts and puts keyboard focus in search. No projects offers Add from GitHub. Signed out shows a plain left-aligned sign-in block. Sign-out removes the account's kept project summaries and pictures.
 - Files: `src/components/project-overview.ts`, `src/components/project-overview.css`, `src/ui/project-card/*`, `src/project-memory.ts`, `src/project-overview-host.ts`
 - Phone: yes

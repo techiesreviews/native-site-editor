@@ -32,6 +32,7 @@ test('the root opens projects without loading a site, then opens only the clicke
   expect(siteReads).toEqual([]);
   await expect(page.locator('#explorer-toggle')).toBeHidden();
   await page.getByRole('button', { name: 'Grid', exact: true }).click();
+  await page.reload();
   await expect(page.locator('.project-overview')).toHaveAttribute('data-view', 'grid');
   await page.getByRole('searchbox', { name: 'Search projects', exact: true }).fill('no-such-project');
   await expect(page.getByText('No match for “no-such-project”', { exact: true })).toBeVisible();
@@ -45,6 +46,29 @@ test('the root opens projects without loading a site, then opens only the clicke
   await expect(page.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
   await expect(page.locator('.native-preview-frame')).toBeHidden();
   await expect(page).toHaveURL(/\/$/);
+});
+
+test('one cached-project click survives recovery of a failed listing @smoke', async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/`);
+  await expect(page.getByRole('button', { name: 'Continue editing', exact: true })).toBeVisible();
+  await page.route('**/api/repositories*', route => route.fulfill({ status: 500, json: { error: 'GitHub is unavailable' } }));
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Reload repositories', exact: true })).toBeVisible();
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/repositories*', async route => {
+    const response = await route.fetch();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.getByRole('button', { name: 'Continue editing', exact: true }).click();
+    release();
+    await expect(page.frameLocator('.native-preview-frame').locator('body')).toBeVisible();
+    await expect(page.locator('.repository-menu__trigger')).toBeFocused();
+  } finally { release(); }
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
 
 test('a returning root visit keeps the project list usable while GitHub is slow @smoke', async ({ page, baseURL }) => {

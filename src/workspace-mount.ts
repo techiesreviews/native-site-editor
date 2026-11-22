@@ -172,7 +172,7 @@ export interface WorkspaceMountPorts {
   /** The guarded edit module's, told of each file a pane mounts. */
   readonly nativeMountListener: ((path: string, pane: boolean) => void) | undefined;
   /** Declared after the host. */
-  readonly boot: Pick<ReturnType<typeof createBootController>, "ensureList" | "reset">;
+  readonly boot: Pick<ReturnType<typeof createBootController>, "ensureList" | "reset" | "needsRecovery">;
   readonly agentController: Pick<ReturnType<typeof createAgentController>, "ensure" | "dismiss" | "answer" | "destroy">;
   /** The user's Undo of an agent's changes from its pin card (ticket am-15). */
   readonly agentCommands: Pick<ReturnType<typeof createAgentHost>["agentCommands"], "undo" | "undoable" | "undoLatest" | "latestUndoable">;

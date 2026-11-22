@@ -102,6 +102,7 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     repositoryMenu: { setRepository: () => {}, setRepositories: (repositories: Repository[], message?: string) => { menu.listed = repositories; menu.message = message; } },
     siteActions: undefined,
     nextLoad: () => { session.next(undefined); return session.begin(); },
+    closeWorkspace: () => { session.next(undefined); },
     chooseRepository: async (resume?: WorkspaceLocation, warm?: WarmCopy) => { chosen.push(resume); warmed.push(warm); },
     storage: () => local,
     options: () => {},

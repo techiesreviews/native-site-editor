@@ -445,7 +445,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get content() { return workspace.content; }, get files() { return workspace.files; }, get refreshButton() { return workspace.refreshButton; },
   get branchSelect() { return workspace.branchSelect; }, get repositorySelect() { return workspace.repositorySelect; },
   get repositoryMenu() { return workspace.repositoryMenu; }, get siteActions() { return workspace.siteActions; },
-  nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage,
+  nextLoad, closeWorkspace, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage,
   removeFinishStarter, knownRepositories, rememberRepositories,
   showProjects: (list, message, failed) => workspace.showProjects(list, message, failed),
 });

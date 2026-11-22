@@ -25,9 +25,9 @@ export function createProjectOverviewHost(options: {
   let projectPick = 0;
   let phase: "loading" | "ready" | "error" = "loading", listing: Repository[] | undefined;
   async function open(project: ProjectMemory) {
-    const pick = ++projectPick, at = options.ports.session.begin();
+    const pick = ++projectPick;
     await options.ports.boot.ensureList();
-    if (!at.holds() || pick !== projectPick || !view.root.isConnected) return;
+    if (pick !== projectPick || !view.root.isConnected || view.root.hidden || location.hash || options.ports.boot.needsRecovery()) return;
     const repo = options.ports.repositories.find(repo => repo.id === project.repo.id);
     if (!repo) { update(options.ports.repositories, "This project is no longer available."); return; }
     options.select(repo.id);
