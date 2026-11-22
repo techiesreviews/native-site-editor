@@ -16,10 +16,11 @@ test("running the script on the committed export reproduces theme.css's generate
   assert.deepEqual(checkTheme(theme, exported), []);
 });
 
-test("the generated block holds the spacing steps and the pill corner in the editor's pixels", () => {
+test("the generated block holds the spacing steps and the pill corner in the editor's pixels, on @layer tokens", () => {
   const block = generatedBlock(exported);
+  assert.match(block, /@layer tokens \{\n {2}:root \{/);
   for (const line of ["--space-4xs: 2px;", "--space-3xs: 4px;", "--space-2xs: 6px;", "--space-xs: 8px;", "--space-s: 12px;", "--space-m: 16px;", "--space-l: 24px;", "--radius-full: 999px;"]) {
-    assert.ok(block.includes(`  ${line}`), line);
+    assert.ok(block.includes(`    ${line}`), line);
   }
   assert.match(block, new RegExp(`content hash ${parseExport(exported).hash}`));
 });

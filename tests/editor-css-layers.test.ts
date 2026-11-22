@@ -118,6 +118,18 @@ test("the live-share guest page colours its Join button itself, as it does not l
   assert.match(submit, /color: var\(--on-primary\);/);
 });
 
+test("the editor's theme tokens sit on the tokens layer, after the layer order statement", () => {
+  const css = withoutComments(read("src/theme.css")).trim();
+  assert.ok(css.startsWith(ORDER), "src/theme.css sets the layers' order before anything else");
+  let rest = css.slice(ORDER.length).trim();
+  assert.ok(rest.length > 0, "src/theme.css has token blocks");
+  while (rest.length > 0) {
+    assert.ok(rest.startsWith("@layer tokens {"), `everything in src/theme.css sits on @layer tokens, found: ${rest.slice(0, 40)}`);
+    const body = block(rest, 0);
+    rest = rest.slice(`@layer tokens {${body}}`.length).trim();
+  }
+});
+
 test("the editor's bare element rules sit on the elements layer, below every component", () => {
   const css = withoutComments(read("src/style.css"));
   assert.ok(css.trimStart().startsWith(ORDER), "src/style.css sets the layers' order before anything else");
