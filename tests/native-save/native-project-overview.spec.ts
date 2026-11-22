@@ -15,7 +15,7 @@ test('Continue editing has a 44 px target on portrait and landscape touch screen
     await page.goto(`${baseURL}/`);
     const open = page.getByRole('button', { name: 'Continue editing', exact: true });
     for (const width of [320, 390, 844]) {
-      await page.setViewportSize({ width, height: 844 });
+      await page.setViewportSize({ width, height: width === 844 ? 390 : 844 });
       await expect(open).toBeVisible();
       expect((await open.boundingBox())?.height).toBeGreaterThanOrEqual(44);
     }
@@ -297,9 +297,14 @@ test('Back to projects stays available while site files load and cancels their l
     await expect(page.getByRole('heading', { name: 'Opening native-demo…', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Back to projects', exact: true }).click();
     await expect(page.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
+    const response = page.waitForResponse(/\/api\/files\?/);
+    release();
+    await (await response).finished();
   } finally { release(); }
   await page.unrouteAll({ behavior: 'ignoreErrors' });
   await expect(page.locator('.native-preview-frame')).toBeHidden();
+  await expect(page).not.toHaveURL(/#repo=/);
+  await expect(page.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
 });
 
 test('a returning root visit keeps the project list usable while GitHub is slow @smoke', async ({ page, baseURL }) => {
