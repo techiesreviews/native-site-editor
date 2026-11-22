@@ -103,6 +103,7 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     siteActions: undefined,
     nextLoad: () => { session.next(undefined); return session.begin(); },
     closeWorkspace: () => { session.next(undefined); },
+    stopProjectMemory: () => {},
     chooseRepository: async (resume?: WorkspaceLocation, warm?: WarmCopy) => { chosen.push(resume); warmed.push(warm); },
     storage: () => local,
     options: () => {},
@@ -159,6 +160,15 @@ test("a refused sign-out shows its error and stays on the page", async () => {
   await list.disconnect();
   assert.equal((errors[0] as Error).message, "Could not disconnect. Try again.");
   assert.deepEqual(assigned, []);
+});
+
+test("sign-out preserves unpersisted editor memory until navigation can be accepted", async () => {
+  const f = fixture();
+  let unpersistedText = "An edit not yet in browser storage";
+  f.ports.closeWorkspace = () => { unpersistedText = ""; };
+  answer = () => new Response(null, { status: 204 });
+  await f.list.disconnect();
+  assert.equal(unpersistedText, "An edit not yet in browser storage");
 });
 
 test("a refreshed list that still holds the open repository announces the change and keeps it selected", async () => {

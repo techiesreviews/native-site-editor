@@ -26,6 +26,7 @@ export function createProjectOverviewHost(options: {
   const { login } = options;
   const removed = new Set(readProjects(localStorage, login).filter(project => project.hidden).map(project => project.repo.id));
   let projectPick = 0;
+  let remembering = true;
   let phase: "loading" | "ready" | "error" = "loading", listing: Repository[] | undefined;
   async function open(project: ProjectMemory) {
     const pick = ++projectPick;
@@ -39,10 +40,10 @@ export function createProjectOverviewHost(options: {
       ...(options.sameBranch(previous, { repoId: repo.id, branch: project.branch }) ? { path: previous?.path } : {}) });
   }
   const view = createProjectOverview({ menu: options.menu, open, add: () => options.add(), reload: () => options.ports.account.overview?.(),
-    remove: project => { removed.add(project.repo.id); hideProject(localStorage, login, project.repo.id); update(); view.focus(); },
+    remove: project => { removed.add(project.repo.id); if (remembering) hideProject(localStorage, login, project.repo.id); update(); view.focus(); },
     unsaved: project => Boolean(draftStore().list({ account: login, repoId: project.repo.id, repo: project.repo.full_name, branch: project.branch }).length) });
   function update(list?: Repository[], message?: string, failed = false) {
-    if (list) { listing = list; keepProjects(localStorage, login, list); phase = "ready"; message ??= ""; }
+    if (list) { listing = list; if (remembering) keepProjects(localStorage, login, list); phase = "ready"; message ??= ""; }
     else if (message !== undefined) phase = failed ? "error" : "loading";
     const kept = new Map(readProjects(localStorage, login).map(project => [project.repo.id, project]));
     const projects = listing ? listing.map(repo => ({ ...kept.get(repo.id), repo,
@@ -55,6 +56,7 @@ export function createProjectOverviewHost(options: {
     opening?.remove(); opening = undefined;
   };
   const remember = (repo: Repository, branch: string, picture?: string) => {
+    if (!remembering) return;
     removed.delete(repo.id);
     keepOpenedProject(localStorage, login, repo, branch, picture);
   };
@@ -62,10 +64,11 @@ export function createProjectOverviewHost(options: {
     root: view.root,
     focus: () => view.focus(),
     update,
+    stopRemembering() { remembering = false; projectPick++; },
     cancel: () => { projectPick++; },
     remember,
     picture(preview: Pick<NativePreview, "picture">, path: string, repo: Repository, branch: string, holds: () => boolean) {
-      if (!holds()) return;
+      if (!remembering || !holds()) return;
       remember(repo, branch);
       void preview.picture({ path, width: 1280, height: 800, limit: 119960 }).then(picture => {
         if (holds() && view.root.isConnected) remember(repo, branch, `data:${picture.mimeType};base64,${picture.data}`);
@@ -80,6 +83,6 @@ export function createProjectOverviewHost(options: {
       opening.querySelector<HTMLButtonElement>("button")?.focus();
     },
     finishOpening,
-    destroy() { projectPick++; finishOpening(); view.destroy(); },
+    destroy() { remembering = false; projectPick++; finishOpening(); view.destroy(); },
   };
 }

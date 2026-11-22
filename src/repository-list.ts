@@ -43,7 +43,7 @@ export interface RepositoryListPorts {
   readonly repositoryMenu: { setRepository(repo?: Repository): void; setRepositories(list: Repository[], message?: string): void } | undefined;
   readonly siteActions: { revalidate(): void } | undefined;
   nextLoad(): SessionStamp;
-  closeWorkspace(): void;
+  stopProjectMemory(): void;
   chooseRepository(resume?: WorkspaceLocation, warm?: WarmCopy): Promise<void>;
   storage: (kind: "local" | "session") => Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "length">;
   options: (select: HTMLSelectElement, values: { value: string; label: string }[]) => void;
@@ -287,7 +287,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
     try {
       const response = await fetch("/auth/logout", { method: "POST" });
       if (!response.ok) throw new Error("Could not disconnect. Try again.");
-      ports.closeWorkspace();
+      ports.stopProjectMemory();
       // 204: that was the last account on this browser, so nothing continues by itself next time.
       if (response.status === 204) forgetSignedIn(storage("local"));
       forgetBootMemory(storage("local"));
