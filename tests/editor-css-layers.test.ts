@@ -130,15 +130,33 @@ test("the editor's theme tokens sit on the tokens layer, after the layer order s
   }
 });
 
-test("the editor's bare element rules sit on the elements layer, below every component", () => {
-  const css = withoutComments(read("src/style.css"));
-  assert.ok(css.trimStart().startsWith(ORDER), "src/style.css sets the layers' order before anything else");
-  const at = css.indexOf("@layer elements {");
-  assert.ok(at >= 0, "an elements layer");
-  const elements = block(css, at);
+test("the editor's bare element rules and reset sit on the elements layer in src/elements.css, below every component", () => {
+  assert.equal(existsSync(join(repo, "src/utilities.css")), false, "src/utilities.css is folded into src/elements.css");
+  const elementsFile = withoutComments(read("src/elements.css")).trim();
+  assert.ok(elementsFile.startsWith(ORDER), "src/elements.css sets the layers' order before anything else");
+  const rest = elementsFile.slice(ORDER.length).trim();
+  assert.ok(rest.startsWith("@layer elements {"), "src/elements.css holds one elements layer block");
+  const elements = block(rest, 0);
+  assert.equal(rest, `@layer elements {${elements}}`, "nothing in src/elements.css sits outside the elements layer");
+  assert.match(elements, /\*,\s*\*::before,\s*\*::after\s*\{\s*box-sizing: border-box;/);
+  assert.match(elements, /body\s*\{[^}]*margin: 0;/);
   assert.match(elements, /button,\s*a,\s*select\s*\{[^}]*font: inherit;[^}]*color: inherit;/);
-  const outside = css.slice(0, at) + css.slice(at + elements.length);
-  assert.doesNotMatch(outside, /(?:^|})\s*(?:button|a)(?:,\s*(?:a|select))*\s*\{[^}]*(?:font|color): inherit/m, "no unlayered copy left");
+  assert.match(elements, /button:disabled:where\(:not\(\.button\)\),\s*select:disabled\s*\{/);
+  assert.match(elements, /button:focus-visible,\s*a:focus-visible,\s*select:focus-visible/);
+  assert.match(elements, /(?:^|\n)\s*select\s*\{[^}]*height: var\(--size-control\);/);
+  // No classes on the elements layer (bare HTML only; :not(.button) is an exclusion on the bare button element).
+  for (const match of elements.matchAll(/(?:^|[{};])\s*([^{};@]+?)\s*\{/g)) {
+    for (const selector of splitSelectors(match[1])) {
+      assert.doesNotMatch(selector.replace(/:where\(:not\(\.button\)\)/g, ""), /\./, `elements layer selector has no classes: ${selector}`);
+    }
+  }
+  const style = withoutComments(read("src/style.css"));
+  assert.ok(style.trimStart().startsWith(ORDER), "src/style.css sets the layers' order before anything else");
+  assert.match(style, /^@import "\.\/elements\.css";$/m, "src/style.css imports src/elements.css");
+  assert.doesNotMatch(style, /@layer elements\b/, "bare element rules moved out of src/style.css");
+  assert.doesNotMatch(style, /(?:^|})\s*(?:button|a|select)(?::[\w-]+(?:\([^)]*\))?)*(?:,\s*(?:a|select|summary|pre)(?::[\w-]+)*)*\s*\{/m, "no unlayered bare button/a/select rules left in src/style.css");
+  assert.doesNotMatch(read("src/main.ts"), /utilities\.css/);
+  assert.doesNotMatch(read("src/catalogue/main.ts"), /utilities\.css/);
 });
 
 test("the editor loads used component files through parts.css; the board loads each as a style of its own", () => {

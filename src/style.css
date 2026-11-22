@@ -2,56 +2,9 @@
    tokens, bare elements, then components each in a file of its own. The editor's screen CSS stays unlayered, so it
    wins over all three. */
 @layer tokens, elements, components;
+@import "./elements.css";
 @import "./ui/editor-scrollbars.css";
 
-:root {
-  font-family:
-    Inter,
-    ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-  color: var(--text);
-  background: var(--background);
-  font-synthesis: none;
-  font-size: 14px;
-  line-height: 1.5;
-  color-scheme: light dark;
-}
-body {
-  font-family: inherit;
-  font-size: var(--type-base);
-}
-/* Bare elements, below every component: a Button's own font and colours win over these. */
-@layer elements {
-  button,
-  a,
-  select {
-    font: inherit;
-    color: inherit;
-    -webkit-tap-highlight-color: transparent;
-  }
-  button {
-    cursor: pointer;
-  }
-}
-/* Bare icon and text buttons have no fill and fade; a Button is plain instead (src/ui/button/button.css).
-   Hover rules below sit behind (hover: hover) and (pointer: fine), as a touch
-   screen keeps :hover on the last tap; touch gets the :active press instead. */
-button:disabled:where(:not(.button)),
-select:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-button:focus-visible,
-a:focus-visible,
-select:focus-visible,
-summary:focus-visible,
-pre:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 2px;
-}
 #app {
   height: 100dvh;
   display: flex;
@@ -323,16 +276,6 @@ pre:focus-visible {
 .code-pane > .workspace-content {
   flex: 1;
 }
-select {
-  width: 100%;
-  background: var(--surface);
-  border: 0;
-  border-radius: var(--radius);
-  height: var(--size-control);
-  padding: 0 10px;
-  font-size: var(--type-base);
-  text-overflow: ellipsis;
-}
 @media (hover: hover) and (pointer: fine) {
   .explorer-toggle:hover {
     background: var(--hover);
@@ -383,14 +326,6 @@ main > .code-split {
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 22px;
-}
-h1 {
-  font-size: clamp(30px, 3.6vw, 49px);
-  font-weight: 500;
-  letter-spacing: -0.055em;
-  line-height: 1.12;
-  margin: 0 0 22px;
-  white-space: pre-line;
 }
 .intro {
   font-size: 15px;
@@ -497,13 +432,6 @@ h1 {
   grid-template-columns: 100px minmax(0, 1fr);
   padding: 12px 0;
 }
-dt {
-  color: var(--muted);
-}
-dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
 .next-step {
   padding: 3px 0 3px 16px;
   font-size: var(--type-small);
@@ -589,9 +517,6 @@ dd {
   .workspace-content {
     max-height: none;
     min-height: 350px;
-  }
-  h1 {
-    font-size: 37px;
   }
   .intro {
     font-size: 14px;
