@@ -110,7 +110,7 @@ test("a guest can use a thumbnail arriving after 15 seconds without reopening th
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
 
-test("an older text read cannot repaint Bold over a newer read (SL-2)", async ({ page }) => {
+test("a text read crossing a render remains usable with its original proof (SL-2)", async ({ page }) => {
   await mount(page);
   await page.evaluate(() => window.guestBarRace.select("p"));
   await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
@@ -211,6 +211,28 @@ test("selecting another paragraph does not wait for an old selection's unanswere
   const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
   await expect(bold).toHaveAttribute("aria-pressed", "true");
   await page.evaluate(text => window.guestBarRace.answer(text, 1), source("First"));
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
+test("a lost text reply does not hold up a newer render's read (R1-2)", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p"));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await page.evaluate(() => window.guestBarRace.select("p", true));
+  await page.clock.runFor(1_201);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+  // Request 2 is lost. The next render must read without waiting for its 10 second timeout.
+  await page.evaluate(() => window.guestBarRace.select("p", true));
+  await page.clock.runFor(1_201);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  await page.evaluate(text => window.guestBarRace.answer(text, 3), source("<strong>Current bold</strong>"));
+  await expect(bold).toHaveAttribute("aria-pressed", "true");
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+  // A late older answer cannot overwrite the newer read.
+  await page.evaluate(text => window.guestBarRace.answer(text, 2), source("Plain"));
   await expect(bold).toHaveAttribute("aria-pressed", "true");
   await page.evaluate(() => window.guestBarRace.bar.close());
 });

@@ -119,7 +119,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
   let text: { key: string; on: number; size?: string; bold?: boolean } | undefined;
   let reading = 0;
-  let textReading: { key: string; again: boolean } | undefined;
+  let textReading: { key: string; on: number; again: boolean } | undefined;
   let reread: ReturnType<typeof setTimeout> | undefined;
   // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and its
   // text controls wait until Lex's tab refuses it, or a later render shows it written (so the next change names a page
@@ -327,9 +327,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
 
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
-    if (textReading?.key === key(target)) { textReading.again = true; return; }
+    if (textReading?.key === key(target) && textReading.on === seen) { textReading.again = true; return; }
     const ticket = ++reading;
-    const mine = { key: key(target), again: false };
+    const mine = { key: key(target), on: seen, again: false };
     textReading = mine;
     try {
       const on = seen;
