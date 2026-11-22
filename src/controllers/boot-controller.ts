@@ -32,7 +32,7 @@ export function planRepositoryOpen(input: {
   const { list, linked } = input;
   if (!list.length) return { kind: "empty" };
   if (input.hashPresent && !linked) return { kind: "invalid-link" };
-  if (linked && !list.some((repo) => repo.id === linked.repoId)) return { kind: "unavailable-link" };
+  if (linked && !new Set(list.map(repo => repo.id)).has(linked.repoId)) return { kind: "unavailable-link" };
   // Back from giving the editor access: the one repository that is new opens.
   if (input.knownBefore) {
     const known = new Set(input.knownBefore);

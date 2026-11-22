@@ -86,8 +86,7 @@ export interface WorkspaceBootPorts {
   /** `away`: another workspace is opening (a picker's Use under way still lands in its own, ticket 27). */
   deactivateNative(away?: boolean): void;
   activateNativeSite(repo: Repository, result: Snapshot, at: SessionStamp, openPath?: string): Promise<boolean>;
-  showOpening?(repo: Repository, branch: string): void;
-  finishOpening?(): void;
+  opening?: { show(repo: Repository, branch: string): void; finish(): void };
 }
 
 // How long a failed branch list waits for a guessed snapshot (the only read with a bound).
@@ -195,7 +194,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     ports.panels.content.replaceChildren(
       node("p", "empty-message", "Opening your repository…"),
     );
-    ports.showOpening?.(repo, branch);
+    ports.opening?.show(repo, branch);
     notices.status(`Loading ${repo.name} / ${branch}…`);
     try {
       // The browser's drafts load alongside the snapshot (start()).
@@ -209,7 +208,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.draftsReady(),
       ]);
       if (!at.holds()) return;
-      ports.finishOpening?.();
+      ports.opening?.finish();
       // GitHub's snapshot opens instead, the plain way, when the kept copy is not the version this browser's drafts
       // began from (another tab moved on, a keep that never landed): every draft's starting blob must be the copy's
       // at its path (none for a new file), or the drafts' checks against the copy (a deletion GitHub "no longer
@@ -294,7 +293,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       notices.settleStatus(!warm ? upToDate(branch, shown) : keptSaid?.at === at ? keptSaid.text : `Checking GitHub for newer changes on ${branch}…`);
     } catch (error) {
       if (at.holds()) {
-        ports.finishOpening?.();
+        ports.opening?.finish();
         ports.panels.files.replaceChildren(
           node(
             "p",
@@ -563,7 +562,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     // the bookmark or repository metadata. Validate it before using its snapshot.
     const requestedBranch = resume?.branch ?? appStore.repository.value.default_branch;
     const opened = appStore.repository.value;
-    ports.showOpening?.(opened, requestedBranch);
+    ports.opening?.show(opened, requestedBranch);
     const kept = sameBranch({ repoId: warm?.repo.id, branch: warm?.branch ?? "" }, { repoId: opened.id, branch: requestedBranch }) ? warm : undefined;
     // The guess is not needed beside a kept copy (dropped first: the copy's own hold replaces it).
     if (kept) dropBootGuess();
@@ -642,7 +641,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         branches.map((name) => ({ value: name, label: `⑂ ${name}` })),
       );
       if (resume && !branches.includes(resume.branch)) {
-        ports.finishOpening?.();
+        ports.opening?.finish();
         ports.panels.branchSelect.disabled = false;
         ports.panels.content.replaceChildren(
           node(
@@ -667,7 +666,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       );
     } catch (error) {
       if (at.holds()) {
-        ports.finishOpening?.();
+        ports.opening?.finish();
         ports.options(ports.panels.branchSelect, [{ value: "", label: "Branches unavailable" }]);
         const failed = node("p", "empty-message", "Branches could not be loaded.");
         ports.panels.content.replaceChildren(failed);

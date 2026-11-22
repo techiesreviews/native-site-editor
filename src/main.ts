@@ -425,8 +425,7 @@ const workspaceBoot = createWorkspaceBoot({
   get user() { return info?.user; }, get repositories() { return repositories; },
   source: () => location.origin + location.pathname,
   sessionTag: () => boot.sessionTag(),
-  showOpening: (repo, branch) => workspace.showOpening(repo, branch),
-  finishOpening: () => workspace.finishOpening(),
+  opening: { show: (repo, branch) => workspace.showOpening(repo, branch), finish: () => workspace.finishOpening() },
   draftsReady: () => boot.draftsReady(),
   storage, element, node, options, draftsOf: (scope) => draftStore().list(scope), deactivateNative, activateNativeSite,
 });

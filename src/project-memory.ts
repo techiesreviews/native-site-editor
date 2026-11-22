@@ -1,5 +1,6 @@
 // Project summaries kept by account in this browser; no site files are read to draw the overview.
 import type { Repository } from "../shared/types";
+import { pictureReplyTypes } from "../shared/media-kinds";
 
 type Store = Pick<Storage, "getItem" | "setItem">;
 export interface ProjectMemory { repo: Repository; branch: string; opened?: number; picture?: string; hidden?: boolean }
@@ -15,21 +16,23 @@ export function readProjects(store: Store, login: string): ProjectMemory[] {
       typeof p.branch === "string" && (p.opened === undefined || Number.isFinite(p.opened)) && (p.hidden === undefined || typeof p.hidden === "boolean"))
       .map(p => {
         const { picture, ...summary } = p;
-        return typeof picture === "string" && picture.length <= 120000 && /^data:image\/(webp|png|jpeg);base64,/.test(picture) ? p : summary;
+        const mime = typeof picture === "string" && picture.length <= 120000 ? /^data:([^;,]+);base64,/.exec(picture)?.[1] : undefined;
+        return mime && pictureReplyTypes.includes(mime) ? p : summary;
       });
   } catch { return []; /* Browser memory is optional. */ }
 }
 
 export function keepProjects(store: Store, login: string, list: Repository[]) {
-  const previous = readProjects(store, login);
-  save(store, login, list.map(repo => ({ ...previous.find(p => p.repo.id === repo.id), repo,
-    branch: previous.find(p => p.repo.id === repo.id)?.branch ?? repo.default_branch })));
+  const previous = new Map(readProjects(store, login).map(project => [project.repo.id, project]));
+  save(store, login, list.map(repo => ({ ...previous.get(repo.id), repo,
+    branch: previous.get(repo.id)?.branch ?? repo.default_branch })));
 }
 
 export function keepOpenedProject(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
-  const previous = readProjects(store, login), old = previous.find(p => p.repo.id === repo.id);
+  const previous = new Map(readProjects(store, login).map(project => [project.repo.id, project])), old = previous.get(repo.id);
+  previous.delete(repo.id);
   save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(!picture ? { hidden: false } : {}), ...(picture && picture.length <= 120000 ? { picture } : {}) },
-    ...previous.filter(p => p.repo.id !== repo.id)]);
+    ...previous.values()]);
 }
 
 export function hideProject(store: Store, login: string, id: number) {
