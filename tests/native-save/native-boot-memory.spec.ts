@@ -266,14 +266,15 @@ test('a guess taken before a new listing clears the selection writes nothing whe
 
   listed.without = true;
   await reloadRepositories(page);
-  await expect(page.locator('#content')).toContainText('Open a project');
+  await expect(page.getByRole('main', { name: 'Projects', exact: true })).toBeVisible();
   const landed = page.waitForResponse((response) => response.url().includes('/api/snapshot'));
   release();
   await (await landed).finished();
 
-  // Access back: the remembered repository opens afresh, and its page is read, not taken from the guess.
+  // Access back: choose the repository again; its page is read, not taken from the guess.
   listed.without = false;
   await reloadRepositories(page);
+  await page.locator('.project-overview [data-open="501"]').click();
   await expect(preview(page).locator('.hero h1')).toBeVisible();
   await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
   expect(state.late.some((read) => read.startsWith('/api/file') && read.includes(sha(memory, 'index.html'))), 'the page is read afresh').toBe(true);
@@ -317,7 +318,7 @@ test('a guess that won, abandoned by a new listing before its file batch lands: 
 
   listed.without = true;
   await reloadRepositories(page);
-  await expect(page.locator('#content')).toContainText('Open a project');
+  await expect(page.getByRole('main', { name: 'Projects', exact: true })).toBeVisible();
   const landed = page.waitForResponse((response) => response.url().includes('/api/files'));
   releaseFiles();
   releaseBranches();
@@ -325,6 +326,7 @@ test('a guess that won, abandoned by a new listing before its file batch lands: 
 
   listed.without = false;
   await reloadRepositories(page);
+  await page.locator('.project-overview [data-open="501"]').click();
   await expect(preview(page).locator('.hero h1')).toBeVisible();
   await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
   expect(state.late.some((read) => read.startsWith('/api/file') && read.includes(sha(memory, 'index.html'))), 'the page is read afresh').toBe(true);
