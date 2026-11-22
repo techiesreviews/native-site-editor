@@ -208,7 +208,6 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.draftsReady(),
       ]);
       if (!at.holds()) return;
-      ports.opening?.finish();
       // GitHub's snapshot opens instead, the plain way, when the kept copy is not the version this browser's drafts
       // began from (another tab moved on, a keep that never landed): every draft's starting blob must be the copy's
       // at its path (none for a new file), or the drafts' checks against the copy (a deletion GitHub "no longer
@@ -226,6 +225,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         void ports.repo.readFile(repo.full_name, reopenEntry.sha).catch(() => {});
       const isNative = await ports.activateNativeSite(repo, result, at, reopen);
       if (!at.holds()) return;
+      ports.opening?.finish();
       // Drafts of files GitHub deleted or now holds are looked for once the
       // page is on screen (a file opened before then that needs it waits).
       if (isNative && runtime.site) {

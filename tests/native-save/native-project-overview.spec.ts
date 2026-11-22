@@ -8,6 +8,20 @@ test('a confirmed empty account shows the approved empty state without search co
   await expect(page.getByRole('button', { name: 'Add from GitHub', exact: true })).toBeVisible();
 });
 
+test('Continue editing has a 44 px target on portrait and landscape touch screens @smoke', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ hasTouch: true });
+  const page = await context.newPage();
+  try {
+    await page.goto(`${baseURL}/`);
+    const open = page.getByRole('button', { name: 'Continue editing', exact: true });
+    for (const width of [320, 390, 844]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(open).toBeVisible();
+      expect((await open.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    }
+  } finally { await context.close(); }
+});
+
 test('Remove from list hides only the card and keeps the repository available @smoke', async ({ page, baseURL }) => {
   const writes: string[] = [];
   page.on('request', request => { if (request.method() !== 'GET') writes.push(request.url()); });
@@ -65,6 +79,52 @@ async function hearSignOut(page: Page) {
     onWarmCopyForgotten(() => { document.documentElement.dataset.projectSignout = 'heard'; });
   });
 }
+
+test('an older picture cannot replace another tab’s newer branch or opening time @smoke', async ({ page, context, baseURL }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    if (window !== window.top) return;
+    let held: MessageEvent | undefined, waiting = true;
+    window.projectPictureGate = { held: false, release() {
+      waiting = false;
+      if (held) window.dispatchEvent(new MessageEvent('message', { data: held.data, source: held.source, origin: held.origin }));
+    } };
+    window.addEventListener('message', event => {
+      if (!waiting || event.data?.type !== 'picture-result') return;
+      event.stopImmediatePropagation();
+      held = event;
+      window.projectPictureGate.held = true;
+    }, true);
+  });
+  const other = await context.newPage();
+  const choice = () => other.evaluate(() => {
+    const projects = JSON.parse(localStorage.getItem('native-site-editor:projects:v1:native-demo-user') ?? '[]') as {
+      repo: { id: number }; branch: string; opened?: number;
+    }[];
+    const project = projects.find(project => project.repo.id === 501);
+    return { branch: project?.branch, opened: project?.opened };
+  });
+  try {
+    await page.goto(`${baseURL}/`);
+    const home = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+    const branch = await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'release-preview', path: 'index.html', content: home } });
+    expect(branch.ok()).toBe(true);
+    await page.locator('.project-overview [data-open="501"]').click();
+    await expect.poll(() => page.evaluate(() => window.projectPictureGate.held)).toBe(true);
+    await other.goto(`${baseURL}/#repo=501&branch=release-preview`);
+    await expect(other.frameLocator('.native-preview-frame').locator('.hero h1')).toBeVisible();
+    await expect.poll(async () => (await choice()).branch).toBe('release-preview');
+    const newer = await choice();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+    await page.evaluate(() => window.projectPictureGate.release());
+    await page.clock.runFor(50);
+    expect(await choice()).toEqual(newer);
+    await other.locator('.repository-menu__trigger').click();
+    await other.locator('#repository-actions').getByRole('button', { name: 'All projects', exact: true }).click();
+    await other.locator('.project-overview [data-open="501"]').click();
+    await expect(other).toHaveURL(/branch=release-preview/);
+  } finally { await other.close(); }
+});
 
 test('sign-out in another tab blocks a held thumbnail from recreating project memory @smoke', async ({ page, context, baseURL }) => {
   await page.goto(`${baseURL}/`);
@@ -220,6 +280,26 @@ test('one cached-project click survives recovery of a failed listing @smoke', as
     await expect(page.locator('.repository-menu__trigger')).toBeFocused();
   } finally { release(); }
   await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
+test('Back to projects stays available while site files load and cancels their late reply @smoke', async ({ page, baseURL }) => {
+  let release!: () => void, fileRequests = 0;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route(/\/api\/files\?/, async route => {
+    fileRequests++;
+    await held;
+    await route.fulfill({ response: await route.fetch() });
+  });
+  try {
+    await page.goto(`${baseURL}/`);
+    await page.locator('.project-overview [data-open="501"]').click();
+    await expect.poll(() => fileRequests).toBeGreaterThan(0);
+    await expect(page.getByRole('heading', { name: 'Opening native-demo…', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to projects', exact: true }).click();
+    await expect(page.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
+  } finally { release(); }
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+  await expect(page.locator('.native-preview-frame')).toBeHidden();
 });
 
 test('a returning root visit keeps the project list usable while GitHub is slow @smoke', async ({ page, baseURL }) => {

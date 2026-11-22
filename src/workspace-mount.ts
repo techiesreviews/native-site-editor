@@ -211,11 +211,10 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (projectsStopped || menu !== repositoryMenu || login !== ports.info.user?.login) return;
       if (!overview) {
         overview = module.createProjectOverviewHost({ login, menu: createRowMenu(ports.app), main: () => ports.element("main"), back: backToProjects,
-          ports, readWorkspace, sameBranch, select: id => { repositorySelect.value = String(id); },
+          ports, readWorkspace, sameBranch, effect, select: id => { repositorySelect.value = String(id); },
           add: () => { if (ports.repositories.length) chooseProject(); else void ports.setup.setupEntry.open().catch(notices.errorMessage); },
         });
         ports.app.append(overview.root);
-        overview.root.hidden = Boolean(ports.appStore.repository.value || location.hash);
         overview.update();
       }
       return overview;
@@ -483,8 +482,6 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       const showing = !repo && !location.hash;
       if (showing) ports.app.dataset.overview = "";
       else delete ports.app.dataset.overview;
-      if (overview) overview.root.hidden = !showing;
-      if (repo && ports.appStore.branch.value) overview?.remember(repo, ports.appStore.branch.value);
     });
     codePanes.mountResize(ports.element("main"), ports.element("code-split"), ports.element("secondary-pane"));
     // A selection inside a component's template gets Select card once the runtime says which card.

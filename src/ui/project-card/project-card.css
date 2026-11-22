@@ -50,6 +50,9 @@
   @media (hover: none), (pointer: coarse) {
     .project-card--grid :is(.project-card__info, .project-card__more) { opacity: 1; }
   }
+  @media (width <= 650px), (hover: none), (pointer: coarse) {
+    .project-card--featured .button { --btn-min-block-size: var(--size-touch); }
+  }
   @media (width <= 650px) {
     .project-card--featured { grid-template-columns: minmax(0, 1fr); }
     .project-card--featured .project-card__info { padding: var(--space-m); }
