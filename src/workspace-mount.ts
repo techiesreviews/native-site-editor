@@ -211,7 +211,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     return (overviewLoad ??= import("./project-overview-host").catch((error: unknown) => { overviewLoad = undefined; throw error; })).then(module => {
       if (menu !== repositoryMenu || login !== ports.info.user?.login) return;
       if (!overview) {
-        overview = module.createProjectOverviewHost({ login, main: () => ports.element("main"), back: backToProjects,
+        overview = module.createProjectOverviewHost({ login, menu: createRowMenu(ports.app), main: () => ports.element("main"), back: backToProjects,
           open: async project => {
             const pick = ++projectPick, at = session.begin();
             await ports.boot.ensureList();
