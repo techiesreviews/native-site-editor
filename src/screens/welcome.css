@@ -156,20 +156,6 @@
 }
 .welcome-page > * { grid-column: 2; justify-self: start; }
 .welcome-page > p { margin: 0; color: var(--muted); }
-.welcome-page__hello {
-  display: inline-flex;
-  align-items: center;
-  block-size: 28px;
-  margin: 0;
-  padding-inline: var(--space-s);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-full);
-  background: var(--surface);
-  /* The link blue, readable on the pill in both themes (the action blue is too dark on a dark pill). */
-  color: var(--link);
-  font-size: var(--type-small);
-  font-weight: 600;
-}
 .welcome-page h1 {
   margin: 0;
   font-size: var(--type-heading);
@@ -177,51 +163,6 @@
   letter-spacing: normal;
   line-height: 1.15;
 }
-.welcome-page__choices {
-  display: grid;
-  gap: var(--space-l);
-  inline-size: min(100%, 408px);
-  text-align: start;
-}
-.welcome-page__choice {
-  display: grid;
-  padding: var(--space-s);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-dialog);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-.welcome-page__picture {
-  aspect-ratio: 384 / 206;
-  overflow: hidden;
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-  pointer-events: none;
-  user-select: none;
-}
-.welcome-page__picture img {
-  display: block;
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-  scale: 1.4;
-}
-.welcome-page__body {
-  display: grid;
-  gap: var(--space-s);
-  padding: var(--space-m) var(--space-xs) var(--space-2xs);
-}
-.welcome-page h2 {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  margin: 0;
-  font-size: var(--type-heading);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-/* The GitHub mark sits beside the words, not centred like an icon alone. */
-.welcome-page h2 .icon { margin-inline: 0; }
 .welcome-page .login-notice {
   inline-size: min(100%, 408px);
   text-align: start;
@@ -312,9 +253,4 @@
 .login-notice .text-link {
   display: block;
   margin-top: 8px;
-}
-@media (max-width: 680px) {
-  .welcome-page__picture {
-    aspect-ratio: 384 / 150;
-  }
 }
