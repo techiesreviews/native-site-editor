@@ -28,7 +28,7 @@ export function keepProjects(store: Store, login: string, list: Repository[]) {
 
 export function keepOpenedProject(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
   const previous = readProjects(store, login), old = previous.find(p => p.repo.id === repo.id);
-  save(store, login, [{ ...old, repo, branch, opened: Date.now(), hidden: false, ...(picture && picture.length <= 120000 ? { picture } : {}) },
+  save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(!picture ? { hidden: false } : {}), ...(picture && picture.length <= 120000 ? { picture } : {}) },
     ...previous.filter(p => p.repo.id !== repo.id)]);
 }
 
