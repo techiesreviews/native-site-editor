@@ -12,7 +12,8 @@ declare global {
       sent: GuestMessage[];
       select(tag: "img" | "p" | "h2", render?: boolean, node?: number[]): void;
       answer(source: string, ask?: number): void;
-      picture(): void;
+      picture(path?: string): void;
+      delaySources(source: string, ms: number): void;
     };
   }
 }
@@ -38,7 +39,12 @@ async function mount(page: Page) {
     const frameLink = createPreviewLink({ post: () => undefined, listen: handler => { receive = handler; return () => undefined; } });
     const photo = document.createElement("canvas"); photo.width = 20; photo.height = 10;
     const url = photo.toDataURL("image/png");
-    const bar = createGuestEditBar({ canvas, frame, frameLink, send: message => { sent.push(message); }, me: "anna", picture: path => path === "images/current.png" ? url : undefined });
+    let delayed: { source: string; ms: number } | undefined;
+    const bar = createGuestEditBar({ canvas, frame, frameLink, send: message => {
+      sent.push(message);
+      const delay = delayed;
+      if (message.t === "sources" && delay) setTimeout(() => answer(delay.source, message.ask), delay.ms);
+    }, me: "anna", picture: path => path === "images/current.png" ? url : undefined });
     bar.receive({ t: "context", context: { path: "index.html", links: [], pictures: ["images/slow.png", "images/missing.png"], sizes: { kind: "inline", sizes: [{ value: "1.25rem", label: "Large" }] } } });
     const answer = (source: string, ask?: number) => {
       const requests = sent.filter((message): message is Extract<GuestMessage, { t: "sources" }> => message.t === "sources");
@@ -56,7 +62,8 @@ async function mount(page: Page) {
         receive({ source: FRAME_SOURCE, type: "select", context: frameLink.context(), path: "index.html", tag,
           node: node ?? [0, tag === "img" ? 0 : 1], rect: { top: 100, left: 100, bottom: 130, right: 400, width: 300, height: 30 } });
       },
-      picture() { bar.receive({ t: "pictures", to: "anna", pictures: { "images/slow.png": url } }); },
+      picture(path = "images/slow.png") { bar.receive({ t: "pictures", to: "anna", pictures: { [path]: url } }); },
+      delaySources(source, ms) { delayed = { source, ms }; },
     };
   });
 }
@@ -292,3 +299,45 @@ test("a pending text change does not repeatedly refresh its old proof", async ({
   expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
   await page.evaluate(() => window.guestBarRace.bar.close());
 });
+
+test("six-second text replies still refresh proofs during ongoing renders", async ({ page }) => {
+  for (const control of ["Bold", "Text size"]) {
+    await mount(page);
+    await page.evaluate(() => window.guestBarRace.select("p", true));
+    await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+    const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+    await expect(bold).toHaveAttribute("aria-pressed", "false");
+    await page.evaluate(text => window.guestBarRace.delaySources(text, 6_000), source("Plain"));
+    for (let render = 0; render < 65; render++) {
+      await page.evaluate(() => window.guestBarRace.select("p", true));
+      await page.clock.runFor(200);
+    }
+    await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+    if (control === "Bold") await bold.click();
+    else await bar(page).getByRole("combobox", { name: "Text size" }).selectOption("1.25rem");
+    const change = await page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"));
+    if (change?.t !== "change") throw new Error("The text change was not sent.");
+    expect(change.seen).toBeGreaterThan(66 - GUEST_RENDERS_KEPT);
+    await page.evaluate(() => window.guestBarRace.bar.close());
+  }
+});
+
+test("text controls wait for a fresh read once their proof has expired", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p", true));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  for (let render = 0; render < GUEST_RENDERS_KEPT; render++) {
+    await page.evaluate(() => window.guestBarRace.select("p", true));
+    await page.clock.runFor(200);
+  }
+  await expect(bold).toHaveAttribute("aria-disabled", "true");
+  await expect(bar(page).getByRole("combobox", { name: "Text size" })).toHaveAttribute("aria-disabled", "true");
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+  await bold.click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.find(message => message.t === "change"))).toMatchObject({ seen: 51 });
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+

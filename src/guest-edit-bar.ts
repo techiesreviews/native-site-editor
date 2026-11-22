@@ -120,7 +120,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
   let text: { key: string; on: number; size?: string; bold?: boolean } | undefined;
   let reading = 0;
-  let textReading: { key: string; on: number; again: boolean } | undefined;
+  let textApplied = 0;
+  let textEpoch = 0;
+  let textReading: { key: string; on: number; epoch: number; again: boolean } | undefined;
   let reread: ReturnType<typeof setTimeout> | undefined;
   // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and its
   // text controls wait until Lex's tab refuses it, or a later render shows it written (so the next change names a page
@@ -133,6 +135,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let typedShown = 0;
   let typedTimer: ReturnType<typeof setTimeout> | undefined;
   const typingAhead = () => typedSent > typedShown;
+  const textExpired = () => Boolean(text && seen - text.on >= GUEST_RENDERS_KEPT);
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
   status.className = "live-guest__said";
@@ -330,9 +333,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
     if (sending?.key === key(target)) return;
-    if (textReading?.key === key(target) && textReading.on === seen) { textReading.again = true; return; }
+    if (textReading?.key === key(target) && textReading.on === seen && textReading.epoch === textEpoch) { textReading.again = true; return; }
     const ticket = ++reading;
-    const mine = { key: key(target), on: seen, again: false };
+    const mine = { key: key(target), on: seen, epoch: textEpoch, again: false };
     textReading = mine;
     try {
       const on = mine.on;
@@ -341,7 +344,9 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       ]);
       const found = await elementAt(files, target);
       // A change on its way shows on the bar until it is answered, and the sources are read again then.
-      if (ticket !== reading || !still(target) || sending?.key === key(target)) return;
+      // A newer request may still be waiting: only a newer completed read supersedes this one.
+      if (ticket < textApplied || mine.epoch !== textEpoch || !still(target) || sending?.key === key(target)) return;
+      textApplied = ticket;
       const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
       if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
       text = {
@@ -368,10 +373,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
     const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
       if (sending?.key === key(at) || typingAhead() || selectedSeen !== seen) { render(); return; }
+      if (next.kind !== "heading" && textExpired()) { render(); return; }
       // Bold and size depend on the sources read, not a newer render that may contain different text.
       const on = next.kind === "heading" ? selectedSeen : text?.on;
       if (on === undefined) return;
       const mine: NonNullable<typeof sending> = { key: key(at), ...next.kind === "heading" ? { level: next.level } : {} };
+      textEpoch++;
       sending = mine;
       if (shown && text?.key === key(at)) text = { ...text, ...shown };
       render();
@@ -402,10 +409,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     if (state?.size !== undefined && scale) {
       const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
       if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting, onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
+      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting: waiting || textExpired(), onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
     }
     if (state?.bold !== undefined) controls.push({
-      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting,
+      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting: waiting || textExpired(),
       className: "edit-bar__format edit-bar__format--strong",
       onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
     });
@@ -453,6 +460,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   function select(next: Selected | undefined) {
     const moved = key(next) !== key(selected);
     if (moved) {
+      textEpoch++;
       // What was open on the last selection is kept first (the popup's crop, a typed address), then the bar moves.
       popup?.cancel();
       bar.hide();
@@ -517,6 +525,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       }
       if (message.t === "context") {
         const moved = context?.path !== message.context?.path;
+        if (moved) textEpoch++;
         context = message.context;
         render();
         if (moved && selected && selected.tag !== "img") void readText(selected);
