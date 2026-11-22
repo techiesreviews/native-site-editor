@@ -125,3 +125,15 @@ test("without a preview (plain files) a closed pane still shows its code, and hi
     opened: 0,
   });
 }));
+
+test("a zero-height workspace without a preview leaves its controls interactive", () => inBrowser(async (page) => {
+  const inert = await page.evaluate(() => {
+    localStorage.clear();
+    const main = document.getElementById("main")!, split = document.getElementById("split")!;
+    main.classList.remove("has-preview");
+    main.style.height = "0px";
+    (globalThis as WithResize).mountCodeResize(main, split);
+    return split.querySelector<HTMLElement>(".code-pane")!.inert;
+  });
+  assert.equal(inert, false);
+}));

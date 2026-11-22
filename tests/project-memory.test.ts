@@ -22,3 +22,10 @@ test("malformed memory cannot inject a picture or hide the valid project beside 
   memory.setItem("native-site-editor:projects:v1:lex", JSON.stringify([null, {}, { repo: repo(1), branch: "main", picture: "javascript:alert(1)" }]));
   assert.deepEqual(readProjects(memory, "lex"), [{ repo: repo(1), branch: "main" }]);
 });
+test("a picture over the cache limit keeps the project without the oversized picture", () => {
+  const memory = store();
+  keepOpenedProject(memory, "lex", repo(1), "main", "data:image/webp;base64," + "a".repeat(120000));
+  const [project] = readProjects(memory, "lex");
+  assert.equal(project.repo.id, 1);
+  assert.equal(project.picture, undefined);
+});
