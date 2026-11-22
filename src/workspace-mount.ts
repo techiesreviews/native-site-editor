@@ -197,7 +197,6 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let stopNoProject: (() => void) | undefined;
   let overview: ReturnType<typeof import("./project-overview-host").createProjectOverviewHost> | undefined;
   let overviewLoad: Promise<typeof import("./project-overview-host")> | undefined;
-  let projectPick = 0;
   const pictured = new Set<string>();
   function showProjects(list?: Repository[], message = "") {
     if (!ports.appStore.repository.value) finishOpening();
@@ -211,17 +210,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
       if (menu !== repositoryMenu || login !== ports.info.user?.login) return;
       if (!overview) {
         overview = module.createProjectOverviewHost({ login, menu: createRowMenu(ports.app), main: () => ports.element("main"), back: backToProjects,
-          open: async project => {
-            const pick = ++projectPick, at = session.begin();
-            await ports.boot.ensureList();
-            if (!at.holds() || pick !== projectPick || !overview?.root.isConnected) return;
-            const repo = ports.repositories.find(repo => repo.id === project.repo.id);
-            if (!repo) { showProjects(ports.repositories, "This project is no longer available."); return; }
-            repositorySelect.value = String(repo.id);
-            const previous = readWorkspace(login);
-            await ports.account.choose({ repoId: repo.id, branch: project.branch,
-              ...(previous?.repoId === repo.id && previous.branch === project.branch ? { path: previous.path } : {}) });
-          },
+          ports, readWorkspace, select: id => { repositorySelect.value = String(id); },
           add: () => { if (ports.repositories.length) chooseProject(); else void ports.setup.setupEntry.open().catch(notices.errorMessage); },
         });
         ports.app.append(overview.root);
@@ -232,7 +221,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
     });
   }
   function backToProjects() {
-    projectPick++;
+    overview?.cancel();
     finishOpening();
     repositoryMenu?.close();
     explorerDropdown?.close();
