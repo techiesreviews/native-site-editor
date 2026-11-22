@@ -168,6 +168,7 @@ test("the editor loads used component files through parts.css; the board loads e
   // Through src/ui/parts.css, which loads the parts' files in one line of src/main.ts (its line ceiling).
   assert.match(read("src/main.ts"), /^import "\.\/ui\/parts\.css";$/m);
   assert.match(read("src/live-guest.ts"), /^import "\.\/ui\/inline-field\/inline-field\.css";$/m, "guest edit bar gets Inline field");
+  assert.match(read("src/live-guest.ts"), /^import "\.\/ui\/row-menu\/row-menu\.css";$/m, "guest Media picker gets its Filter row menu");
   const partsCss = withoutComments(read("src/ui/parts.css"));
   const styleCss = withoutComments(read("src/style.css"));
   const catalogueMain = withoutComments(read("src/catalogue/main.ts"));

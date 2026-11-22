@@ -3,21 +3,19 @@
 // its own file out: the live cell draws inside a shadow root that holds the board's other stylesheets and the file as
 // edited, so an edit (a deleted rule, a selector reaching out) stays inside that cell, as in a page of its own.
 import { forcedSheet } from "./force-states";
-import { PARTS, isPart } from "./parts";
 
 const TEXTS = import.meta.glob<string>("../ui/*/*.css", { query: "?raw", import: "default", eager: true });
 
 /** A component file's text as the code has it, by its repository path; undefined for a file that is not one. */
 export const componentText = (path: string): string | undefined => TEXTS[path.replace(/^src\//, "../")];
 
-/** Adds each part's component file to `doc` as a style of its own (the board and every frame page alike). */
+/** Adds every component file, including Dropdown and Flyout without board cards, as a style of its own. */
 export function loadComponentStyles(doc: Document = document) {
-  for (const part of PARTS) {
-    if (!isPart(part) || !part.css || doc.head.querySelector(`style[data-component="${CSS.escape(part.css)}"]`)) continue;
-    const text = componentText(part.css);
-    if (text === undefined) continue;
+  for (const [key, text] of Object.entries(TEXTS)) {
+    const path = key.replace(/^\.\.\//, "src/");
+    if (doc.head.querySelector(`style[data-component="${CSS.escape(path)}"]`)) continue;
     const style = doc.createElement("style");
-    style.dataset.component = part.css;
+    style.dataset.component = path;
     style.textContent = text;
     doc.head.append(style);
   }

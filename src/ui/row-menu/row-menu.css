@@ -52,7 +52,6 @@
       }
       &[aria-disabled="true"] {
         flex-wrap: wrap;
-        background: none;
         color: var(--row-menu-disabled-text-color, var(--muted));
         cursor: default;
       }

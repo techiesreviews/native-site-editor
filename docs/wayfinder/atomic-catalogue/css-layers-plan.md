@@ -83,7 +83,11 @@ Rules that matter for every slice:
 5. **Elements** (done). The rest of the bare element rules onto `elements` in `src/elements.css`; what was left of `src/utilities.css` (the reset) folded in.
 6. **Molecules** (done). Row menu, dropdown, flyout, sharing row and confirm dialog as component files.
 7. **Screen layout** (done). `src/style.css` split by screen into unlayered editor files; it keeps only the order line
-   and its imports. Waits for the top bar work (ticket 66 and the phone layout) to land.
+   and its imports. The top bar and phone layout are already on dev.
+
+These slices move CSS only. The existing TypeScript factories stay in `src/components/`, named by each part's
+`part.json` under `elsewhere`; their behaviour stays covered by the existing unit and browser suites. Moving those
+factories and their tests into the part folders is a separate code move.
 
 Open for Lex later: the Framework names its variants `data-variant="secondary"` and `data-size="small"`; the editor
 keeps its `button secondary` classes for now, as moving every call site is a slice of its own.

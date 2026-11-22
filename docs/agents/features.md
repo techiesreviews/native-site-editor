@@ -1390,7 +1390,7 @@ its number unused.
 ### F-catalogue-01 Edit a component's CSS on the design board
 - Try: Open the catalogue, choose Sharing row, Row menu or Confirm dialog, edit its CSS, then reset it.
 - Good: The CSS section shows the part's own file on the components layer. Edits and deleted rules affect only the live cell, in either theme. Working menus and dialogs keep their frames, while state cells stay unchanged.
-- Files: `src/catalogue/board.ts`, `src/catalogue/frame.ts`, `src/catalogue/parts.ts`, `src/ui/row-menu/row-menu.css`, `src/ui/dropdown/dropdown.css`, `src/ui/flyout/flyout.css`, `src/ui/share-row/share-row.css`, `src/ui/confirm-dialog/confirm-dialog.css`
+- Files: `src/catalogue/board.ts`, `src/catalogue/frame.ts`, `src/catalogue/parts.ts`, `src/catalogue/component-css.ts`, `src/ui/row-menu/row-menu.css`, `src/ui/dropdown/dropdown.css`, `src/ui/flyout/flyout.css`, `src/ui/share-row/share-row.css`, `src/ui/confirm-dialog/confirm-dialog.css`
 - Phone: no
 - Spec: `tests/native-save/native-catalogue-board.spec.ts`
 - Steps: `scripts/agents/shots/features/F-catalogue-01.json`
