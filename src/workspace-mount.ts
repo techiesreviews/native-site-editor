@@ -197,6 +197,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   let stopNoProject: (() => void) | undefined;
   let overview: ReturnType<typeof import("./project-overview-host").createProjectOverviewHost> | undefined;
   let overviewLoad: Promise<typeof import("./project-overview-host")> | undefined;
+  let projectsStopped = false;
   const pictured = new Set<string>();
   function showProjects(list?: Repository[], message?: string, failed = false) {
     if (!ports.appStore.repository.value) finishOpening();
@@ -205,9 +206,9 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   }
   function ensureProjects() {
     const menu = repositoryMenu, login = ports.info.user?.login;
-    if (!menu || !login) return Promise.resolve(undefined);
+    if (projectsStopped || !menu || !login) return Promise.resolve(undefined);
     return (overviewLoad ??= import("./project-overview-host").catch((error: unknown) => { overviewLoad = undefined; throw error; })).then(module => {
-      if (menu !== repositoryMenu || login !== ports.info.user?.login) return;
+      if (projectsStopped || menu !== repositoryMenu || login !== ports.info.user?.login) return;
       if (!overview) {
         overview = module.createProjectOverviewHost({ login, menu: createRowMenu(ports.app), main: () => ports.element("main"), back: backToProjects,
           ports, readWorkspace, sameBranch, select: id => { repositorySelect.value = String(id); },
@@ -348,6 +349,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   }
 
   function mountWorkspace() {
+    projectsStopped = false;
     ports.app.className = "";
     ports.app.innerHTML = workspaceMarkup();
     pictured.clear();
@@ -803,6 +805,7 @@ export function createWorkspaceMount(ports: WorkspaceMountPorts) {
   }
 
   return {
+    stopProjectMemory() { projectsStopped = true; overview?.stopRemembering(); },
     codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor,
     mountWorkspace, closeWorkspace, setupScope, showDirectory, loadComponentTools, showProjects, showOpening, finishOpening,
     get primaryHistoryScope() { return primaryHistoryScope; },

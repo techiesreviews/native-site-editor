@@ -65,7 +65,8 @@ test("a picture completing after workspace disposal cannot recreate cleared acco
   const requests: unknown[] = [];
   f.host.picture({ picture: async request => { requests.push(request); return pending; } }, "index.html", repo, "main", () => true);
   assert.deepEqual(requests, [{ path: "index.html", width: 1280, height: 800, limit: 119960 }]);
-  f.host.destroy();
+  f.host.stopRemembering();
+  assert.equal(f.root.isConnected, true, "pausing cache writes keeps the editor's DOM alive");
   values.clear();
   finish({ data: "YQ==", mimeType: "image/webp", width: 1280, height: 800, viewport: 1280 });
   await new Promise(resolve => setImmediate(resolve));
