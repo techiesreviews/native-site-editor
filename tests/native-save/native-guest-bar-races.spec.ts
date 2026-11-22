@@ -322,6 +322,43 @@ test("six-second text replies still refresh proofs during ongoing renders", asyn
   }
 });
 
+test("a cancelled picker's late change answer cannot stop a newly opened picker's thumbnails", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("img"));
+  const media = bar(page).getByRole("button", { name: "Media", exact: true });
+  await media.click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(1);
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const popup = page.getByRole("dialog", { name: "Image", exact: true });
+  await popup.getByRole("button", { name: "Replace", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await picker.getByRole("button", { name: "Choose images/slow.png", exact: true }).click();
+  await page.evaluate(() => window.guestBarRace.picture());
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(2);
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.some(message => message.t === "change"))).toBe(true);
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await media.click();
+  await expect.poll(() => page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "sources").length)).toBe(3);
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  await popup.getByRole("button", { name: "Replace", exact: true }).click();
+  const missing = picker.getByRole("button", { name: "Choose images/missing.png", exact: true });
+  await missing.click();
+  await page.evaluate(() => {
+    const change = window.guestBarRace.sent.find(message => message.t === "change");
+    if (change?.t !== "change") throw new Error("The first picture was not sent.");
+    window.guestBarRace.bar.receive({ t: "answer", to: "anna", ask: change.ask, done: true });
+  });
+  await page.clock.runFor(15_001);
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "want" && message.paths.includes("images/missing.png")).length)).toBe(2);
+  await page.evaluate(() => window.guestBarRace.picture("images/missing.png"));
+  await expect(missing.locator("img")).toHaveAttribute("src", /^blob:/);
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
 test("text controls wait for a fresh read once their proof has expired", async ({ page }) => {
   await mount(page);
   await page.evaluate(() => window.guestBarRace.select("p", true));
