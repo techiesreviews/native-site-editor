@@ -2,7 +2,7 @@
 import type { Repository } from "../shared/types";
 
 type Store = Pick<Storage, "getItem" | "setItem">;
-export interface ProjectMemory { repo: Repository; branch: string; opened?: number; picture?: string }
+export interface ProjectMemory { repo: Repository; branch: string; opened?: number; picture?: string; hidden?: boolean }
 const key = (login: string) => `native-site-editor:projects:v1:${login.toLowerCase()}`;
 
 export function readProjects(store: Store, login: string): ProjectMemory[] {
@@ -12,7 +12,7 @@ export function readProjects(store: Store, login: string): ProjectMemory[] {
     return value.filter((p): p is ProjectMemory => p && Number.isSafeInteger(p.repo?.id) &&
       typeof p.repo.name === "string" && typeof p.repo.full_name === "string" &&
       typeof p.repo.default_branch === "string" && typeof p.repo.owner?.login === "string" &&
-      typeof p.branch === "string" && (p.opened === undefined || Number.isFinite(p.opened)))
+      typeof p.branch === "string" && (p.opened === undefined || Number.isFinite(p.opened)) && (p.hidden === undefined || typeof p.hidden === "boolean"))
       .map(p => {
         const { picture, ...summary } = p;
         return typeof picture === "string" && picture.length <= 120000 && /^data:image\/(webp|png|jpeg);base64,/.test(picture) ? p : summary;
@@ -28,8 +28,12 @@ export function keepProjects(store: Store, login: string, list: Repository[]) {
 
 export function keepOpenedProject(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
   const previous = readProjects(store, login), old = previous.find(p => p.repo.id === repo.id);
-  save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(picture && picture.length <= 120000 ? { picture } : {}) },
+  save(store, login, [{ ...old, repo, branch, opened: Date.now(), hidden: false, ...(picture && picture.length <= 120000 ? { picture } : {}) },
     ...previous.filter(p => p.repo.id !== repo.id)]);
+}
+
+export function hideProject(store: Store, login: string, id: number) {
+  save(store, login, readProjects(store, login).map(project => project.repo.id === id ? { ...project, hidden: true } : project));
 }
 
 function save(store: Store, login: string, projects: ProjectMemory[]) {
