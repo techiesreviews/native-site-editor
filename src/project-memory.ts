@@ -29,7 +29,10 @@ export function keepProjects(store: Store, login: string, list: Repository[]) {
 }
 
 export function keepOpenedProject(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
-  rememberProject(store, login, repo, branch, picture, !picture);
+  const previous = new Map(readProjects(store, login).map(project => [project.repo.id, project])), old = previous.get(repo.id);
+  previous.delete(repo.id);
+  save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(!picture ? { hidden: false } : {}), ...(picture && picture.length <= 120000 ? { picture } : {}) },
+    ...previous.values()]);
 }
 
 export function keepProjectPicture(store: Store, login: string, repo: Repository, branch: string, picture?: string) {
@@ -37,13 +40,6 @@ export function keepProjectPicture(store: Store, login: string, repo: Repository
   if (!project || project.branch !== branch || !picture || picture.length > 120000) return;
   projects.set(repo.id, { ...project, picture });
   save(store, login, [...projects.values()]);
-}
-
-function rememberProject(store: Store, login: string, repo: Repository, branch: string, picture?: string, reopening = false) {
-  const previous = new Map(readProjects(store, login).map(project => [project.repo.id, project])), old = previous.get(repo.id);
-  previous.delete(repo.id);
-  save(store, login, [{ ...old, repo, branch, opened: Date.now(), ...(reopening ? { hidden: false } : {}), ...(picture && picture.length <= 120000 ? { picture } : {}) },
-    ...previous.values()]);
 }
 
 export function hideProject(store: Store, login: string, id: number) {

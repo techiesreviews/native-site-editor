@@ -27,7 +27,7 @@ export const SUGGESTION_LIMIT = 250;
 
 /** The words of an agent's reply: its first line, without quotes around it, at most SUGGESTION_LIMIT characters. */
 export function suggestionWords(reply: string) {
-  const line = reply.trim().split(/\r?\n/)[0] ?? "";
+  const line = reply.trim().split(/\r?\n/)[0];
   return line.trim().replace(/^["'“‘«]+|["'”’»]+$/g, "").trim().slice(0, SUGGESTION_LIMIT).trim();
 }
 

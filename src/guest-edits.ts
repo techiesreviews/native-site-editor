@@ -192,8 +192,9 @@ export function createGuestEdits(ports: GuestEditsPorts): GuestEditHandlers {
     async pictures(paths) {
       const known = new Set(ports.pictures()), found: Record<string, string> = {}, wanted = paths.filter(path => known.has(path));
       const read = wanted.length ? await ports.pictureReader().catch(() => undefined) : undefined;
-      for (const path of read ? wanted : []) {
-        const blob = await read!(path).catch(() => undefined), url = blob && URL.createObjectURL(blob);
+      if (!read) return found;
+      for (const path of wanted) {
+        const blob = await read(path).catch(() => undefined), url = blob && URL.createObjectURL(blob);
         try {
           const small = url && await thumbnail(url).catch(() => undefined);
           if (small) found[path] = small;
