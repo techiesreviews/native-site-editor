@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DraftStore, draftKey, indexedDbDrafts, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
 import { githubScope, holdsDraftScope } from "../src/workspace-session.ts";
+import { forEachAwait } from "./support/await-race.ts";
 function storage() {
   const data = new Map<string, string>();
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
@@ -220,6 +221,71 @@ for (const release of [false, true]) test(`discarding an unreadable legacy and d
   const again = new DraftStore(disk, db);
   await again.load("lex");
   assert.equal(again.get(draft, draft.path), undefined);
+});
+test("failed legacy cleanup reports a discard failure without resurrecting the discarded draft", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  disk.setItem(key, JSON.stringify(draft));
+  const getItem = disk.getItem, removeItem = disk.removeItem;
+  disk.getItem = () => { throw new Error("Temporarily unreadable"); };
+  const store = new DraftStore(disk, db);
+  await store.load("lex");
+  disk.getItem = getItem;
+  disk.removeItem = () => { throw new Error("Removal denied"); };
+  store.remove(draft, draft.path);
+  await store.flush();
+  assert.match(store.error!, /older draft may reappear/);
+  assert.equal(disk.getItem(key), JSON.stringify(draft));
+  const again = new DraftStore(disk, db);
+  await again.load("lex");
+  assert.equal(again.get(draft, draft.path), undefined);
+  assert.deepEqual(again.list(draft), []);
+  disk.removeItem = removeItem;
+  store.remove(draft, draft.path);
+  await store.flush();
+  assert.equal(store.error, null);
+  assert.equal(disk.getItem(key), null);
+});
+test("invalid fallback records report incomplete recovery without deleting their bytes", () => {
+  const disk = storage(), key = draftKey(draft, draft.path), raw = JSON.stringify({ version: 1 });
+  disk.setItem(key, raw);
+  const store = new DraftStore(disk);
+  assert.equal(store.get(draft, draft.path), undefined);
+  assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
+  assert.equal(disk.getItem(key), raw);
+});
+for (const phase of ["migration", "flush"] as const) test(`legacy cleanup preserves another tab's newer fallback draft across every ${phase} await`, async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    disk.setItem("astro-site-editor:draft:v1:unreadable", "{");
+    const getItem = disk.getItem;
+    disk.getItem = name => {
+      if (name.endsWith(":unreadable")) throw new Error("Unreadable record");
+      return getItem(name);
+    };
+    if (phase === "migration") disk.setItem(key, JSON.stringify(draft));
+    const store = new DraftStore(disk, {
+      ...db,
+      get: phase === "migration" ? race.port("get", name => db.get(name)) : name => db.get(name),
+      load: phase === "migration" ? race.port("load", from => db.load(from)) : from => db.load(from),
+      write: race.port("write", changes => db.write(changes)),
+    });
+    const done = store.load("lex").then(async () => {
+      if (phase === "flush") {
+        disk.setItem(key, JSON.stringify(draft));
+        store.save({ ...draft, content: "database edit", updatedAt: 2 });
+        await store.flush();
+      }
+    });
+    return { done, disk, db, key };
+  }, run => {
+    new DraftStore(run.disk).save({ ...draft, content: "newer from another tab", updatedAt: 3 });
+  }, async run => {
+    assert.equal(JSON.parse(run.disk.getItem(run.key)!).content, "newer from another tab");
+    const again = new DraftStore(run.disk, run.db);
+    await again.load("lex");
+    assert.equal(again.get(draft, draft.path)?.content, "newer from another tab");
+  });
+  assert.ok(count > 0);
 });
 test("once loaded, writes go through to the database shortly after, coalesced, and survive a fresh store", async () => {
   const disk = storage(), db = memoryDrafts();
