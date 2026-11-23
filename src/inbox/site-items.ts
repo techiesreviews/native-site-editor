@@ -203,8 +203,8 @@ function placeItems(place: Place, read: PageRead, rules: SiteItemRules): InboxIt
     const key = `picture\n${file}\n${media ?? shown}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push({ key, kind: "picture", what: "Picture without a description", ...common, at, fix: "alt",
-      ...(media ? { media, wave: "Decorative", allUses: pictures.every(other => other.media !== media || other.waits), found: source } : { found: source }) });
+    items.push({ key, kind: "picture", what: "Picture without a description", ...common, at, fix: "alt", found: source,
+      ...(media ? { media, wave: "Decorative", allUses: pictures.every(other => other.media !== media || other.waits) } : {}) });
   }
   // A link's key: its address and its place among the links to it, so words written above it keep it.
   const count = new Map<string, number>();

@@ -37,7 +37,7 @@ const UPLOAD_CHARS = Math.ceil(GUEST_UPLOAD_BYTES / 3) * 4;
  *  A drawing (SVG), a web page (.html, .xhtml) or anything else could carry a script that would run from Lex's site once saved. */
 export function guestPhoto(name: string, type: string): boolean {
   const ending = /\.([a-z]+)$/i.exec(name)?.[1]?.toLowerCase();
-  return Boolean(ending) && Object.hasOwn(guestPhotoTypes, ending!) && guestPhotoTypes[ending!] === type.toLowerCase();
+  return ending !== undefined && Object.hasOwn(guestPhotoTypes, ending) && guestPhotoTypes[ending] === type.toLowerCase();
 }
 const SHAPES = new Set(["original", "square", "4:3", "16:9", "4:5", "free"]);
 const RATIO = /^\s*\d+(?:\.\d+)?\s*(?:\/\s*\d+(?:\.\d+)?\s*)?$/;
