@@ -212,7 +212,7 @@ test("the build's early reads script asks the session, the listing, the address'
 test("the built editor page asks for the session and the list first and names the emitted runtime and early script", async () => {
   const { build } = await import("vite");
   const outDir = join(scratch, "build");
-  await build({ configFile: join(root, "vite.config.ts"), root, logLevel: "silent", build: { outDir, emptyOutDir: true } });
+  await build({ configLoader: "runner", configFile: join(root, "vite.config.ts"), root, logLevel: "silent", build: { outDir, emptyOutDir: true } });
   const page = readFileSync(join(outDir, "index.html"), "utf8");
   const assets = readdirSync(join(outDir, "assets"));
   const runtime = assets.find((name) => /^native-preview-runtime-[\da-f]{12}\.js$/.test(name));
