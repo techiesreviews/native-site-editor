@@ -5,7 +5,7 @@ import { createLazyFileOperationsController } from "../src/controllers/file-oper
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { forEachAwait } from "./support/await-race";
-import { DraftStore } from "../src/drafts";
+import { DraftStore, memoryDrafts } from "../src/drafts";
 import { resolveNativeProject, nativePageMovedUrl, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
 import type { TreeEntry } from "../shared/types";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
@@ -224,6 +224,28 @@ test("duplicate stays a draft copy outside operation history, and the copy is re
   const h = fixture(); await h.controller.duplicateFileTarget(target);
   assert.equal(h.copied(), 1); assert.deepEqual(h.memory.steps(), []);
   assert.equal(h.revealed.length, 1); assert.deepEqual(h.focused, h.revealed);
+});
+
+test("duplicate refreshes and reveals its saved copy while old draft recovery is incomplete", async () => {
+  const h = fixture(), data = new Map([["astro-site-editor:draft:v1:damaged", "{"]]);
+  const store = new DraftStore({
+    getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); },
+    removeItem: key => { data.delete(key); }, key: index => [...data.keys()][index] ?? null,
+    get length() { return data.size; },
+  }, memoryDrafts());
+  await store.load(h.memory.scope.account);
+  h.ports.draftStore = () => store;
+  h.ports.duplicateFile = (scope, file, path) => store.save({ ...scope, version: 1, path,
+    baseSha: null, original: "", content: file.text ?? "", updatedAt: 1 });
+  let refreshed = 0;
+  h.ports.afterFileChanges = () => { refreshed++; };
+  await h.controller.duplicateFileTarget(target);
+  await store.flush();
+  assert.equal(refreshed, 1);
+  assert.deepEqual(h.errors, []);
+  assert.deepEqual(h.revealed, ["a-copy.txt"]);
+  assert.equal(store.get(h.memory.scope, "a-copy.txt")?.content, "source");
+  assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
 });
 
 test("a changed file list refuses a URL move", async () => {

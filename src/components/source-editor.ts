@@ -899,7 +899,7 @@ export function mountSourceEditor(
     }
   }
   function refreshControls() {
-    const message = file.readOnly ? "Read only" : draftStore().error ?? refusal;
+    const message = file.readOnly ? "Read only" : draftStore().error ?? draftStore().recoveryNotice ?? refusal;
     notice.hidden = !message;
     notice.textContent = message ?? "";
     undo.disabled = !!file.readOnly || !store.canUndo(session);

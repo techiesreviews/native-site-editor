@@ -92,8 +92,8 @@ export interface DraftDatabase {
  */
 export class DraftStore {
   private memory = new Map<string, SavedDraft>();
-  /** Database copies available while unreadable legacy storage keeps local recovery active. */
-  private recovered = new Map<string, SavedDraft>();
+  /** Unreadable legacy keys still need synchronous recovery alongside the database. */
+  private legacyRecovery = false;
   private deleted = new Set<string>();
   private db?: DraftDatabase;
   /** Key prefix of the loaded account's drafts. */
@@ -102,13 +102,13 @@ export class DraftStore {
   private timer?: ReturnType<typeof setTimeout>;
   private writing: Promise<void> = Promise.resolve();
   private failed = false;
-  private recoveryError: string | null = null;
   private agentKeys = new Set<string>();
   private publishing?: Map<string, SavedDraft | null>;
   private writes = new Set<Promise<void>>();
   /** Per key, how often this tab changed it: an agent's read-back loses to any change made during its read. */
   private changes = new Map<string, number>();
   error: string | null = null;
+  recoveryNotice: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
   /**
@@ -148,8 +148,7 @@ export class DraftStore {
     return { keys, complete };
   }
   private incompleteRecovery() {
-    this.recoveryError = RECOVERY_INCOMPLETE;
-    this.error ??= this.recoveryError;
+    this.recoveryNotice = RECOVERY_INCOMPLETE;
   }
   /**
    * Moves every localStorage draft (all accounts) into the database, then
@@ -162,11 +161,11 @@ export class DraftStore {
     try {
       const legacy: [string, SavedDraft][] = [];
       const scan = this.legacyKeys();
-      let accessible = scan.complete;
+      this.legacyRecovery = !scan.complete;
       for (const key of scan.keys) {
         let raw: string | null;
         try { raw = this.storage.getItem(key); }
-        catch { accessible = false; this.incompleteRecovery(); continue; }
+        catch { this.legacyRecovery = true; this.incompleteRecovery(); continue; }
         if (raw === null) continue;
         try {
           const value = valid(key, JSON.parse(raw));
@@ -175,7 +174,7 @@ export class DraftStore {
         } catch { this.incompleteRecovery(); }
       }
       const moved: [string, SavedDraft][] = [];
-      for (const [key, value] of accessible ? legacy : []) {
+      for (const [key, value] of legacy) {
         // A copy written while the database was unavailable may be the newer one.
         const kept = valid(key, await database.get(key));
         if (!kept || kept.updatedAt <= value.updatedAt) moved.push([key, value]);
@@ -183,14 +182,6 @@ export class DraftStore {
       if (moved.length) await database.write(moved);
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";
       const records = await database.load(from);
-      // Unknown legacy records may become readable again: keep local recovery active.
-      if (!accessible) {
-        for (const [key, value] of records) {
-          const draft = valid(key, value);
-          if (draft) this.recovered.set(key, draft);
-        }
-        return;
-      }
       for (const [key] of legacy) try { this.storage.removeItem(key); } catch {}
       for (const [key, value] of records) {
         const draft = valid(key, value);
@@ -203,16 +194,15 @@ export class DraftStore {
     } catch {}
   }
   private read(key: string): SavedDraft | undefined {
-    if (this.db) return this.memory.get(key);
+    if (this.db && (!this.legacyRecovery || !key.startsWith(this.from))) return this.memory.get(key);
     if (this.deleted.has(key)) return undefined;
-    if (this.memory.has(key)) return this.memory.get(key);
-    const kept = this.recovered.get(key);
+    const kept = this.memory.get(key);
+    if (this.changes.has(key)) return kept;
     try {
       const value = valid(key, JSON.parse(this.storage.getItem(key) ?? "null"));
       return value && (!kept || kept.updatedAt <= value.updatedAt) ? value : kept;
     } catch {
-      this.error = this.recoveryError ??
-        "Browser draft storage is unavailable or damaged. Download your draft to keep a copy.";
+      this.incompleteRecovery();
       return kept;
     }
   }
@@ -220,14 +210,9 @@ export class DraftStore {
     return this.read(draftKey(scope, path));
   }
   list(scope: DraftScope) {
-    const keys = new Set([...this.memory.keys(), ...this.recovered.keys()]);
-    if (!this.db)
-      try {
-        for (const key of this.legacyKeys().keys) keys.add(key);
-      } catch {
-        this.error =
-          "Browser draft storage is unavailable. Download your draft to keep a copy.";
-      }
+    const keys = new Set(this.memory.keys());
+    if (!this.db || this.legacyRecovery)
+      for (const key of this.legacyKeys().keys) keys.add(key);
     return [...keys]
       .map((key) => this.read(key))
       .filter(
@@ -261,7 +246,7 @@ export class DraftStore {
     }
     try {
       this.storage.setItem(key, JSON.stringify(value));
-      this.error = this.recoveryError;
+      this.error = null;
       return true;
     } catch {
       this.error = SAVE_FAILED;
@@ -285,7 +270,7 @@ export class DraftStore {
     this.deleted.add(key);
     try {
       this.storage.removeItem(key);
-      this.error = this.recoveryError;
+      this.error = null;
       return true;
     } catch {
       this.error = REMOVE_FAILED;
@@ -313,6 +298,7 @@ export class DraftStore {
     return (this.writing = settled);
   }
   private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
+    const legacyRecovery = this.legacyRecovery;
     const failed: [string, SavedDraft | null][] = [];
     try {
       await written;
@@ -322,9 +308,10 @@ export class DraftStore {
       else for (const change of batch) await db.write([change]).catch(() => failed.push(change));
     }
     const done = batch.filter((change) => !failed.includes(change)).map(([key]) => key);
+    if (legacyRecovery) for (const key of done) try { this.storage.removeItem(key); } catch {}
     if (done.length) this.announce?.(done);
     if (!failed.length) {
-      if (this.failed) this.error = this.recoveryError;
+      if (this.failed) this.error = null;
       this.failed = false;
       return;
     }
@@ -404,12 +391,12 @@ export class DraftStore {
   release() {
     void this.flush();
     this.memory.clear();
-    this.recovered.clear();
+    this.legacyRecovery = false;
     this.deleted.clear();
     this.changes.clear();
     this.from = "";
     this.error = null;
-    this.recoveryError = null;
+    this.recoveryNotice = null;
     this.failed = false;
   }
 }
