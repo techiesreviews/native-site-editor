@@ -191,8 +191,9 @@ export class DraftStore {
       const records = await database.load(from);
       for (const [key, , raw] of legacy) {
         try {
-          if (this.storage.getItem(key) === raw) this.storage.removeItem(key);
-          else { this.legacyRecovery = true; this.incompleteRecovery(); }
+          const current = this.storage.getItem(key);
+          if (current === raw) this.storage.removeItem(key);
+          else if (current !== null) this.legacyRecovery = true;
         } catch { this.legacyRecovery = true; this.incompleteRecovery(); }
       }
       for (const [key, value] of records) {
@@ -320,9 +321,11 @@ export class DraftStore {
   }
   private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
     const legacy = new Map<string, string>();
-    if (this.legacyRecovery) for (const [key] of batch) try {
+    if (this.legacyRecovery) for (const [key, value] of batch) try {
       const raw = this.storage.getItem(key);
-      if (raw !== null) legacy.set(key, raw);
+      const before = valid(key, JSON.parse(raw ?? "null"));
+      const updatedAt = value?.updatedAt ?? this.discarded.get(key);
+      if (raw !== null && before && updatedAt !== undefined && before.updatedAt <= updatedAt) legacy.set(key, raw);
     } catch {}
     const failed: [string, SavedDraft | null][] = [];
     try {

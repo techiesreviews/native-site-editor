@@ -287,6 +287,38 @@ for (const phase of ["migration", "flush"] as const) test(`legacy cleanup preser
   });
   assert.ok(count > 0);
 });
+test("discard cleanup preserves a newer fallback edit queued before the flush starts", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  disk.setItem("astro-site-editor:draft:v1:unreadable", "{");
+  const getItem = disk.getItem;
+  disk.getItem = name => {
+    if (name.endsWith(":unreadable")) throw new Error("Unreadable record");
+    return getItem(name);
+  };
+  const store = new DraftStore(disk, db);
+  await store.load("lex");
+  store.remove(draft, draft.path);
+  new DraftStore(disk).save({ ...draft, content: "newer before flush", updatedAt: Date.now() + 1 });
+  await store.flush();
+  assert.equal(JSON.parse(disk.getItem(key)!).content, "newer before flush");
+  const again = new DraftStore(disk, db);
+  await again.load("lex");
+  assert.equal(again.get(draft, draft.path)?.content, "newer before flush");
+});
+test("another tab cleaning up the same legacy copy is not incomplete recovery", async () => {
+  await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    disk.setItem(key, JSON.stringify(draft));
+    const store = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
+      write: race.port("write", changes => db.write(changes)),
+    });
+    return { done: store.load("lex"), disk, key, store };
+  }, run => run.disk.removeItem(run.key), run => {
+    assert.deepEqual(run.store.get(draft, draft.path), draft);
+    assert.equal(run.store.recoveryNotice, null);
+  });
+});
 test("once loaded, writes go through to the database shortly after, coalesced, and survive a fresh store", async () => {
   const disk = storage(), db = memoryDrafts();
   let writes = 0;
