@@ -1058,8 +1058,8 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-history-04.json`
 
 ### F-history-05 Drafts survive a reload
-- Try: Edit, reload the tab.
-- Good: Every unsaved change is still there, even past 5 MB.
+- Try: Edit, reload the tab. Reload with a damaged old browser draft beside healthy drafts.
+- Good: Every healthy unsaved change is still there, even past 5 MB. A damaged old draft never hides healthy drafts; the existing code-pane notice reports incomplete recovery and damaged records stay stored. An unreadable old record or storage listing keeps local recovery and local saving available; database failure still allows local saving.
 - Files: `src/drafts.ts`, `src/draft-store.ts`, `src/browser-storage.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-draft-storage.spec.ts`

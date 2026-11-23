@@ -65,6 +65,7 @@ const valid = (key: string, value: unknown): SavedDraft | undefined => {
 };
 const SAVE_FAILED = "Draft could not be saved in this browser. Download it before leaving.";
 const REMOVE_FAILED = "Browser storage could not be updated. An older draft may reappear after reload.";
+const RECOVERY_INCOMPLETE = "Some drafts could not be recovered from this browser. Stored copies have been kept.";
 /** Pending writes wait at most this long, so a burst of typing is one transaction. */
 const FLUSH_DELAY = 200;
 
@@ -91,6 +92,8 @@ export interface DraftDatabase {
  */
 export class DraftStore {
   private memory = new Map<string, SavedDraft>();
+  /** Database copies available while unreadable legacy storage keeps local recovery active. */
+  private recovered = new Map<string, SavedDraft>();
   private deleted = new Set<string>();
   private db?: DraftDatabase;
   /** Key prefix of the loaded account's drafts. */
@@ -99,6 +102,7 @@ export class DraftStore {
   private timer?: ReturnType<typeof setTimeout>;
   private writing: Promise<void> = Promise.resolve();
   private failed = false;
+  private recoveryError: string | null = null;
   private agentKeys = new Set<string>();
   private publishing?: Map<string, SavedDraft | null>;
   private writes = new Set<Promise<void>>();
@@ -130,11 +134,22 @@ export class DraftStore {
   ) {}
   private legacyKeys() {
     const keys: string[] = [];
-    for (let i = 0; i < this.storage.length; i++) {
-      const key = this.storage.key(i);
-      if (key?.startsWith(prefix)) keys.push(key);
-    }
-    return keys;
+    let complete = true;
+    try {
+      const length = this.storage.length;
+      for (let i = 0; i < length; i++) {
+        try {
+          const key = this.storage.key(i);
+          if (key?.startsWith(prefix)) keys.push(key);
+        } catch { complete = false; }
+      }
+    } catch { complete = false; }
+    if (!complete) this.incompleteRecovery();
+    return { keys, complete };
+  }
+  private incompleteRecovery() {
+    this.recoveryError = RECOVERY_INCOMPLETE;
+    this.error ??= this.recoveryError;
   }
   /**
    * Moves every localStorage draft (all accounts) into the database, then
@@ -146,14 +161,21 @@ export class DraftStore {
     if (!database) return;
     try {
       const legacy: [string, SavedDraft][] = [];
-      try {
-        for (const key of this.legacyKeys()) {
-          const value = valid(key, JSON.parse(this.storage.getItem(key) ?? "null"));
+      const scan = this.legacyKeys();
+      let accessible = scan.complete;
+      for (const key of scan.keys) {
+        let raw: string | null;
+        try { raw = this.storage.getItem(key); }
+        catch { accessible = false; this.incompleteRecovery(); continue; }
+        if (raw === null) continue;
+        try {
+          const value = valid(key, JSON.parse(raw));
           if (value) legacy.push([key, value]);
-        }
-      } catch {}
+          else this.incompleteRecovery();
+        } catch { this.incompleteRecovery(); }
+      }
       const moved: [string, SavedDraft][] = [];
-      for (const [key, value] of legacy) {
+      for (const [key, value] of accessible ? legacy : []) {
         // A copy written while the database was unavailable may be the newer one.
         const kept = valid(key, await database.get(key));
         if (!kept || kept.updatedAt <= value.updatedAt) moved.push([key, value]);
@@ -161,6 +183,14 @@ export class DraftStore {
       if (moved.length) await database.write(moved);
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";
       const records = await database.load(from);
+      // Unknown legacy records may become readable again: keep local recovery active.
+      if (!accessible) {
+        for (const [key, value] of records) {
+          const draft = valid(key, value);
+          if (draft) this.recovered.set(key, draft);
+        }
+        return;
+      }
       for (const [key] of legacy) try { this.storage.removeItem(key); } catch {}
       for (const [key, value] of records) {
         const draft = valid(key, value);
@@ -176,21 +206,24 @@ export class DraftStore {
     if (this.db) return this.memory.get(key);
     if (this.deleted.has(key)) return undefined;
     if (this.memory.has(key)) return this.memory.get(key);
+    const kept = this.recovered.get(key);
     try {
-      return valid(key, JSON.parse(this.storage.getItem(key) ?? "null"));
+      const value = valid(key, JSON.parse(this.storage.getItem(key) ?? "null"));
+      return value && (!kept || kept.updatedAt <= value.updatedAt) ? value : kept;
     } catch {
-      this.error =
+      this.error = this.recoveryError ??
         "Browser draft storage is unavailable or damaged. Download your draft to keep a copy.";
+      return kept;
     }
   }
   get(scope: DraftScope, path: string) {
     return this.read(draftKey(scope, path));
   }
   list(scope: DraftScope) {
-    const keys = new Set(this.memory.keys());
+    const keys = new Set([...this.memory.keys(), ...this.recovered.keys()]);
     if (!this.db)
       try {
-        for (const key of this.legacyKeys()) keys.add(key);
+        for (const key of this.legacyKeys().keys) keys.add(key);
       } catch {
         this.error =
           "Browser draft storage is unavailable. Download your draft to keep a copy.";
@@ -228,7 +261,7 @@ export class DraftStore {
     }
     try {
       this.storage.setItem(key, JSON.stringify(value));
-      this.error = null;
+      this.error = this.recoveryError;
       return true;
     } catch {
       this.error = SAVE_FAILED;
@@ -252,7 +285,7 @@ export class DraftStore {
     this.deleted.add(key);
     try {
       this.storage.removeItem(key);
-      this.error = null;
+      this.error = this.recoveryError;
       return true;
     } catch {
       this.error = REMOVE_FAILED;
@@ -291,7 +324,7 @@ export class DraftStore {
     const done = batch.filter((change) => !failed.includes(change)).map(([key]) => key);
     if (done.length) this.announce?.(done);
     if (!failed.length) {
-      if (this.failed) this.error = null;
+      if (this.failed) this.error = this.recoveryError;
       this.failed = false;
       return;
     }
@@ -371,10 +404,12 @@ export class DraftStore {
   release() {
     void this.flush();
     this.memory.clear();
+    this.recovered.clear();
     this.deleted.clear();
     this.changes.clear();
     this.from = "";
     this.error = null;
+    this.recoveryError = null;
     this.failed = false;
   }
 }
