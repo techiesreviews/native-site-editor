@@ -40,7 +40,7 @@ async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
   const reads: { hold?: Promise<void>; started?: () => void } = {};
   const store = new DraftStore(disk, { ...database, write: changes => { manualWrites++; return database.write(changes); },
     get: async key => { const value = await database.get(key); if (reads.hold) { reads.started?.(); await reads.hold; } return value; } });
-  await store.load(scope.account);
+  await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const models = createDraftStore({ persistence: store });
   const base = new Map([["index.html", "before"], ["other.css", "old css"]]);

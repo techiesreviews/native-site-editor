@@ -233,7 +233,7 @@ test("duplicate refreshes and reveals its saved copy while old draft recovery is
     removeItem: key => { data.delete(key); }, key: index => [...data.keys()][index] ?? null,
     get length() { return data.size; },
   }, memoryDrafts());
-  await store.load(h.memory.scope.account);
+  await store.load(h.memory.scope.account, () => import("../src/drafts-recovery.ts"));
   h.ports.draftStore = () => store;
   h.ports.duplicateFile = (scope, file, path) => store.save({ ...scope, version: 1, path,
     baseSha: null, original: "", content: file.text ?? "", updatedAt: 1 });

@@ -31,7 +31,7 @@ async function fixture(t: TestContext, race?: AwaitRace, initialHome = "home") {
   let manualWrites = 0, publication = 0, historyAvailable = true, refresh: "ok" | "throw" | "stale" = "ok";
   const store = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 },
     { ...database, write: changes => { manualWrites++; return database.write(changes); } });
-  await store.load(scope.account);
+  await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const memory = createMemoryWorkspace({ branch: { ...branch, "index.html": initialHome }, open: "index.html" });
   const files = () => [...new Set([...Object.keys(branch), ...store.list(scope).map(draft => draft.path)])].filter(path => !store.get(scope, path)?.deleted);

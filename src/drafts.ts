@@ -1,3 +1,5 @@
+import type { DraftRecovery } from "./drafts-recovery";
+
 export interface DraftScope {
   account: string;
   repoId: number;
@@ -39,8 +41,6 @@ export interface SavedDraft extends DraftScope {
 export const replacedBytes = (draft: Pick<SavedDraft, "baseSha" | "opaque" | "sourceSha">) =>
   Boolean(draft.baseSha !== null && draft.opaque && draft.sourceSha && draft.sourceSha !== draft.baseSha);
 const prefix = "astro-site-editor:draft:v1:";
-const discardPrefix = "astro-site-editor:discard:v1:";
-const discardKey = (key: string) => discardPrefix + key.slice(prefix.length);
 export const draftKey = (scope: DraftScope, path: string) =>
   prefix +
   JSON.stringify([
@@ -67,7 +67,7 @@ const valid = (key: string, value: unknown): SavedDraft | undefined => {
 };
 const SAVE_FAILED = "Draft could not be saved in this browser. Download it before leaving.";
 const REMOVE_FAILED = "Browser storage could not be updated. An older draft may reappear after reload.";
-const RECOVERY_INCOMPLETE = "Some drafts could not be recovered from this browser. Stored copies have been kept.";
+const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
 /** Pending writes wait at most this long, so a burst of typing is one transaction. */
 const FLUSH_DELAY = 200;
 
@@ -94,10 +94,8 @@ export interface DraftDatabase {
  */
 export class DraftStore {
   private memory = new Map<string, SavedDraft>();
-  /** Unreadable legacy keys still need synchronous recovery alongside the database. */
-  private legacyRecovery = false;
-  /** Durable discard times keep retained legacy bytes from reviving a discarded draft. */
-  private discarded = new Map<string, number>();
+  /** Legacy localStorage drafts and damaged records: loaded only when `load` finds one (src/drafts-recovery.ts). */
+  private recovery?: DraftRecovery;
   private deleted = new Set<string>();
   private db?: DraftDatabase;
   /** Key prefix of the loaded account's drafts. */
@@ -136,69 +134,34 @@ export class DraftStore {
     >,
     private database?: DraftDatabase,
   ) {}
+  /** The draft keys in localStorage; nothing when it cannot be listed. */
   private legacyKeys() {
     const keys: string[] = [];
-    let complete = true;
     try {
-      const length = this.storage.length;
-      for (let i = 0; i < length; i++) {
-        try {
-          const key = this.storage.key(i);
-          if (key?.startsWith(prefix)) keys.push(key);
-        } catch { complete = false; }
+      for (let i = 0; i < this.storage.length; i++) {
+        const key = this.storage.key(i);
+        if (key?.startsWith(prefix)) keys.push(key);
       }
-    } catch { complete = false; }
-    if (!complete) this.incompleteRecovery();
-    return { keys, complete };
-  }
-  private incompleteRecovery() {
-    this.recoveryNotice = RECOVERY_INCOMPLETE;
+    } catch { this.recoveryNotice = RECOVERY_INCOMPLETE; }
+    return keys;
   }
   /**
    * Moves every localStorage draft (all accounts) into the database, then
    * loads `account`'s drafts into memory. localStorage keys go only after
    * the database committed them. Stays on localStorage when it fails.
    */
-  async load(account: string) {
+  async load(account: string, loadRecovery: () => Promise<typeof import("./drafts-recovery")>) {
     const database = this.database;
-    if (!database) return;
     try {
-      const legacy: [string, SavedDraft, string][] = [];
-      const scan = this.legacyKeys();
-      this.legacyRecovery = !scan.complete;
-      for (const key of scan.keys) {
-        let raw: string | null;
-        try { raw = this.storage.getItem(key); }
-        catch { this.legacyRecovery = true; this.incompleteRecovery(); continue; }
-        if (raw === null) continue;
-        try {
-          const value = valid(key, JSON.parse(raw));
-          if (value) legacy.push([key, value, raw]);
-          else this.incompleteRecovery();
-        } catch { this.incompleteRecovery(); }
+      // A normal start has no draft in localStorage, so it never fetches the recovery code.
+      if (this.legacyKeys().length || this.recoveryNotice) {
+        this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, (key, value) => this.queue(key, value), valid, prefix);
       }
-      const moved: [string, SavedDraft][] = [];
-      for (const [key, value] of legacy) {
-        const discarded = valid(key, await database.get(discardKey(key)));
-        if (discarded) this.discarded.set(key, discarded.updatedAt);
-        if (discarded && discarded.updatedAt >= value.updatedAt) continue;
-        // A copy written while the database was unavailable may be the newer one.
-        const kept = valid(key, await database.get(key));
-        if (!kept || kept.updatedAt <= value.updatedAt) moved.push([key, value]);
-      }
-      if (moved.length) await database.write(moved);
+      if (!database) return;
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";
-      const records = await database.load(from);
-      for (const [key, , raw] of legacy) {
-        try {
-          const current = this.storage.getItem(key);
-          if (current === raw) this.storage.removeItem(key);
-          else if (current !== null) this.legacyRecovery = true;
-        } catch { this.legacyRecovery = true; this.incompleteRecovery(); }
-      }
-      for (const [key, value] of records) {
+      for (const [key, value] of await (this.recovery ?? database).load(from)) {
         const draft = valid(key, value);
-        if (draft && draft.updatedAt > (this.discarded.get(key) ?? -Infinity) && !this.memory.has(key) && !this.deleted.has(key)) this.memory.set(key, draft);
+        if (draft && !this.memory.has(key) && !this.deleted.has(key)) this.memory.set(key, draft);
       }
       this.from = from;
       this.db = database;
@@ -207,28 +170,25 @@ export class DraftStore {
     } catch {}
   }
   private read(key: string): SavedDraft | undefined {
-    if (this.db && (!this.legacyRecovery || !key.startsWith(this.from))) return this.memory.get(key);
-    if (this.deleted.has(key)) return undefined;
     const kept = this.memory.get(key);
+    if (this.deleted.has(key)) return undefined;
+    // This tab's own change is the newest there is.
     if (this.changes.has(key)) return kept;
+    if (this.recovery) return this.recovery.read(key, kept);
+    if (this.db) return kept;
     try {
       const raw = this.storage.getItem(key);
       const value = valid(key, JSON.parse(raw ?? "null"));
-      if (raw !== null && !value) this.incompleteRecovery();
-      if (value && value.updatedAt <= (this.discarded.get(key) ?? -Infinity)) return kept;
-      return value && (!kept || kept.updatedAt <= value.updatedAt) ? value : kept;
-    } catch {
-      this.incompleteRecovery();
-      return kept;
-    }
+      if (raw === null || value) return value;
+    } catch {}
+    this.recoveryNotice = RECOVERY_INCOMPLETE;
   }
   get(scope: DraftScope, path: string) {
     return this.read(draftKey(scope, path));
   }
   list(scope: DraftScope) {
-    const keys = new Set(this.memory.keys());
-    if (!this.db || this.legacyRecovery)
-      for (const key of this.legacyKeys().keys) keys.add(key);
+    // Before the database is in use, drafts are in localStorage.
+    const keys = new Set([...this.memory.keys(), ...this.recovery?.keys() ?? (this.db ? [] : this.legacyKeys())]);
     return [...keys]
       .map((key) => this.read(key))
       .filter(
@@ -257,7 +217,6 @@ export class DraftStore {
     this.deleted.delete(key);
     this.memory.set(key, value);
     if (this.db) {
-      if (this.discarded.delete(key)) this.queue(discardKey(key), null);
       this.queue(key, { ...value });
       return !this.failed;
     }
@@ -281,11 +240,6 @@ export class DraftStore {
     if (this.publishing?.get(key) === null) return this.publishRecord(key);
     this.memory.delete(key);
     if (this.db) {
-      if (this.legacyRecovery) {
-        const updatedAt = Date.now();
-        this.discarded.set(key, updatedAt);
-        this.queue(discardKey(key), { ...scope, version: 1, path, baseSha: null, original: "", content: "", updatedAt });
-      }
       this.queue(key, null);
       return true;
     }
@@ -300,6 +254,7 @@ export class DraftStore {
     }
   }
   private queue(key: string, value: SavedDraft | null) {
+    this.recovery?.save(key, value);
     this.pending.set(key, value);
     if (this.agentKeys.has(key)) { void this.flush(); return; }
     this.timer ??= setTimeout(() => void this.flush(), FLUSH_DELAY);
@@ -320,13 +275,7 @@ export class DraftStore {
     return (this.writing = settled);
   }
   private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
-    const legacy = new Map<string, string>();
-    if (this.legacyRecovery) for (const [key, value] of batch) try {
-      const raw = this.storage.getItem(key);
-      const before = valid(key, JSON.parse(raw ?? "null"));
-      const updatedAt = value?.updatedAt ?? this.discarded.get(key);
-      if (raw !== null && before && updatedAt !== undefined && before.updatedAt <= updatedAt) legacy.set(key, raw);
-    } catch {}
+    const cleanup = this.recovery?.flush(batch);
     const failed: [string, SavedDraft | null][] = [];
     try {
       await written;
@@ -336,22 +285,20 @@ export class DraftStore {
       else for (const change of batch) await db.write([change]).catch(() => failed.push(change));
     }
     const done = batch.filter((change) => !failed.includes(change)).map(([key]) => key);
-    let cleanupFailed = false;
-    for (const key of done) if (legacy.has(key)) try {
-      if (this.storage.getItem(key) === legacy.get(key)) this.storage.removeItem(key);
-    } catch { cleanupFailed = true; }
     if (done.length) this.announce?.(done);
     if (!failed.length) {
-      this.error = cleanupFailed ? REMOVE_FAILED : null;
+      this.error = null;
       this.failed = false;
-      if (cleanupFailed) this.onError?.(REMOVE_FAILED);
-      return;
+    } else {
+      // Kept for the next write to try again, unless something newer is pending.
+      for (const [key, value] of failed) if (!this.pending.has(key)) this.pending.set(key, value);
+      this.failed = true;
+      // A discard record (src/drafts-recovery.ts) that failed is a removal that did not hold, not a lost draft.
+      this.error = failed.some(([key, value]) => value && key.startsWith(prefix)) ? SAVE_FAILED : REMOVE_FAILED;
+      this.onError?.(this.error);
     }
-    // Kept for the next write to try again, unless something newer is pending.
-    for (const [key, value] of failed) if (!this.pending.has(key)) this.pending.set(key, value);
-    this.failed = true;
-    this.error = failed.some(([key, value]) => value && !key.startsWith(discardPrefix)) ? SAVE_FAILED : REMOVE_FAILED;
-    this.onError?.(this.error);
+    // Last, so a legacy copy that could not be removed shows only when the write itself held.
+    cleanup?.(done);
   }
   /** Agent-only boundary: manual writes queued meanwhile immediately enter IndexedDB. */
   async fenceAgent(scope: DraftScope, paths: string[]) {
@@ -423,8 +370,7 @@ export class DraftStore {
   release() {
     void this.flush();
     this.memory.clear();
-    this.legacyRecovery = false;
-    this.discarded.clear();
+    this.recovery = undefined;
     this.deleted.clear();
     this.changes.clear();
     this.from = "";

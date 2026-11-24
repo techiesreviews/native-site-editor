@@ -467,7 +467,7 @@ const boot = createBootController({
   assign: (url) => location.assign(url),
   readSession: (early) => apiResponse<SessionInfo>("session", undefined, early),
   readRepositories: (refresh, early) => apiResponse<Repository[]>("repositories", refresh ? { refresh: "1" } : undefined, early),
-  loadDrafts: (login) => draftStore().load(login), warmCopy: (login) => workspaceBoot.takeWarmCopy(login),
+  loadDrafts: (login) => draftStore().load(login, () => import("./drafts-recovery")), warmCopy: (login) => workspaceBoot.takeWarmCopy(login),
   onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); workspace.showProjects(); },
   session: () => info,
   // The source cache keys by account and drops another account's entries itself.

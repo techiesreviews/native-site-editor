@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DraftStore, draftKey, indexedDbDrafts, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
 import { githubScope, holdsDraftScope } from "../src/workspace-session.ts";
 import { forEachAwait } from "./support/await-race.ts";
+const loadRecovery = () => import("../src/drafts-recovery.ts");
 function storage() {
   const data = new Map<string, string>();
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
@@ -65,7 +66,7 @@ test("load moves localStorage drafts into the database, then removes them; the n
   disk.setItem("astro-site-editor:draft:v1:damaged", "{");
   await db.write([[draftKey(draft, "src/about.astro"), { ...draft, path: "src/about.astro", content: "newer", updatedAt: 5 }]]);
   const store = new DraftStore(disk, db);
-  await store.load("Lex");
+  await store.load("Lex", loadRecovery);
   assert.deepEqual(store.list(draft).map((value) => [value.path, value.content]), [["src/about.astro", "newer"], ["src/index.astro", "draft"]]);
   // Every account's drafts moved; only the signed-in one's are in memory.
   assert.equal(store.list({ ...draft, account: "someone-else" }).length, 0);
@@ -77,7 +78,7 @@ test("a failing database keeps drafts in localStorage", async () => {
   const disk = storage();
   new DraftStore(disk).save(draft);
   const store = new DraftStore(disk, { ...memoryDrafts(), async write() { throw new Error("blocked"); } });
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.equal(store.get(draft, draft.path)?.content, "draft");
   store.save({ ...draft, content: "later" });
   assert.equal(JSON.parse(disk.getItem(draftKey(draft, draft.path))!).content, "later");
@@ -91,7 +92,7 @@ for (const badAt of [0, 1, 2, 3]) test(`a damaged legacy draft at position ${bad
   for (const [key, value] of records) disk.setItem(key, value);
   for (const account of ["lex", "lex", "someone-else"]) {
     const store = new DraftStore(disk, db);
-    await store.load(account);
+    await store.load(account, loadRecovery);
     const expected = healthy.filter(value => value.account === account).sort((a, b) => a.path.localeCompare(b.path));
     assert.deepEqual(store.list({ ...draft, account }), expected);
     assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
@@ -105,7 +106,7 @@ test("an invalid legacy record stays stored and reports incomplete recovery", as
   disk.setItem("astro-site-editor:draft:v1:invalid", JSON.stringify({ version: 1 }));
   new DraftStore(disk).save(draft);
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.deepEqual(store.list(draft), [draft]);
   assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
   store.save({ ...draft, content: "later" });
@@ -133,7 +134,7 @@ for (const failAt of ["read", "key", "length"] as const) test(`a legacy ${failAt
     return [draft, other].filter(value => getItem(draftKey(value, value.path)) !== null).length;
   } });
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
   // Direct reads remain available even while enumeration is broken.
   assert.equal(store.get(other, other.path)?.content, other.content);
@@ -148,19 +149,19 @@ for (const failAt of ["read", "key", "length"] as const) test(`a legacy ${failAt
   await store.flush();
   assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.get(other, other.path)?.content, "later");
 });
 for (const failAt of ["get", "write", "load"] as const) test(`database ${failAt} failure keeps legacy bytes and later edits local`, async () => {
   const disk = storage(), db = memoryDrafts();
   new DraftStore(disk).save(draft);
   const store = new DraftStore(disk, { ...db, async [failAt]() { throw new Error("Database unavailable"); } });
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.equal(store.get(draft, draft.path)?.content, draft.content);
   assert.equal(store.save({ ...draft, content: "later" }), true);
   assert.equal(JSON.parse(disk.getItem(draftKey(draft, draft.path))!).content, "later");
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path)?.content, "later");
 });
 test("restored legacy access reveals a newer local copy beside healthy database drafts", async () => {
@@ -171,7 +172,7 @@ test("restored legacy access reveals a newer local copy beside healthy database 
   const getItem = disk.getItem;
   disk.getItem = () => { throw new Error("Storage temporarily unreadable"); };
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.equal(store.get(other, other.path)?.content, other.content);
   disk.getItem = getItem;
   assert.equal(store.get(draft, draft.path)?.content, "newer local copy");
@@ -181,7 +182,7 @@ test("restored legacy access reveals a newer local copy beside healthy database 
   assert.equal(disk.getItem(draftKey(draft, draft.path)), null);
   assert.equal(db.map.get(draftKey(draft, draft.path))?.content, "later edit");
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path)?.content, "later edit");
   assert.equal(again.get(other, other.path)?.content, other.content);
   assert.equal(again.error, null);
@@ -190,7 +191,7 @@ test("incomplete recovery never reports a successful new draft as a failed write
   const disk = storage(), db = memoryDrafts();
   disk.setItem("astro-site-editor:draft:v1:damaged", "{");
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.equal(store.save(draft), true);
   await store.flush();
   assert.equal(store.error, null);
@@ -199,7 +200,7 @@ test("incomplete recovery never reports a successful new draft as a failed write
 test("fully unavailable localStorage does not prevent working database saving", async () => {
   const disk: Storage = new Proxy({} as Storage, { get() { throw new Error("Storage unavailable"); } });
   const db = memoryDrafts(), store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.equal(store.save(draft), true);
   await store.flush();
   assert.deepEqual(db.map.get(draftKey(draft, draft.path)), draft);
@@ -212,14 +213,14 @@ for (const release of [false, true]) test(`discarding an unreadable legacy and d
   disk.setItem(draftKey(draft, draft.path), JSON.stringify(draft));
   disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.deepEqual(store.get(draft, draft.path), draft);
   assert.equal(store.remove(draft, draft.path), true);
   if (release) store.release();
   await store.flush();
   disk.getItem = getItem;
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path), undefined);
 });
 test("failed legacy cleanup reports a discard failure without resurrecting the discarded draft", async () => {
@@ -228,7 +229,7 @@ test("failed legacy cleanup reports a discard failure without resurrecting the d
   const getItem = disk.getItem, removeItem = disk.removeItem;
   disk.getItem = () => { throw new Error("Temporarily unreadable"); };
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   disk.getItem = getItem;
   disk.removeItem = () => { throw new Error("Removal denied"); };
   store.remove(draft, draft.path);
@@ -236,7 +237,7 @@ test("failed legacy cleanup reports a discard failure without resurrecting the d
   assert.match(store.error!, /older draft may reappear/);
   assert.equal(disk.getItem(key), JSON.stringify(draft));
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path), undefined);
   assert.deepEqual(again.list(draft), []);
   disk.removeItem = removeItem;
@@ -269,7 +270,7 @@ for (const phase of ["migration", "flush"] as const) test(`legacy cleanup preser
       load: phase === "migration" ? race.port("load", from => db.load(from)) : from => db.load(from),
       write: race.port("write", changes => db.write(changes)),
     });
-    const done = store.load("lex").then(async () => {
+    const done = store.load("lex", loadRecovery).then(async () => {
       if (phase === "flush") {
         disk.setItem(key, JSON.stringify(draft));
         store.save({ ...draft, content: "database edit", updatedAt: 2 });
@@ -282,7 +283,7 @@ for (const phase of ["migration", "flush"] as const) test(`legacy cleanup preser
   }, async run => {
     assert.equal(JSON.parse(run.disk.getItem(run.key)!).content, "newer from another tab");
     const again = new DraftStore(run.disk, run.db);
-    await again.load("lex");
+    await again.load("lex", loadRecovery);
     assert.equal(again.get(draft, draft.path)?.content, "newer from another tab");
   });
   assert.ok(count > 0);
@@ -296,13 +297,13 @@ test("discard cleanup preserves a newer fallback edit queued before the flush st
     return getItem(name);
   };
   const store = new DraftStore(disk, db);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   store.remove(draft, draft.path);
   new DraftStore(disk).save({ ...draft, content: "newer before flush", updatedAt: Date.now() + 1 });
   await store.flush();
   assert.equal(JSON.parse(disk.getItem(key)!).content, "newer before flush");
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path)?.content, "newer before flush");
 });
 test("another tab cleaning up the same legacy copy is not incomplete recovery", async () => {
@@ -313,7 +314,7 @@ test("another tab cleaning up the same legacy copy is not incomplete recovery", 
       get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
       write: race.port("write", changes => db.write(changes)),
     });
-    return { done: store.load("lex"), disk, key, store };
+    return { done: store.load("lex", loadRecovery), disk, key, store };
   }, run => run.disk.removeItem(run.key), run => {
     assert.deepEqual(run.store.get(draft, draft.path), draft);
     assert.equal(run.store.recoveryNotice, null);
@@ -324,7 +325,7 @@ test("once loaded, writes go through to the database shortly after, coalesced, a
   let writes = 0;
   const counted: DraftDatabase = { ...db, write: (changes) => { writes++; return db.write(changes); } };
   const store = new DraftStore(disk, counted);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   const big = "x".repeat(900 * 1024);
   for (let i = 0; i < 8; i++) assert.equal(store.save({ ...draft, path: `big-${i}.txt`, content: big + i }), true);
   store.save({ ...draft, content: "draft 2" });
@@ -339,7 +340,7 @@ test("once loaded, writes go through to the database shortly after, coalesced, a
   store.release();
   assert.equal(store.list(draft).length, 0);
   const again = new DraftStore(disk, db);
-  await again.load("lex");
+  await again.load("lex", loadRecovery);
   assert.equal(again.list(draft).length, 8);
   assert.equal(again.get(draft, draft.path)?.content, "draft 2");
   assert.equal(again.get(draft, "big-0.txt"), undefined);
@@ -354,7 +355,7 @@ test("a write the database refuses sets the error, the rest still commit, and th
   });
   const errors: string[] = [];
   store.onError = (message) => errors.push(message);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   store.save({ ...draft, content: "huge" });
   store.save({ ...draft, path: "small.txt" });
   await store.flush();
@@ -372,8 +373,8 @@ test("another tab's committed drafts are read again", async () => {
   const db = memoryDrafts();
   const one = new DraftStore(storage(), db), two = new DraftStore(storage(), db);
   one.announce = (keys) => void two.refresh(keys);
-  await one.load("lex");
-  await two.load("lex");
+  await one.load("lex", loadRecovery);
+  await two.load("lex", loadRecovery);
   one.save(draft);
   await one.flush();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -420,7 +421,7 @@ test("indexedDbDrafts upgrades v1 without recreating drafts or losing the manual
   t.after(() => { if (descriptor) Object.defineProperty(globalThis, "IDBKeyRange", descriptor); else Reflect.deleteProperty(globalThis, "IDBKeyRange"); });
   const db = indexedDbDrafts("upgrade-drafts", factory), store = new DraftStore(storage(), db);
   assert.deepEqual(await db.get(draftKey(draft, draft.path)), draft);
-  await store.load("lex");
+  await store.load("lex", loadRecovery);
   assert.deepEqual(store.get(draft, draft.path), draft);
   assert.deepEqual([...stores.keys()], ["drafts", "receipts", "workspaces", "conversations"]);
 });

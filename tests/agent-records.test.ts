@@ -29,7 +29,7 @@ test("v1 upgrade preserves drafts, adds stores and stays readable by the manual 
   range(t);
   const fake = fakeIndexedDB(draft), manual = indexedDbDrafts(draftDatabaseName, fake.factory);
   const store = new DraftStore(storage(), manual);
-  await store.load("lex");
+  await store.load("lex", () => import("../src/drafts-recovery.ts"));
   assert.equal(fake.state.version, draftDatabaseVersion);
   assert.deepEqual([...fake.stores.keys()], Object.values(draftStores));
   assert.deepEqual(store.get(draft, draft.path), draft);

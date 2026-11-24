@@ -410,7 +410,7 @@ test("discard, markSaved, acceptBase and reload", async () => {
 test("drafts round-trip through the IndexedDB layer and report unpersisted edits", async () => {
   const db = memoryDrafts();
   const first = new DraftStore(storage(), db);
-  await first.load("lex");
+  await first.load("lex", () => import("../src/drafts-recovery.ts"));
   const store = createDraftStore({ persistence: first });
   store.open(scope, "index.html", { text: "<h1>Hi</h1>", baseSha: sha("a") });
   store.edit({ scope, path: "index.html", history: "h", changes: [{ start: 4, end: 6, expected: "Hi", text: "Hello" }] });
@@ -418,7 +418,7 @@ test("drafts round-trip through the IndexedDB layer and report unpersisted edits
   await first.flush();
   assert.equal(db.map.get(draftKey(scope, "index.html"))?.content, "<h1>Hello</h1>");
   const second = new DraftStore(storage(), db);
-  await second.load("lex");
+  await second.load("lex", () => import("../src/drafts-recovery.ts"));
   const reloaded = createDraftStore({ persistence: second });
   const { file } = reloaded.open(scope, "index.html", { text: "<h1>Hi</h1>", baseSha: sha("a") });
   assert.equal(file.text, "<h1>Hello</h1>");

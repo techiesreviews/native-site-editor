@@ -656,7 +656,7 @@ for (const operation of ["update_active_draft", "create_file_draft"] as const) t
   }
   const scope = { account: operation, repoId: 1, repo: "lex/site", branch: "main" };
   const store = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 }, indexedDbDrafts(draftDatabaseName, fake.factory));
-  await store.load(scope.account);
+  await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const memory = createMemoryWorkspace({ branch: { "index.html": "before" }, open: "index.html" });
   const source = (path: string) => store.get(scope, path)?.content ?? memory.workspace.source(path);
   let context: AgentTextCommit | undefined;

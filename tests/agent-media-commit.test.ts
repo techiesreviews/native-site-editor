@@ -91,7 +91,7 @@ async function setup(t: TestContext, extraMedia: string[] = [], race?: AwaitRace
   const scope: DraftScope = { account: `media-${++sequence}`, repoId: 1, repo: "lex/site", branch: "main" };
   const db = indexedDbDrafts(draftDatabaseName, factory);
   const store = new DraftStore(storage(), { ...db, write: changes => { writes++; return db.write(changes); } });
-  await store.load(scope.account);
+  await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const bytes = indexedDbUploadBytes();
   const observedBytes = { ...bytes, put: async (key: string, blob: Blob) => { stages++; await bytes.put(key, blob); events.push("bytes durable"); },
     delete: async (key: string) => { byteDeletes++; await bytes.delete(key); } };

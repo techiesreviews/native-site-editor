@@ -16,7 +16,7 @@ export function agentMediaStorage(scope: DraftScope) {
     // snapshot uses the real records adapter without a global DOM IDBKeyRange polyfill.
     load: async from => (await records.snapshot(scope)).drafts.filter(([key]) => key.startsWith(from)),
   });
-  const ready = store.load(scope.account), uploads = memoryUploadBytes();
+  const ready = store.load(scope.account, () => import("../../src/drafts-recovery.ts")), uploads = memoryUploadBytes();
   const context = async (ctx: MediaWorkspaceContext): Promise<MediaWorkspaceContext> => {
     await ready;
     return { ...ctx, drafts: store, agentRecords: records, flushTyping() {} };
