@@ -151,19 +151,26 @@ test("port keeps default slot locks in the repository's shared Git folder, which
   assert.equal((await run()).stdout.trim(), String(slots[0]));
   const lock = join(main, ".git", "ase-locks", `ase-${slots[0]}.lock`);
   assert.equal((await readFile(lock, "utf8")).split("\t")[1], worktree);
-  await assert.rejects(readFile(join(legacy, `ase-${slots[0]}.lock`)), { code: "ENOENT" });
   // A run from the main checkout holds the first slot: the worktree's run takes the next one.
   await holdLock(t, lock);
   assert.equal((await run()).stdout.trim(), String(slots[1]));
 });
 
-test("port also respects a slot's old /tmp lock, opened read-only, while older checkouts still use it", async (t) => {
+// As root a 0444 file stays writable, so the read-only path would go untested.
+test("port also respects a slot's old /tmp lock, opened read-only, while older checkouts still use it", { skip: process.getuid?.() === 0 }, async (t) => {
   const { legacy, slots, run } = await fixture(t);
   const old = join(legacy, `ase-${slots[0]}.lock`);
   await writeFile(old, "");
   await holdLock(t, old);
   await chmod(old, 0o444);
   assert.equal((await run(process.execPath, "-e", "console.log(process.env.ASE_TEST_PORT)")).stdout.trim(), String(slots[1]));
+});
+
+test("port creates and holds a missing old /tmp lock, so an older checkout cannot take the slot", async (t) => {
+  const { legacy, slots, run } = await fixture(t);
+  const result = await run("bash", "-c", 'flock -n "$1/ase-$ASE_TEST_PORT.lock" true && echo free || echo held', "check", legacy);
+  assert.equal(result.stdout.trim(), "held");
+  await readFile(join(legacy, `ase-${slots[0]}.lock`));
 });
 
 test("port writes PID, cwd and command while the slot lock remains held", async (t) => {

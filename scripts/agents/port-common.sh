@@ -17,7 +17,7 @@ else
 fi
 mkdir -p "$lock_dir"
 # Checkouts from before TOOLS-458 still lock slots in /tmp. Until none is left, a slot is taken only when its old /tmp
-# lock, where one exists, is free too; flock needs only a read-only descriptor, so this works inside the key lock.
+# lock is free too; flock needs only a read-only descriptor, so this works inside the key lock.
 # ASE_LEGACY_LOCK_DIR is a test-only override.
 legacy_lock_dir=${ASE_LEGACY_LOCK_DIR:-/tmp}
 command -v ss >/dev/null || { echo "port: ss is required" >&2; exit 2; }
@@ -63,7 +63,8 @@ slot_lock() {
   # Append opens without erasing another holder's metadata.
   exec {slot_fd}>>"$held_file"
   flock -n "$slot_fd" || { slot_unlock; return 1; }
-  if [[ $legacy != "$held_file" ]] && { exec {legacy_fd}<"$legacy"; } 2>/dev/null && ! flock -n "$legacy_fd"; then
+  # Create the old lock where /tmp is writable, so an older checkout always meets it; read it where /tmp is read-only.
+  if [[ ! $legacy -ef $held_file ]] && { exec {legacy_fd}>>"$legacy" || exec {legacy_fd}<"$legacy"; } 2>/dev/null && ! flock -n "$legacy_fd"; then
     held_file=$legacy
     slot_unlock
     return 1
