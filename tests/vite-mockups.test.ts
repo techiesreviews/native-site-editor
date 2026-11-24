@@ -1,16 +1,141 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { build, loadConfigFromFile } from "vite";
-import { unstable_startWorker } from "wrangler";
 import { BOARD_MOCKUPS, buildTickets, isReleased, MOCKUPS_HEADERS, mockupBoard, mockupFiles, mockupPicturePath, mockups, mockupsHeaders, mockupShipping, mockupsRedirect, mockupTitle, referencedFiles, ticketsOnMain } from "../vite-mockups.ts";
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "ase-mockups-"));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+const wranglerHome = join(scratch, "wrangler");
+const wranglerEnv: Record<string, string> = {
+  XDG_CONFIG_HOME: join(wranglerHome, "config"),
+  WRANGLER_LOG_PATH: join(wranglerHome, "logs"),
+  WRANGLER_WRITE_LOGS: "false",
+  WRANGLER_REGISTRY_PATH: join(wranglerHome, "registry"),
+  WRANGLER_CACHE_DIR: join(wranglerHome, "cache"),
+  WRANGLER_SEND_METRICS: "false",
+  WRANGLER_SEND_ERROR_REPORTS: "false",
+  WRANGLER_NO_SKILLS_UPDATE_PROMPTS: "true",
+};
+let wranglerModule: Promise<typeof import("wrangler")> | undefined;
+let savedWranglerEnv: Record<string, string | undefined> | undefined;
+
+function applyEnv(overrides: Record<string, string | undefined>) {
+  const saved: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(overrides)) {
+    saved[name] = process.env[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  return saved;
+}
+
+function restoreEnv(saved: Record<string, string | undefined>) {
+  for (const [name, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
+
+/** Loads Wrangler only after pointing its config, log, registry and cache paths into `scratch` and turning telemetry off. */
+function loadWrangler() {
+  if (!wranglerModule) {
+    // Wrangler caches WRANGLER_LOG_PATH when its log module initializes on first import.
+    savedWranglerEnv = applyEnv(wranglerEnv);
+    wranglerModule = import("wrangler");
+  }
+  return wranglerModule;
+}
+
+function errorDetail(value: unknown): string {
+  if (value instanceof Error) return value.message;
+  if (value && typeof value === "object" && "message" in value && typeof value.message === "string") return value.message;
+  return value === undefined ? "" : String(value);
+}
+
+function workerError(event: unknown): Error {
+  if (event instanceof Error) return new Error(`Wrangler worker failed: ${event.message}`, { cause: event });
+  if (event && typeof event === "object") {
+    const source = "source" in event && typeof event.source === "string" ? event.source : "Wrangler";
+    const reason = "reason" in event && typeof event.reason === "string" ? event.reason : "worker startup failed";
+    const cause = "cause" in event ? event.cause : undefined;
+    const detail = errorDetail(cause);
+    return new Error(detail ? `${source}: ${reason}: ${detail}` : `${source}: ${reason}`, cause === undefined ? undefined : { cause });
+  }
+  return new Error(`Wrangler worker failed: ${String(event)}`);
+}
+
+/** Starts a local Cloudflare worker from `config`, failing fast on controller errors or timeout instead of hanging. */
+async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { env?: Record<string, string | undefined>; timeoutMs?: number } = {}) {
+  const { unstable_DevEnv } = await loadWrangler();
+  // Override HOME only while starting Wrangler so a legacy ~/.wrangler directory cannot bypass XDG_CONFIG_HOME
+  // without disturbing Playwright's browser cache lookup.
+  const saved = applyEnv({ HOME: wranglerHome, ...env });
+  const devEnv = new unstable_DevEnv();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onError: ((event: unknown) => void) | undefined;
+  let onBuildFailed: ((event: unknown) => void) | undefined;
+  let onReloadComplete: (() => void) | undefined;
+  try {
+    const worker = await new Promise<Awaited<ReturnType<typeof devEnv.startWorker>>>((resolve, reject) => {
+      let settled = false;
+      let started: Awaited<ReturnType<typeof devEnv.startWorker>> | undefined;
+      let proxyReady = false;
+      let reloaded = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (timer !== undefined) clearTimeout(timer);
+        if (onError) devEnv.off("error", onError);
+        if (onBuildFailed) devEnv.off("buildFailed", onBuildFailed);
+        if (onReloadComplete) devEnv.off("reloadComplete", onReloadComplete);
+        if (error) reject(error);
+        else resolve(started!);
+      };
+      onError = event => finish(workerError(event));
+      onBuildFailed = event => finish(workerError(event));
+      onReloadComplete = () => {
+        reloaded = true;
+        if (proxyReady && started) finish();
+      };
+      devEnv.on("error", onError);
+      devEnv.on("buildFailed", onBuildFailed);
+      devEnv.once("reloadComplete", onReloadComplete);
+      timer = setTimeout(() => finish(new Error(`Wrangler worker did not become ready within ${timeoutMs}ms`)), timeoutMs);
+      void devEnv.startWorker({
+        config,
+        dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none", persist: false },
+      }).then(
+        candidate => {
+          started = candidate;
+          return candidate.ready.then(
+            () => {
+              proxyReady = true;
+              if (reloaded) finish();
+            },
+            cause => finish(workerError(cause)),
+          );
+        },
+        cause => finish(workerError(cause)),
+      );
+    });
+    return worker;
+  } catch (error) {
+    // Use devEnv.teardown() directly: worker.dispose() waits on proxy.ready, which never settles after a reload error.
+    await devEnv.teardown().catch(() => undefined);
+    throw error;
+  } finally {
+    restoreEnv(saved);
+  }
+}
+
+after(() => {
+  if (savedWranglerEnv) restoreEnv(savedWranglerEnv);
+  rmSync(scratch, { recursive: true, force: true });
+});
 
 /** A repo with two maps of mock-ups (one using an image beside it, another image named only in notes) and one map without any. */
 function repo() {
@@ -247,8 +372,8 @@ test("served by Cloudflare's asset handler, mock-ups get one sandboxed policy an
   writeFileSync(join(root, "public/_headers"), editorHeaders);
   await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(root)], build: { outDir: join(root, "dist") } });
   assert.equal(readFileSync(join(root, "dist/_headers"), "utf8"), editorHeaders + MOCKUPS_HEADERS);
-  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
-  const worker = await unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
+  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-test", compatibility_date: "2026-09-17", send_metrics: false, assets: { directory: "./dist" } }));
+  const worker = await startLocalWorker(join(root, "wrangler.jsonc"));
   try {
     const headers = async (path: string) => {
       const response = await worker.fetch(`http://localhost${path}`);
@@ -330,9 +455,34 @@ async function serveBuild(root: string, mockupsRoot: string) {
   await build({ root, configFile: false, logLevel: "silent", plugins: [mockups(mockupsRoot)], build: { outDir: join(root, "dist") } });
   // The board's page is the catalogue build's (vite.config.ts); a stand-in is enough to see where /mockups/ leads.
   writeFileSync(join(root, "dist/catalogue.html"), "<!doctype html><title>Board stand-in</title>");
-  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", assets: { directory: "./dist" } }));
-  return unstable_startWorker({ config: join(root, "wrangler.jsonc"), dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none" } });
+  writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "mockups-browser-test", compatibility_date: "2026-09-17", send_metrics: false, assets: { directory: "./dist" } }));
+  return startLocalWorker(join(root, "wrangler.jsonc"));
 }
+
+test("local Cloudflare worker tests keep Wrangler state in scratch and fail fast when config storage is unwritable", async () => {
+  const root = mkdtempSync(join(scratch, "wrangler-guard-"));
+  mkdirSync(join(root, "dist"));
+  writeFileSync(join(root, "dist/index.html"), "<!doctype html><title>ok</title>");
+  const config = join(root, "wrangler.jsonc");
+  writeFileSync(config, JSON.stringify({ name: "mockups-guard-test", compatibility_date: "2026-09-17", send_metrics: false, assets: { directory: "./dist" } }));
+
+  const worker = await startLocalWorker(config);
+  try {
+    assert.equal((await worker.fetch("http://localhost/")).status, 200);
+  } finally {
+    await worker.dispose();
+  }
+  assert.equal(existsSync(join(wranglerHome, "config/.wrangler/metrics.json")), true);
+  assert.equal(existsSync(join(wranglerHome, "logs")), false);
+
+  // Pointing XDG_CONFIG_HOME at a regular file triggers the same LocalRuntimeController reload error as a read-only ~/.config.
+  const blocker = join(root, "unwritable-config");
+  writeFileSync(blocker, "");
+  await assert.rejects(
+    startLocalWorker(config, { env: { XDG_CONFIG_HOME: blocker }, timeoutMs: 5_000 }),
+    /LocalRuntimeController: Error reloading local server:/,
+  );
+});
 
 /** A 1×1 transparent PNG. */
 const onePixelPng = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
