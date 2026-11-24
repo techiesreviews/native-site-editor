@@ -136,7 +136,7 @@ async function holdLock(t: TestContext, file: string) {
 }
 
 test("port keeps default slot locks in the repository's shared Git folder, which the kit's key lock leaves writable", async (t) => {
-  const { dir, legacy, slots, env } = await fixture(t);
+  const { dir, slots, env } = await fixture(t);
   // A main checkout and a second worktree: every worktree of the repository shares the main checkout's Git folder.
   const main = join(dir, "main"), worktree = join(dir, "worktree");
   const gitEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_")));
