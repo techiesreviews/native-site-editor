@@ -1069,7 +1069,9 @@ async function pinHistory(page: Page) {
         return items.map(item => item.id === resurrect
           ? { ...item, content: { ...item.content, state: "done" } } : item);
       })`)
-      .replace(restored, match => `${match}\n    root.dataset.testHistoryRestored = current?.branch ?? "";`),
+      .replace(restored, match => `${match}
+        root.dataset.testHistoryCount = String(requests.length);
+        root.dataset.testHistoryRestored = current?.branch ?? "";`),
     });
   });
   return {
@@ -1083,7 +1085,11 @@ async function pinHistory(page: Page) {
 }
 
 async function expectHistoryPins(page: Page, branch: string, count: number, timeout?: number) {
-  await expect(page.locator(".agent-menu")).toHaveAttribute("data-test-history-restored", branch);
+  const menu = page.locator(".agent-menu");
+  await expect(menu).toHaveAttribute("data-test-history-restored", branch);
+  // Pin rendering is lazy. Check the restored requests too, so an absent DOM pin
+  // cannot pass while its renderer or frame locations are still loading.
+  await expect(menu).toHaveAttribute("data-test-history-count", String(count), { timeout });
   await expect(page.locator(".agent-pin")).toHaveCount(count, { timeout });
 }
 
@@ -1183,7 +1189,7 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
       history.release();
       const outcome = await checked;
       expect(outcome.passed, "a late returning request must fail the zero-pin assertion").toBe(false);
-      expect(outcome.error).toContain("toHaveCount");
+      expect(outcome.error).toContain("data-test-history-count");
       await expect(pins).toHaveCount(1);
     }
     await page.reload();
