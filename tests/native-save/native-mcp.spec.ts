@@ -1093,7 +1093,7 @@ async function expectHistoryPins(page: Page, branch: string, count: number, time
   await expect(page.locator(".agent-pin")).toHaveCount(count, { timeout });
 }
 
-test("Ask agent history stays in this browser: after a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own", async ({ page, baseURL }) => {
+for (const delayedRestore of [false, true]) test(`Ask agent history stays in this browser: after a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own${delayedRestore ? " (delayed restore)" : ""}`, async ({ page, baseURL }) => {
   const history = await pinHistory(page);
   await open(page, baseURL);
   // Another branch of the same repository, with the same pages.
@@ -1171,10 +1171,10 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
     await expectHistoryPins(page, "main", 0);
     await page.keyboard.press("Escape");
 
-    // Each dismissed record is returned incorrectly, after the old one-second check would
-    // already have passed. The same assertion must reject both a cleared and a dismissed pin.
-    for (const id of [first.id, second.id]) {
-      history.hold(id);
+    // Keep injected latency in its own regression case. Ordinary history checks have no
+    // sleeps. Clear and Dismiss both persist state "dismissed"; return the cleared one late.
+    if (delayedRestore) {
+      history.hold(first.id);
       await page.reload();
       await open(page, baseURL);
       await page.locator(".repository-menu__trigger").click();
@@ -1191,12 +1191,12 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
       expect(outcome.passed, "a late returning request must fail the zero-pin assertion").toBe(false);
       expect(outcome.error).toContain("data-test-history-count");
       await expect(pins).toHaveCount(1);
+      await page.reload();
+      await open(page, baseURL);
+      await page.locator(".repository-menu__trigger").click();
+      await expectHistoryPins(page, "main", 0);
+      await page.keyboard.press("Escape");
     }
-    await page.reload();
-    await open(page, baseURL);
-    await page.locator(".repository-menu__trigger").click();
-    await expectHistoryPins(page, "main", 0);
-    await page.keyboard.press("Escape");
     expect(calls, "local conversation actions").toEqual([]);
 
     // On again, the receiving tab reads the local dismissal: agents no longer get it.
