@@ -8,12 +8,7 @@ dry_run=false
 ASE_POOL="5226 5236 5246 5256 5266 5276 5286 5296" ASE_PORTS= source "$(dirname "${BASH_SOURCE[0]}")/port-common.sh"
 free_slots=()
 for p in "${pool[@]}" 5216; do
-  exec {slot_fd}>>"$lock_dir/ase-$p.lock"
-  if flock -n "$slot_fd"; then
-    free_slots+=("$p")
-  else
-    exec {slot_fd}>&-
-  fi
+  if slot_lock "$p"; then free_slots+=("$p"); fi
   # Hold free locks through inspection and signalling, so a new run cannot claim them.
 done
 listeners=$(ss -Hltnp) || { echo "reap: ss failed" >&2; exit 1; }

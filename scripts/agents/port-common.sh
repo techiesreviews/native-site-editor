@@ -4,14 +4,22 @@ set -euo pipefail
 # ASE_POOL is a test-only override; production callers use this fixed pool.
 read -r -a pool <<< "${ASE_POOL:-5226 5236 5246 5256 5266 5276 5286 5296}"
 read -r -a ports <<< "${ASE_PORTS:-${pool[*]}}"
-# Slot locks live in the repository's Git folder: every worktree on this machine shares it, so two runs never take
-# the same slot, and the kit's key lock keeps it writable where /tmp is read-only. Outside a Git checkout: /tmp.
-if [[ -z ${ASE_LOCK_DIR:-} ]] && git_common=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+# Slot locks live in the repository's Git folder: every worktree of this repository shares it, so two of its runs
+# never take the same slot, and the kit's key lock (kit pr's checks write only the worktree and the Git folder) keeps
+# it writable where /tmp is read-only. Outside a Git checkout: /tmp.
+if [[ -n ${ASE_LOCK_DIR:-} ]]; then
+  lock_dir=$ASE_LOCK_DIR
+elif git_common=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
   lock_dir=$git_common/ase-locks
 else
-  lock_dir=${ASE_LOCK_DIR:-/tmp}
+  echo "port: no Git folder found; slot locks in /tmp" >&2
+  lock_dir=/tmp
 fi
 mkdir -p "$lock_dir"
+# Checkouts from before TOOLS-458 still lock slots in /tmp. Until none is left, a slot is taken only when its old /tmp
+# lock, where one exists, is free too; flock needs only a read-only descriptor, so this works inside the key lock.
+# ASE_LEGACY_LOCK_DIR is a test-only override.
+legacy_lock_dir=${ASE_LEGACY_LOCK_DIR:-/tmp}
 command -v ss >/dev/null || { echo "port: ss is required" >&2; exit 2; }
 seen=()
 for p in "${pool[@]}"; do
@@ -46,9 +54,31 @@ slot_listeners() {
   [[ -n $slot_busy ]]
 }
 
+# slot_lock <port>: take the slot's lock (and its old /tmp lock) without waiting. On success the descriptors in
+# slot_fd and legacy_fd stay open, holding the lock across exec, until slot_unlock. On failure nothing stays open and
+# held_file names the lock file another run holds.
+slot_lock() {
+  local legacy=$legacy_lock_dir/ase-$1.lock
+  held_file=$lock_dir/ase-$1.lock legacy_fd=
+  # Append opens without erasing another holder's metadata.
+  exec {slot_fd}>>"$held_file"
+  flock -n "$slot_fd" || { slot_unlock; return 1; }
+  if [[ $legacy != "$held_file" ]] && { exec {legacy_fd}<"$legacy"; } 2>/dev/null && ! flock -n "$legacy_fd"; then
+    held_file=$legacy
+    slot_unlock
+    return 1
+  fi
+}
+
+slot_unlock() {
+  exec {slot_fd}>&-
+  if [[ -n $legacy_fd ]]; then exec {legacy_fd}>&-; fi
+  legacy_fd=
+}
+
 slot_holder() {
   local pid cwd command live
-  if IFS=$'\t' read -r pid cwd command < "$lock_dir/ase-$1.lock" && [[ $pid =~ ^[0-9]+$ ]]; then
+  if IFS=$'\t' read -r pid cwd command < "${held_file:-$lock_dir/ase-$1.lock}" && [[ $pid =~ ^[0-9]+$ ]]; then
     live=$(ps -p "$pid" -o args= 2>/dev/null || true)
     slot_busy="slot $1: pid $pid cwd $cwd command ${live:-$command}"
   else

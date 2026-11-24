@@ -6,11 +6,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/port-common.sh"
 load_limit
 # Keep every descriptor open across exec; acquire in pool order to avoid deadlocks.
 for p in "${pool[@]}" 5216; do
-  exec {slot_fd}>>"$lock_dir/ase-$p.lock"
   while true; do
-    if flock -n "$slot_fd"; then
+    if slot_lock "$p"; then
       if ! slot_listeners "$p"; then break; fi
-      flock -u "$slot_fd"
+      slot_unlock
     else
       slot_holder "$p"
     fi

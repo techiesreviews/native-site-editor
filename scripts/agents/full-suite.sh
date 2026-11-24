@@ -10,9 +10,10 @@ source "$root/scripts/agents/port-common.sh"
 free_ports=()
 for p in "${ports[@]}"; do
   [[ " ${free_ports[*]} " != *" $p "* ]] || continue
-  exec 9>>"$lock_dir/ase-$p.lock"
-  if flock -n 9 && ! slot_listeners "$p"; then free_ports+=("$p"); fi
-  exec 9>&-
+  if slot_lock "$p"; then
+    if ! slot_listeners "$p"; then free_ports+=("$p"); fi
+    slot_unlock
+  fi
 done
 free=${#free_ports[@]}
 (( free > 0 )) || free=1

@@ -11,11 +11,10 @@ while true; do
   else
     busy=
     for p in "${ports[@]}"; do
-      # Append opens without erasing another holder's metadata.
-      exec 9>>"$lock_dir/ase-$p.lock"
-      if flock -n 9; then
+      if slot_lock "$p"; then
         if slot_listeners "$p"; then
           if (( SECONDS >= next_status )); then echo "port: skipping slot $p: $slot_busy" >&2; fi
+          slot_unlock
         else
           write_holder "$@"
           export ASE_TEST_PORT=$p ASE_TEST_OWNER_PID=$$
@@ -26,7 +25,6 @@ while true; do
         slot_holder "$p"
       fi
       busy+="${busy:+; }$slot_busy"
-      exec 9>&-
     done
     report_wait "all slots busy; $busy"
   fi

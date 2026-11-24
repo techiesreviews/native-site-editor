@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,9 +37,12 @@ async function fixture(t: TestContext) {
     } catch { /* Try another ephemeral port if its neighbour is occupied. */ }
     await close(first.server);
   }
-  const env = { ...process.env, ASE_POOL: slots.join(" "), ASE_PORTS: slots.join(" "), ASE_LOCK_DIR: dir, ASE_MAX_LOAD: "1000000", ASE_MIN_MEM_KB: "0", ASE_PORT_POLL: "0.01" };
+  // Old-style /tmp locks live in a folder of the test's own, so a real run's /tmp locks never touch the test.
+  const legacy = join(dir, "legacy");
+  await mkdir(legacy);
+  const env = { ...process.env, ASE_POOL: slots.join(" "), ASE_PORTS: slots.join(" "), ASE_LOCK_DIR: dir, ASE_LEGACY_LOCK_DIR: legacy, ASE_MAX_LOAD: "1000000", ASE_MIN_MEM_KB: "0", ASE_PORT_POLL: "0.01" };
   const run = (...args: string[]) => exec("bash", [script, ...args], { env, timeout: 3_000 });
-  return { dir, slots, env, run };
+  return { dir, legacy, slots, env, run };
 }
 
 test("port picks a free slot and preserves the owner PID across exec", async (t) => {
@@ -118,9 +121,23 @@ exec /usr/bin/awk "\${args[@]}"
   });
 }
 
+// Holds a flock on a lock file from another process, like a run in another checkout, until the test ends.
+async function holdLock(t: TestContext, file: string) {
+  const holder = spawn("flock", [file, process.execPath, "-e", "console.log('READY'); setInterval(() => {}, 1000)"], { detached: true });
+  const exited = once(holder, "close");
+  t.after(async () => {
+    if (holder.exitCode === null && holder.pid) process.kill(-holder.pid, "SIGTERM");
+    await exited;
+  });
+  const ready = await once(holder.stdout, "data", { signal: AbortSignal.timeout(3_000) });
+  assert.ok(String(ready[0]).includes("READY"));
+  assert.ok(holder.pid);
+  return holder.pid;
+}
+
 test("port keeps default slot locks in the repository's shared Git folder, which the kit's key lock leaves writable", async (t) => {
-  const { dir, slots, env } = await fixture(t);
-  // A main checkout and a second worktree: every run on the machine shares the main checkout's Git folder.
+  const { dir, legacy, slots, env } = await fixture(t);
+  // A main checkout and a second worktree: every worktree of the repository shares the main checkout's Git folder.
   const main = join(dir, "main"), worktree = join(dir, "worktree");
   const gitEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_")));
   const git = (...args: string[]) => exec("git", ["-c", "user.name=test", "-c", "user.email=test@example.invalid", ...args], { env: gitEnv });
@@ -130,10 +147,23 @@ test("port keeps default slot locks in the repository's shared Git folder, which
   await mkdir(join(worktree, "scripts"));
   for (const name of ["port.sh", "port-common.sh"]) await writeFile(join(worktree, "scripts", name), await readFile(new URL(`../scripts/agents/${name}`, import.meta.url)));
   const { ASE_LOCK_DIR: _unset, ...defaults } = gitEnv;
-  const result = await exec("bash", [join(worktree, "scripts", "port.sh"), process.execPath, "-e", "console.log(process.env.ASE_TEST_PORT)"], { env: defaults, cwd: worktree, timeout: 3_000 });
-  assert.equal(result.stdout.trim(), String(slots[0]));
-  assert.match(await readFile(join(main, ".git", "ase-locks", `ase-${slots[0]}.lock`), "utf8"), new RegExp(`^\\d+\t${worktree}\t`));
-  await assert.rejects(readFile(`/tmp/ase-${slots[0]}.lock`), { code: "ENOENT" });
+  const run = () => exec("bash", [join(worktree, "scripts", "port.sh"), process.execPath, "-e", "console.log(process.env.ASE_TEST_PORT)"], { env: defaults, cwd: worktree, timeout: 3_000 });
+  assert.equal((await run()).stdout.trim(), String(slots[0]));
+  const lock = join(main, ".git", "ase-locks", `ase-${slots[0]}.lock`);
+  assert.equal((await readFile(lock, "utf8")).split("\t")[1], worktree);
+  await assert.rejects(readFile(join(legacy, `ase-${slots[0]}.lock`)), { code: "ENOENT" });
+  // A run from the main checkout holds the first slot: the worktree's run takes the next one.
+  await holdLock(t, lock);
+  assert.equal((await run()).stdout.trim(), String(slots[1]));
+});
+
+test("port also respects a slot's old /tmp lock, opened read-only, while older checkouts still use it", async (t) => {
+  const { legacy, slots, run } = await fixture(t);
+  const old = join(legacy, `ase-${slots[0]}.lock`);
+  await writeFile(old, "");
+  await holdLock(t, old);
+  await chmod(old, 0o444);
+  assert.equal((await run(process.execPath, "-e", "console.log(process.env.ASE_TEST_PORT)")).stdout.trim(), String(slots[1]));
 });
 
 test("port writes PID, cwd and command while the slot lock remains held", async (t) => {
@@ -210,7 +240,7 @@ flock -n 8
 });
 
 async function reaperFixture(t: TestContext) {
-  const { dir, env } = await fixture(t);
+  const { dir, legacy, env } = await fixture(t);
   const rows = join(dir, "listeners");
   const signals = join(dir, "signals");
   const startup = join(dir, "bash-env");
@@ -221,7 +251,7 @@ async function reaperFixture(t: TestContext) {
     env: { ...env, PATH: `${dir}:${process.env.PATH}`, BASH_ENV: record ? startup : "", ASE_LISTENERS: rows, ASE_SIGNALS: signals }, timeout: 3_000,
   });
   const row = (port: number, pid: number) => `LISTEN 0 10 127.0.0.1:${port} 0.0.0.0:* users:(("node",pid=${pid},fd=20))\n`;
-  return { dir, rows, signals, reap, row };
+  return { dir, legacy, rows, signals, reap, row };
 }
 
 test("reap signals only listener descendants, including grandchildren in another process group", async (t) => {
@@ -275,21 +305,15 @@ test("reap signals only listener descendants, including grandchildren in another
   await assert.rejects(readFile(signals), { code: "ENOENT" });
 });
 
-test("reap preserves listeners with held slot locks", async (t) => {
-  const { dir, rows, signals, reap, row } = await reaperFixture(t);
-  const holder = spawn("flock", [join(dir, "ase-5226.lock"), process.execPath, "-e", "console.log('READY'); setInterval(() => {}, 1000)"], { detached: true });
-  const exited = once(holder, "close");
-  t.after(async () => {
-    if (holder.exitCode === null && holder.pid) process.kill(-holder.pid, "SIGTERM");
-    await exited;
+for (const [name, old] of [["slot locks", false], ["old /tmp slot locks", true]] as const) {
+  test(`reap preserves listeners with held ${name}`, async (t) => {
+    const { dir, legacy, rows, signals, reap, row } = await reaperFixture(t);
+    const pid = await holdLock(t, join(old ? legacy : dir, "ase-5226.lock"));
+    await writeFile(rows, row(5226, pid) + row(5227, pid));
+    assert.equal((await reap()).stdout, "");
+    await assert.rejects(readFile(signals), { code: "ENOENT" });
   });
-  const ready = await once(holder.stdout, "data", { signal: AbortSignal.timeout(3_000) });
-  assert.ok(String(ready[0]).includes("READY"));
-  assert.ok(holder.pid);
-  await writeFile(rows, row(5226, holder.pid) + row(5227, holder.pid));
-  assert.equal((await reap()).stdout, "");
-  await assert.rejects(readFile(signals), { code: "ENOENT" });
-});
+}
 
 test("reap kills a compound shell's listener while the coordinating shell survives", async (t) => {
   const { dir, rows, reap, row } = await reaperFixture(t);
