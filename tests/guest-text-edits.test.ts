@@ -29,10 +29,10 @@ function fixture(race?: AwaitRace) {
   const writes = () => sent.filter(message => message.t === "change");
   return {
     edits, reads, writes, answers, changes: () => changes,
-    reply(bold = false, at = reads().length - 1) {
+    reply(bold = false, at = reads().length - 1, size = "default") {
       const request = reads()[at];
       assert.ok(request, "the guest asked for sources");
-      asks.answer(request.ask, { size: "default", bold });
+      asks.answer(request.ask, { size, bold });
     },
     answer(reason?: string, at = writes().length - 1) {
       const request = writes()[at];
@@ -83,6 +83,7 @@ test("returning to a paragraph before its typed letters are confirmed cannot for
     f.edits.select({ ...selected, node: [0, 1] });
     f.edits.select(selected);
     f.reply(); await settle();
+    assert.deepEqual(f.edits.controls(), [], "the paragraph shows no text controls until its sources are read again");
     for (const control of f.edits.controls()) {
       assert.equal(control.waiting, true);
       if (control.kind === "button") control.onPress();
@@ -310,5 +311,46 @@ test("a pending source read makes no late updates after selection, page or sessi
         assert.equal(run.f.reads().length, reads, "cancelled read starts no retry");
       }), 1);
     } finally { fixtures.forEach(f => f.close()); }
+  }
+});
+
+test("a source read held across a text-size scale change on the same page shows no size from the old scale", async () => {
+  const f = fixture();
+  try {
+    const large: GuestContext = { ...context, sizes: { kind: "class", sizes: [{ value: "text-large", label: "Large" }] } };
+    const small: GuestContext = { ...context, sizes: { kind: "class", sizes: [{ value: "text-small", label: "Small" }] } };
+    f.edits.context(large);
+    f.edits.select(selected);
+    const held = f.reads().length - 1;
+    f.edits.context(small);
+    f.reply(false, held, "text-large"); await settle();
+    const stale = f.edits.controls().find(control => control.kind === "select" && control.label === "Text size");
+    assert.equal(stale, undefined, "the old scale's reply draws no Text size");
+    assert.equal(f.reads().length, held + 2, "the new scale starts a fresh source read");
+    f.reply(false, held + 1, "default"); await settle();
+    const size = f.edits.controls().find(control => control.kind === "select" && control.label === "Text size");
+    assert.ok(size?.kind === "select");
+    assert.equal(size.value, "default");
+    assert.deepEqual(size.options.map(option => option.value), ["default", "text-small"]);
+    assert.equal(size.waiting, false);
+  } finally { f.close(); }
+});
+
+test("a format change pending when the session closes makes no late notice, redraw or source read", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const reason of [undefined, "Refused"]) {
+    const f = fixture();
+    try {
+      f.edits.select(selected); f.reply(); await settle();
+      bold(f).onPress();
+      assert.equal(f.writes().length, 1);
+      f.edits.close();
+      const changes = f.changes(), reads = f.reads().length;
+      f.answer(reason); await settle();
+      t.mock.timers.tick(15_001); await settle();
+      assert.deepEqual(f.answers, [], `${reason ?? "written"}: no late notice`);
+      assert.equal(f.changes(), changes, `${reason ?? "written"}: no late redraw`);
+      assert.equal(f.reads().length, reads, `${reason ?? "written"}: no late source read`);
+    } finally { f.close(); }
   }
 });

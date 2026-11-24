@@ -173,10 +173,18 @@ export function createGuestTextEdits(ports: TextEditPorts) {
     context(next: GuestContext | undefined) {
       if (closed) return;
       const moved = context?.path !== next?.path;
+      // New text sizes on the same page: a size read against the old ones may name none of the new choices.
+      const rescaled = !moved && JSON.stringify(sizesOf(context)) !== JSON.stringify(sizesOf(next));
       if (moved) cancel();
+      else if (rescaled) {
+        textEpoch++;
+        text = undefined;
+        textReading = undefined;
+        clearTimeout(reread);
+      }
       context = next;
       ports.changed();
-      if (moved && selected && selected.tag !== "img") void readText(selected);
+      if ((moved || rescaled) && selected && selected.tag !== "img") void readText(selected);
     },
     rendered(n: number, typed: number) {
       if (closed) return;
