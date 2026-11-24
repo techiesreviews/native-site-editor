@@ -155,7 +155,9 @@ export class DraftStore {
     try {
       // A normal start has no draft in localStorage, so it never fetches the recovery code.
       if (this.legacyKeys().length || this.recoveryNotice) {
-        this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, (key, value) => this.queue(key, value), valid, prefix);
+        try {
+          this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, (key, value) => this.queue(key, value), valid, prefix);
+        } catch { this.recoveryNotice = RECOVERY_INCOMPLETE; }
       }
       if (!database) return;
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";

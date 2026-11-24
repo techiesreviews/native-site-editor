@@ -57,6 +57,36 @@ test("signed in as \"Lex\", a draft saved as lex is still measured against GitHu
   store.save({ ...draft, account: "someone-else", content: "on GitHub now" });
   assert.equal(store.list({ ...draft, account: "someone-else" }).length, 1);
 });
+test("recovery code loads only when legacy records exist", async () => {
+  const disk = storage(), db = memoryDrafts();
+  await db.write([[draftKey(draft, draft.path), draft]]);
+  let calls = 0;
+  const recovery = () => { calls++; return loadRecovery(); };
+  const store = new DraftStore(disk, db);
+  await store.load("lex", recovery);
+  assert.equal(calls, 0);
+  assert.deepEqual(store.get(draft, draft.path), draft);
+  disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+  await store.load("lex", recovery);
+  assert.equal(calls, 1);
+  assert.deepEqual(store.get(draft, draft.path), draft);
+});
+test("a failed recovery import keeps database drafts visible and legacy bytes stored", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  const legacy = { ...draft, path: "legacy.txt" }, legacyKey = draftKey(legacy, legacy.path);
+  const raw = JSON.stringify(legacy);
+  disk.setItem(legacyKey, raw);
+  const store = new DraftStore(disk, db);
+  await store.load("lex", () => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+  assert.deepEqual(store.get(draft, draft.path), draft);
+  assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
+  assert.equal(disk.getItem(legacyKey), raw);
+  store.save({ ...draft, content: "after failed import", updatedAt: 2 });
+  await store.flush();
+  assert.equal(db.map.get(key)?.content, "after failed import");
+  assert.equal(disk.getItem(legacyKey), raw);
+});
 test("load moves localStorage drafts into the database, then removes them; the newer copy wins", async () => {
   const disk = storage(), db = memoryDrafts();
   const legacy = new DraftStore(disk);
