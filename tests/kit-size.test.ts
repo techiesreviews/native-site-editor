@@ -149,6 +149,26 @@ test("untracked and staged changes each measure without writing a HEAD cache", t
   assert.equal(f.count(), 2);
 });
 
+test("more than 1 MiB of untracked filenames measures without reading or publishing a clean cache", t => {
+  const f = fixture(t);
+  let bytes = 0;
+  for (let i = 0; i < 6000; i++) {
+    const file = `backup/${String(i).padStart(5, "0")}-${"x".repeat(180)}`;
+    f.put(file, "");
+    bytes += Buffer.byteLength(`?? ${file}\n`);
+  }
+  assert.ok(bytes > 1024 * 1024, `${bytes} bytes of untracked filenames`);
+  result(f.run(["--no-base"]), 0, /ok size boot 301 KB/);
+  assert.equal(existsSync(f.cachePath()), false);
+  f.seed(f.sha);
+  const original = readFileSync(f.cachePath(), "utf8");
+  const second = f.run(["--no-base"]);
+  result(second, 0, /ok size boot 301 KB/);
+  assert.match(second.stdout, /cache: miss/);
+  assert.equal(f.count(), 2);
+  assert.equal(readFileSync(f.cachePath(), "utf8"), original);
+});
+
 test("HEAD becoming dirty during measurement prevents cache publication", t => {
   const f = fixture(t);
   result(f.run(["--no-base"], { SIZE_DIRTY_DURING: "1" }), 0, /ok size/);

@@ -87,8 +87,23 @@ function git(root, args, required = true) {
   }
 }
 
-function clean(root) {
-  return git(root, ["status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude).scratch"]) === "";
+async function clean(root, state) {
+  state.check();
+  let dirty = false;
+  try {
+    const code = await new Promise((accept, reject) => {
+      const child = spawn("git", ["-C", root, "status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude).scratch"],
+        { stdio: ["ignore", "pipe", "inherit"] });
+      state.child = child;
+      // Any output makes the tree dirty; never buffer the list of untracked filenames.
+      child.stdout.once("data", () => { dirty = true; child.kill("SIGTERM"); });
+      child.once("error", reject);
+      child.once("close", accept);
+    });
+    state.check();
+    if (!dirty && code !== 0) throw new Error(`git status exited ${code}`);
+    return !dirty;
+  } finally { state.child = null; }
 }
 
 function baseSha(root, ref) {
@@ -133,7 +148,7 @@ export async function main(args = process.argv.slice(2)) {
     const root = resolve(kitRoot()), mainRoot = resolve(kitMainRoot()), env = nodeEnv();
     const sha = git(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
     const cache = join(mainRoot, ".scratch/size-cache");
-    const cacheable = clean(root);
+    const cacheable = await clean(root, state);
     console.log(`owner: ${kitOwner()}`);
     // A base cache hit never creates or leases a worktree.
     async function side(commit, name, canCache, directory) {
@@ -150,7 +165,7 @@ export async function main(args = process.argv.slice(2)) {
         state.check();
         const result = await measure(directory || setup.dir, env, log, state);
         // Do not publish a HEAD measurement if files or HEAD changed during the run.
-        if (canCache && (!directory || (clean(root) && git(root, ["rev-parse", "HEAD"]) === commit))) writeCache(cache, commit, result);
+        if (canCache && (!directory || (await clean(root, state) && git(root, ["rev-parse", "HEAD"]) === commit))) writeCache(cache, commit, result);
         return result;
       } finally { await setup?.release(); }
     }
