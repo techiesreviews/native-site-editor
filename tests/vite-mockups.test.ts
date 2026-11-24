@@ -77,7 +77,13 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
   // Keep HOME overridden only while starting Wrangler so a legacy ~/.wrangler directory cannot bypass XDG_CONFIG_HOME
   // without disturbing Playwright's browser cache lookup (wranglerEnv stays active until after() for the test file).
   const saved = applyEnv({ HOME: wranglerHome, ...env });
-  const devEnv = new unstable_DevEnv();
+  let devEnv: InstanceType<typeof unstable_DevEnv>;
+  try {
+    devEnv = new unstable_DevEnv();
+  } catch (error) {
+    restoreEnv(saved);
+    throw error;
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onError: ((event: unknown) => void) | undefined;
   let onBuildFailed: ((event: unknown) => void) | undefined;
@@ -113,6 +119,7 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
         config,
         dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none", persist: false },
       });
+      // Both rejections go to finish() through the second arguments below, and finish() never throws.
       void startPromise.then(
         candidate => {
           started = candidate;
@@ -133,18 +140,18 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
     // Give teardown and startWorker (config.set) up to 5s together before HOME/XDG_CONFIG_HOME are restored, so a slow
     // start resolves Wrangler's config folder from the scratch values; never wait on either without a limit. A start
     // stuck past the limit can still read the real values once they are back: the limit narrows that window, not closes it.
-    const cleanup = devEnv.teardown().catch(() => undefined).then(() => startPromise?.catch(() => undefined));
+    // The final teardown stops anything a start that finished during the first one set up.
+    const cleanup = devEnv.teardown().catch(() => undefined)
+      .then(() => startPromise?.catch(() => undefined))
+      .then(() => devEnv.teardown().catch(() => undefined));
     let limit: ReturnType<typeof setTimeout> | undefined;
     const settled = await Promise.race([
       cleanup.then(() => true),
       new Promise<false>(resolve => { limit = setTimeout(() => resolve(false), 5_000); }),
     ]);
     clearTimeout(limit);
-    if (!settled) {
-      // Whatever finishes after the limit is torn down again then, so a late start leaves nothing running.
-      void cleanup.then(() => devEnv.teardown()).catch(() => undefined);
-      if (error instanceof Error) error.message += " (Wrangler teardown or startWorker still pending)";
-    }
+    // Past the limit, cleanup keeps running on its own (it cannot reject) and still ends with the final teardown.
+    if (!settled && error instanceof Error) error.message += " (Wrangler teardown or startWorker still pending)";
     throw error;
   } finally {
     restoreEnv(saved);
