@@ -49,7 +49,7 @@ function bold(f: ReturnType<typeof fixture>) {
   return control;
 }
 
-test("changing selection cancels pending typing so the new paragraph can be formatted immediately", async t => {
+test("changing selection keeps the typing wait until a render confirms the letters", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const f = fixture();
   try {
@@ -57,9 +57,13 @@ test("changing selection cancels pending typing so the new paragraph can be form
     f.reply(); await settle();
     f.edits.typing(1);
     f.edits.select({ ...selected, node: [0, 1] });
+    assert.equal(f.reads().length, 1, "no source read starts ahead of the typed letters");
+    f.edits.rendered(1, 1);
+    f.edits.select({ ...selected, node: [0, 1] });
+    t.mock.timers.tick(1_201);
     f.reply(); await settle();
     const bold = f.edits.controls().find(control => control.kind === "button" && control.ariaLabel === "Bold");
-    assert.ok(bold?.kind === "button", "the second paragraph has its Bold control without waiting for the old typing timeout");
+    assert.ok(bold?.kind === "button", "the second paragraph has its Bold control after confirmation");
     assert.equal(bold.waiting, false);
     bold.onPress();
     assert.equal(f.writes().length, 1);
@@ -67,6 +71,63 @@ test("changing selection cancels pending typing so the new paragraph can be form
     const reads = f.reads().length;
     t.mock.timers.tick(2_001); await settle();
     assert.equal(f.reads().length, reads, "abandoned typing does not schedule a late source read");
+  } finally { f.close(); }
+});
+
+test("returning to a paragraph before its typed letters are confirmed cannot format an old render", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture();
+  try {
+    f.edits.select(selected); f.reply(); await settle();
+    f.edits.typing(1);
+    f.edits.select({ ...selected, node: [0, 1] });
+    f.edits.select(selected);
+    f.reply(); await settle();
+    for (const control of f.edits.controls()) {
+      assert.equal(control.waiting, true);
+      if (control.kind === "button") control.onPress();
+    }
+    assert.equal(f.writes().length, 0);
+    assert.equal(f.reads().length, 1, "returning does not read ahead of unconfirmed typing");
+    f.edits.rendered(1, 1); f.edits.select(selected);
+    t.mock.timers.tick(1_201);
+    f.reply(); await settle();
+    assert.equal(bold(f).waiting, false);
+    bold(f).onPress();
+    assert.equal(f.writes().length, 1);
+    assert.equal(f.writes()[0].seen, 1);
+  } finally { f.close(); }
+});
+
+test("a missing host context abandons a pending read without throwing or updating the controls", async () => {
+  const f = fixture();
+  try {
+    f.edits.select(selected);
+    f.edits.context(undefined);
+    f.reply(); await settle();
+    assert.deepEqual(f.edits.controls(), []);
+  } finally { f.close(); }
+});
+
+test("typing ahead of confirmations enables formatting once the last letter and source read arrive", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture();
+  try {
+    f.edits.select(selected); f.reply(); await settle();
+    f.edits.typing(1);
+    for (let seq = 2; seq <= 60; seq++) {
+      f.edits.typing(seq);
+      f.edits.rendered(seq - 1, seq - 1); f.edits.select(selected);
+      assert.equal(bold(f).waiting, true);
+      bold(f).onPress();
+      t.mock.timers.tick(100);
+    }
+    f.edits.rendered(60, 60); f.edits.select(selected);
+    f.reply(); await settle();
+    assert.equal(bold(f).waiting, false);
+    bold(f).onPress();
+    assert.equal(f.writes().length, 1);
+    assert.equal(f.writes()[0].seen, 60);
   } finally { f.close(); }
 });
 

@@ -64,8 +64,6 @@ export function createGuestTextEdits(ports: TextEditPorts) {
     clearTimeout(reread);
     clearTimeout(sending?.timer);
     sending = undefined;
-    clearTimeout(typedTimer);
-    typedShown = typedSent;
   }
   /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
   async function readText(target: Selected) {
@@ -172,9 +170,9 @@ export function createGuestTextEdits(ports: TextEditPorts) {
       if (moved || shown || !typingAhead() && needsText || readOn !== undefined && seen - readOn >= GUEST_RENDERS_KEPT / 2) void readText(next);
       else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
     },
-    context(next: GuestContext) {
+    context(next: GuestContext | undefined) {
       if (closed) return;
-      const moved = context?.path !== next.path;
+      const moved = context?.path !== next?.path;
       if (moved) cancel();
       context = next;
       ports.changed();
@@ -208,6 +206,7 @@ export function createGuestTextEdits(ports: TextEditPorts) {
     close() {
       closed = true;
       cancel();
+      clearTimeout(typedTimer);
     },
   };
 }
