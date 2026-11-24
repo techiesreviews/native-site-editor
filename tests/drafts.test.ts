@@ -87,6 +87,28 @@ test("a failed recovery import keeps database drafts visible and legacy bytes st
   assert.equal(db.map.get(key)?.content, "after failed import");
   assert.equal(disk.getItem(legacyKey), raw);
 });
+test("failed recovery loading refuses a discard or agent edit until retained copies can be handled", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  const kept = { ...draft, content: "newer database draft", updatedAt: 5 };
+  await db.write([[key, kept]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const store = new DraftStore(disk, db);
+  await store.load("lex", () => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+  assert.equal(store.remove(draft, draft.path), false);
+  assert.match(store.error!, /Browser storage could not be updated/);
+  assert.deepEqual(store.get(draft, draft.path), kept);
+  await assert.rejects(store.fenceAgent(draft, [draft.path]), /Agent edits are paused/);
+  await store.flush();
+  assert.deepEqual(db.map.get(key), kept);
+  const again = new DraftStore(disk, db);
+  await again.load("lex", loadRecovery);
+  assert.deepEqual(again.get(draft, draft.path), kept);
+  assert.equal(again.remove(draft, draft.path), true);
+  await again.flush();
+  const reloaded = new DraftStore(disk, db);
+  await reloaded.load("lex", loadRecovery);
+  assert.equal(reloaded.get(draft, draft.path), undefined);
+});
 test("load moves localStorage drafts into the database, then removes them; the newer copy wins", async () => {
   const disk = storage(), db = memoryDrafts();
   const legacy = new DraftStore(disk);

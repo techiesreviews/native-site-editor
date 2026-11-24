@@ -239,6 +239,10 @@ export class DraftStore {
   private drop(scope: DraftScope, path: string) {
     const key = draftKey(scope, path);
     this.changed(key);
+    if (this.db && this.recoveryNotice && !this.recovery) {
+      this.error = REMOVE_FAILED;
+      return false;
+    }
     if (this.publishing?.get(key) === null) return this.publishRecord(key);
     this.memory.delete(key);
     if (this.db) {
@@ -304,7 +308,7 @@ export class DraftStore {
   }
   /** Agent-only boundary: manual writes queued meanwhile immediately enter IndexedDB. */
   async fenceAgent(scope: DraftScope, paths: string[]) {
-    if (!this.db) throw new Error("Agent edits are paused: this browser could not save the change in IndexedDB.");
+    if (!this.db || (this.recoveryNotice && !this.recovery)) throw new Error("Agent edits are paused: this browser could not save the change in IndexedDB.");
     const keys = paths.map(path => draftKey(scope, path));
     for (const key of keys) this.agentKeys.add(key);
     const release = () => { for (const key of keys) this.agentKeys.delete(key); };
