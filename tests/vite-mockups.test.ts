@@ -51,13 +51,16 @@ function loadWrangler() {
 }
 
 function errorDetail(value: unknown): string {
-  if (value instanceof Error) return value.message;
+  if (value instanceof Error) {
+    const inner = value.cause === undefined ? "" : errorDetail(value.cause);
+    return inner ? `${value.message}: ${inner}` : value.message;
+  }
   if (value && typeof value === "object" && "message" in value && typeof value.message === "string") return value.message;
   return value === undefined ? "" : String(value);
 }
 
 function workerError(event: unknown): Error {
-  if (event instanceof Error) return new Error(`Wrangler worker failed: ${event.message}`, { cause: event });
+  if (event instanceof Error) return new Error(`Wrangler worker failed: ${errorDetail(event)}`, { cause: event });
   if (event && typeof event === "object") {
     const source = "source" in event && typeof event.source === "string" ? event.source : "Wrangler";
     const reason = "reason" in event && typeof event.reason === "string" ? event.reason : "worker startup failed";
@@ -71,14 +74,15 @@ function workerError(event: unknown): Error {
 /** Starts a local Cloudflare worker from `config`, failing fast on controller errors or timeout instead of hanging. */
 async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { env?: Record<string, string | undefined>; timeoutMs?: number } = {}) {
   const { unstable_DevEnv } = await loadWrangler();
-  // Override HOME only while starting Wrangler so a legacy ~/.wrangler directory cannot bypass XDG_CONFIG_HOME
-  // without disturbing Playwright's browser cache lookup.
+  // Keep HOME overridden only while starting Wrangler so a legacy ~/.wrangler directory cannot bypass XDG_CONFIG_HOME
+  // without disturbing Playwright's browser cache lookup (wranglerEnv stays active until after() for the test file).
   const saved = applyEnv({ HOME: wranglerHome, ...env });
   const devEnv = new unstable_DevEnv();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onError: ((event: unknown) => void) | undefined;
   let onBuildFailed: ((event: unknown) => void) | undefined;
   let onReloadComplete: (() => void) | undefined;
+  let startPromise: ReturnType<typeof devEnv.startWorker> | undefined;
   try {
     const worker = await new Promise<Awaited<ReturnType<typeof devEnv.startWorker>>>((resolve, reject) => {
       let settled = false;
@@ -105,10 +109,11 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
       devEnv.on("buildFailed", onBuildFailed);
       devEnv.once("reloadComplete", onReloadComplete);
       timer = setTimeout(() => finish(new Error(`Wrangler worker did not become ready within ${timeoutMs}ms`)), timeoutMs);
-      void devEnv.startWorker({
+      startPromise = devEnv.startWorker({
         config,
         dev: { server: { port: 0 }, inspector: false, watch: false, logLevel: "none", persist: false },
-      }).then(
+      });
+      void startPromise.then(
         candidate => {
           started = candidate;
           return candidate.ready.then(
@@ -125,6 +130,10 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
     return worker;
   } catch (error) {
     // Use devEnv.teardown() directly: worker.dispose() waits on proxy.ready, which never settles after a reload error.
+    // Wait for startWorker (config.set) to finish before restoring HOME/XDG_CONFIG_HOME, then tear down again in case
+    // a late configUpdate started a worker while the first teardown ran.
+    await devEnv.teardown().catch(() => undefined);
+    await startPromise?.catch(() => undefined);
     await devEnv.teardown().catch(() => undefined);
     throw error;
   } finally {
@@ -459,20 +468,23 @@ async function serveBuild(root: string, mockupsRoot: string) {
   return startLocalWorker(join(root, "wrangler.jsonc"));
 }
 
-test("local Cloudflare worker tests keep Wrangler state in scratch and fail fast when config storage is unwritable", async () => {
+test("local Cloudflare worker tests keep Wrangler state in scratch and fail fast on reload, build or timeout errors", async () => {
   const root = mkdtempSync(join(scratch, "wrangler-guard-"));
   mkdirSync(join(root, "dist"));
   writeFileSync(join(root, "dist/index.html"), "<!doctype html><title>ok</title>");
   const config = join(root, "wrangler.jsonc");
   writeFileSync(config, JSON.stringify({ name: "mockups-guard-test", compatibility_date: "2026-09-17", send_metrics: false, assets: { directory: "./dist" } }));
 
-  const worker = await startLocalWorker(config);
+  const freshConfigHome = join(root, "wrangler-config");
+  const metricsPath = join(freshConfigHome, ".wrangler/metrics.json");
+  assert.equal(existsSync(metricsPath), false);
+  const worker = await startLocalWorker(config, { env: { XDG_CONFIG_HOME: freshConfigHome } });
   try {
     assert.equal((await worker.fetch("http://localhost/")).status, 200);
   } finally {
     await worker.dispose();
   }
-  assert.equal(existsSync(join(wranglerHome, "config/.wrangler/metrics.json")), true);
+  assert.equal(existsSync(metricsPath), true);
   assert.equal(existsSync(join(wranglerHome, "logs")), false);
 
   // Pointing XDG_CONFIG_HOME at a regular file triggers the same LocalRuntimeController reload error as a read-only ~/.config.
@@ -482,6 +494,27 @@ test("local Cloudflare worker tests keep Wrangler state in scratch and fail fast
     startLocalWorker(config, { env: { XDG_CONFIG_HOME: blocker }, timeoutMs: 5_000 }),
     /LocalRuntimeController: Error reloading local server:/,
   );
+
+  // A syntax error in the worker entrypoint rejects quickly with the build error instead of waiting for timeout.
+  writeFileSync(join(root, "broken.js"), "export default {");
+  const brokenConfig = join(root, "broken-wrangler.jsonc");
+  writeFileSync(brokenConfig, JSON.stringify({ name: "mockups-broken-test", compatibility_date: "2026-09-17", send_metrics: false, main: "./broken.js" }));
+  await assert.rejects(
+    startLocalWorker(brokenConfig, { timeoutMs: 5_000 }),
+    error => error instanceof Error && !/did not become ready/.test(error.message) && /Build failed/i.test(error.message),
+  );
+
+  // A timed-out start tears down cleanly so a following worker starts and answers normally.
+  await assert.rejects(
+    startLocalWorker(config, { timeoutMs: 1 }),
+    /Wrangler worker did not become ready within 1ms/,
+  );
+  const afterTimeout = await startLocalWorker(config);
+  try {
+    assert.equal((await afterTimeout.fetch("http://localhost/")).status, 200);
+  } finally {
+    await afterTimeout.dispose();
+  }
 });
 
 /** A 1×1 transparent PNG. */
