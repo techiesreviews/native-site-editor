@@ -131,7 +131,8 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
   } catch (error) {
     // Use devEnv.teardown() directly: worker.dispose() waits on proxy.ready, which never settles after a reload error.
     // Give teardown and startWorker (config.set) up to 5s together before HOME/XDG_CONFIG_HOME are restored, so a slow
-    // start cannot resolve Wrangler's config folder from the real values; never wait on either without a limit.
+    // start resolves Wrangler's config folder from the scratch values; never wait on either without a limit. A start
+    // stuck past the limit can still read the real values once they are back: the limit narrows that window, not closes it.
     const cleanup = devEnv.teardown().catch(() => undefined).then(() => startPromise?.catch(() => undefined));
     let limit: ReturnType<typeof setTimeout> | undefined;
     const settled = await Promise.race([
