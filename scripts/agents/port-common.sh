@@ -4,7 +4,13 @@ set -euo pipefail
 # ASE_POOL is a test-only override; production callers use this fixed pool.
 read -r -a pool <<< "${ASE_POOL:-5226 5236 5246 5256 5266 5276 5286 5296}"
 read -r -a ports <<< "${ASE_PORTS:-${pool[*]}}"
-lock_dir=${ASE_LOCK_DIR:-/tmp}
+# Slot locks live in the repository's Git folder: every worktree on this machine shares it, so two runs never take
+# the same slot, and the kit's key lock keeps it writable where /tmp is read-only. Outside a Git checkout: /tmp.
+if [[ -z ${ASE_LOCK_DIR:-} ]] && git_common=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  lock_dir=$git_common/ase-locks
+else
+  lock_dir=${ASE_LOCK_DIR:-/tmp}
+fi
 mkdir -p "$lock_dir"
 command -v ss >/dev/null || { echo "port: ss is required" >&2; exit 2; }
 seen=()

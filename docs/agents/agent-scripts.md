@@ -281,11 +281,11 @@ Pool: eight slots, `5226 5236 5246 5256 5266 5276 5286 5296`. Each slot reserves
 
 Gate: at least 4 GiB available memory and 1-minute load at most `nproc`; `ASE_MAX_LOAD` overrides the load limit. Unlocked slots with listeners are skipped, with PID/command when `ss -p` exposes them. Waiting reports memory, load or busy slots at most once per 60 seconds; busy locks report holder PID, cwd and command.
 
-Ownership: lock files are `/tmp/ase-<base>.lock`, containing `pid cwd command`. `exec` keeps the lock and owner PID; the caller's process group owns its servers. Start a separate group (for example `setsid`) when you need to kill the whole run. Stop only your own processes. Test servers poll `ASE_TEST_OWNER_PID` every second and exit when the owner dies; demos without this variable retain their normal lifetime.
+Ownership: lock files are `ase-locks/ase-<base>.lock` in the repository's Git folder (`git rev-parse --git-common-dir`; `/tmp` outside a Git checkout), containing `pid cwd command`. Every worktree shares that folder, and the kit's key lock keeps it writable where `/tmp` is read-only. `exec` keeps the lock and owner PID; the caller's process group owns its servers. Start a separate group (for example `setsid`) when you need to kill the whole run. Stop only your own processes. Test servers poll `ASE_TEST_OWNER_PID` every second and exit when the owner dies; demos without this variable retain their normal lifetime.
 
 Reap: inspect `scripts/agents/reap.sh --dry-run` before cleaning leftovers. Default sends SIGTERM only to orphan listener PIDs and their descendants found through `/proc`, holding free slot locks during cleanup. Descendants are signalled before the listener. Ancestors and other process-group members survive; launcher wrappers may exit when their child dies. It covers pool base/+1 ports and `5216`/`5217`, preserves listeners outside unlocked slots and their descendants, and always leaves `5410` alone. It never expands the pool via `ASE_POOL`.
 
-Tests: `ASE_LOCK_DIR` overrides `/tmp`; `ASE_POOL` is a test-only pool override for isolated high ports. Test-only `ASE_MIN_MEM_KB` overrides the 4194304 KiB memory threshold (`0` bypasses it); `ASE_PORT_POLL` overrides the 15-second resource/slot poll delay. Production runs use the fixed pool and default resource gates.
+Tests: `ASE_LOCK_DIR` overrides the lock folder; `ASE_POOL` is a test-only pool override for isolated high ports. Test-only `ASE_MIN_MEM_KB` overrides the 4194304 KiB memory threshold (`0` bypasses it); `ASE_PORT_POLL` overrides the 15-second resource/slot poll delay. Production runs use the fixed pool and default resource gates.
 
 ## Results
 
