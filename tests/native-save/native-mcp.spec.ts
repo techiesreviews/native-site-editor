@@ -1048,7 +1048,47 @@ function agentCalls(page: Page) {
   return seen;
 }
 
+// Observe the real menu's history read through its final pin update. The probe lives only
+// in the served test module; production gets no test state or completion API.
+async function pinHistory(page: Page) {
+  let release = () => undefined, started = false;
+  let held: Promise<string | undefined> = Promise.resolve(undefined);
+  await page.exposeFunction("readPinHistory", () => { started = true; return held; });
+  await page.route(/\/src\/components\/agent-menu\.ts(?:\?|$)/, async route => {
+    const response = await route.fetch(), source = await response.text();
+    const loading = "async function loadHistory() {";
+    const read = "await records.conversations(current)";
+    const restored = /historyScope = current;\s*tellRequests\(\);/g;
+    expect(source.split(loading).length, "history start probe").toBe(2);
+    expect(source.split(read).length, "history read probe").toBe(2);
+    expect([...source.matchAll(restored)].length, "history completion probe").toBe(1);
+    await route.fulfill({ response, body: source
+      .replace(loading, `${loading}\n    delete root.dataset.testHistoryRestored;`)
+      .replace(read, `await records.conversations(current).then(async items => {
+        const resurrect = await window.readPinHistory();
+        return items.map(item => item.id === resurrect
+          ? { ...item, content: { ...item.content, state: "done" } } : item);
+      })`)
+      .replace(restored, match => `${match}\n    root.dataset.testHistoryRestored = current?.branch ?? "";`),
+    });
+  });
+  return {
+    hold(id: string) {
+      started = false;
+      held = new Promise(resolve => { release = () => resolve(id); });
+    },
+    started: () => started,
+    release: () => { release(); held = Promise.resolve(undefined); },
+  };
+}
+
+async function expectHistoryPins(page: Page, branch: string, count: number, timeout?: number) {
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-test-history-restored", branch);
+  await expect(page.locator(".agent-pin")).toHaveCount(count, { timeout });
+}
+
 test("Ask agent history stays in this browser: after a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own", async ({ page, baseURL }) => {
+  const history = await pinHistory(page);
   await open(page, baseURL);
   // Another branch of the same repository, with the same pages.
   const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
@@ -1086,6 +1126,7 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
     const calls = agentCalls(page);
     await page.reload();
     await open(page, baseURL);
+    await expectHistoryPins(page, "main", 2);
     await expect(page.locator('.agent-pin[data-state="done"]')).toHaveCount(1);
     await expect(page.locator('.agent-pin[data-state="question"]')).toHaveCount(1);
     const card = page.getByRole("dialog", { name: "Request 1" });
@@ -1097,10 +1138,10 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
     await page.evaluate(() => { location.hash = "#repo=501&branch=history&file=index.html"; });
     await expect(page.locator("#status")).toContainText("Up to date with history", { timeout: 30_000 });
     await expect(heading).toBeVisible({ timeout: 30_000 });
-    await expect(pins).toHaveCount(0);
+    await expectHistoryPins(page, "history", 0);
     await page.evaluate(() => { location.hash = "#repo=501&branch=main&file=index.html"; });
     await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-    await expect(pins).toHaveCount(2);
+    await expectHistoryPins(page, "main", 2);
 
     // Answering needs remote agents; the card says so and keeps the question.
     const question = page.locator('.agent-pin[data-state="question"]');
@@ -1118,9 +1159,38 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
     await expect(pins).toHaveCount(0);
     await page.reload();
     await open(page, baseURL);
-    // fixed-wait: Gives a stored request time to come back as a pin after the reload, which it must not.
-    await page.waitForTimeout(1000);
-    await expect(pins).toHaveCount(0);
+    // No retained requests means startup may leave the menu unloaded. Opening it forces
+    // the real history read even when the expected pin count is zero.
+    await page.locator(".repository-menu__trigger").click();
+    await expectHistoryPins(page, "main", 0);
+    await page.keyboard.press("Escape");
+
+    // Each dismissed record is returned incorrectly, after the old one-second check would
+    // already have passed. The same assertion must reject both a cleared and a dismissed pin.
+    for (const id of [first.id, second.id]) {
+      history.hold(id);
+      await page.reload();
+      await open(page, baseURL);
+      await page.locator(".repository-menu__trigger").click();
+      await expect.poll(history.started).toBe(true);
+      const checked = expectHistoryPins(page, "main", 0, 1000).then(
+        () => ({ passed: true, error: "" }),
+        (error: unknown) => ({ passed: false, error: String(error) }),
+      );
+      // fixed-wait: Inject restoration latency beyond the old 1000 ms window; release the held read explicitly below.
+      await page.waitForTimeout(1100);
+      await expect(pins).toHaveCount(0);
+      history.release();
+      const outcome = await checked;
+      expect(outcome.passed, "a late returning request must fail the zero-pin assertion").toBe(false);
+      expect(outcome.error).toContain("toHaveCount");
+      await expect(pins).toHaveCount(1);
+    }
+    await page.reload();
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
+    await expectHistoryPins(page, "main", 0);
+    await page.keyboard.press("Escape");
     expect(calls, "local conversation actions").toEqual([]);
 
     // On again, the receiving tab reads the local dismissal: agents no longer get it.
