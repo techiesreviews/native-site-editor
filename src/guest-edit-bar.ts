@@ -15,7 +15,6 @@ import { createGuestAsks } from "./guest-asks";
 import { GUEST_NOT_KEPT, GUEST_OTHER_PAGE, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange } from "./guest-changes";
 import { blobOfDataUrl } from "./data-url-blob";
 import { nativeKindLabel } from "./native-structure";
-import type { TextSizeScale } from "./native-text-size";
 import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
 import { createGuestTextEdits } from "./guest-text-edits";
 import { GUEST_PICTURES_MAX, type GuestMessage, type HostMessage } from "./live-session";
@@ -126,7 +125,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   };
 
   const textEdits = createGuestTextEdits({
-    read: async (target, scale: TextSizeScale | undefined) => {
+    read: async (target, scale) => {
       const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
         sources(), import("./native-text-size"), import("./whole-wrapper"),
       ]);
