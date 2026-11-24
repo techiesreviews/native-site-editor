@@ -118,6 +118,24 @@ exec /usr/bin/awk "\${args[@]}"
   });
 }
 
+test("port keeps default slot locks in the repository's shared Git folder, which the kit's key lock leaves writable", async (t) => {
+  const { dir, slots, env } = await fixture(t);
+  // A main checkout and a second worktree: every run on the machine shares the main checkout's Git folder.
+  const main = join(dir, "main"), worktree = join(dir, "worktree");
+  const gitEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith("GIT_")));
+  const git = (...args: string[]) => exec("git", ["-c", "user.name=test", "-c", "user.email=test@example.invalid", ...args], { env: gitEnv });
+  await git("init", "-q", main);
+  await git("-C", main, "commit", "-q", "--allow-empty", "-m", "start");
+  await git("-C", main, "worktree", "add", "-q", "--detach", worktree);
+  await mkdir(join(worktree, "scripts"));
+  for (const name of ["port.sh", "port-common.sh"]) await writeFile(join(worktree, "scripts", name), await readFile(new URL(`../scripts/agents/${name}`, import.meta.url)));
+  const { ASE_LOCK_DIR: _unset, ...defaults } = gitEnv;
+  const result = await exec("bash", [join(worktree, "scripts", "port.sh"), process.execPath, "-e", "console.log(process.env.ASE_TEST_PORT)"], { env: defaults, cwd: worktree, timeout: 3_000 });
+  assert.equal(result.stdout.trim(), String(slots[0]));
+  assert.match(await readFile(join(main, ".git", "ase-locks", `ase-${slots[0]}.lock`), "utf8"), new RegExp(`^\\d+\t${worktree}\t`));
+  await assert.rejects(readFile(`/tmp/ase-${slots[0]}.lock`), { code: "ENOENT" });
+});
+
 test("port writes PID, cwd and command while the slot lock remains held", async (t) => {
   const { dir, slots, env, run } = await fixture(t);
   const code = `const fs = require('node:fs'); console.log(fs.readFileSync(process.env.ASE_LOCK_DIR + '/ase-' + process.env.ASE_TEST_PORT + '.lock', 'utf8')); console.log(process.pid);`;
