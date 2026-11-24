@@ -71,6 +71,32 @@ async function mount(page: Page) {
 const source = (inner: string) => `<!doctype html><html><head></head><body><main><img src="/images/current.png"><p>${inner}</p></main></body></html>`;
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 
+test("a text answer from an abandoned selection cannot warn on the same element selected again", async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => window.guestBarRace.select("p"));
+  await page.evaluate(text => window.guestBarRace.answer(text), source("Plain"));
+  const bold = bar(page).getByRole("button", { name: "Bold", exact: true });
+  await expect(bold).toHaveAttribute("aria-pressed", "false");
+  await bold.click();
+  await page.evaluate(text => {
+    const race = window.guestBarRace;
+    race.select("p", false, [0, 2]);
+    race.select("p");
+    race.answer(text);
+  }, source("Plain"));
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+  await page.evaluate(() => {
+    const race = window.guestBarRace, change = race.sent.find(message => message.t === "change");
+    if (change?.t !== "change") throw new Error("The bold change was not sent.");
+    race.bar.receive({ t: "answer", to: "anna", ask: change.ask, done: false, why: "Old selection refused" });
+  });
+  await expect(page.getByRole("status")).toHaveText("");
+  await expect(bar(page).getByRole("button", { name: /Old selection refused/ })).toHaveCount(0);
+  await expect(bold).not.toHaveAttribute("aria-disabled", "true");
+  expect(await page.evaluate(() => window.guestBarRace.sent.filter(message => message.t === "change").length)).toBe(1);
+  await page.evaluate(() => window.guestBarRace.bar.close());
+});
+
 test("a guest can use a thumbnail arriving after 15 seconds without reopening the picker (SL-1)", async ({ page }) => {
   await mount(page);
   await page.evaluate(() => window.guestBarRace.select("img"));

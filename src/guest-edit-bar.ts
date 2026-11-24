@@ -11,13 +11,14 @@ import type { GuestContext } from "./components/native-preview";
 import type { MediaControllerPorts } from "./controllers/media-controller";
 import type { ImagePopupHost } from "./page-builder/image-popup";
 import type { MediaPickerHost } from "./page-builder/media-picker";
-import type { TextSizeScale } from "./native-text-size";
 import { createGuestAsks } from "./guest-asks";
-import { GUEST_NOT_KEPT, GUEST_OTHER_PAGE, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange, type GuestHeadingLevel } from "./guest-changes";
+import { GUEST_NOT_KEPT, GUEST_OTHER_PAGE, GUEST_UPLOAD_BYTES, guestPhoto, type GuestChange } from "./guest-changes";
 import { blobOfDataUrl } from "./data-url-blob";
 import { nativeKindLabel } from "./native-structure";
+import type { TextSizeScale } from "./native-text-size";
 import { TEXT_LINE_TAGS } from "./page-builder/rules/text-level";
-import { GUEST_PICTURES_MAX, GUEST_RENDERS_KEPT, type GuestMessage, type HostMessage } from "./live-session";
+import { createGuestTextEdits } from "./guest-text-edits";
+import { GUEST_PICTURES_MAX, type GuestMessage, type HostMessage } from "./live-session";
 
 type FrameLink = ReturnType<typeof createPreviewLink>;
 type Target = { path: string; node: number[] };
@@ -30,12 +31,6 @@ const NOT_A_PHOTO = "Only a photo can be added here.";
 const SOURCES_MS = 10_000;
 const MEASURE_MS = 8_000;
 const WANT_MS = 15_000;
-// Text being typed re-renders the page often: its size and bold are read again once renders pause this long.
-const REREAD_MS = 1_200;
-// A written text change waits this long at most for the render that shows it before the bar takes the next one.
-const RENDER_WAIT_MS = 2_000;
-const LEVELS: GuestHeadingLevel[] = ["h1", "h2", "h3", "h4", "h5", "h6"];
-
 const key = (target: Target | undefined) => target ? `${target.path}#${target.node.join(".")}` : "";
 
 function base64(file: File) {
@@ -45,14 +40,6 @@ function base64(file: File) {
     reader.onerror = () => reject(reader.error ?? new Error("The file could not be read."));
     reader.readAsDataURL(file);
   });
-}
-
-/** The text sizes Lex's tab sent, as far as they are well formed (a message is never trusted as typed). */
-function sizesOf(context: GuestContext | undefined): TextSizeScale | undefined {
-  const scale = context?.sizes;
-  const fine = scale && ["class", "variable", "inline"].includes(scale.kind) && Array.isArray(scale.sizes)
-    && scale.sizes.every((size) => typeof size?.value === "string" && typeof size.label === "string");
-  return fine ? scale : undefined;
 }
 
 /** The element at `target` in these sources, with its source. */
@@ -117,25 +104,6 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   let selectedSeen = 0;
   // Why the last change on the selected element was not written, shown on the bar until the next one or another selection.
   let refused: string | undefined;
-  // The selected text element as Lex's sources have it: its text size and whether all of its text is bold.
-  let text: { key: string; on: number; epoch: number; size?: string; bold?: boolean } | undefined;
-  let reading = 0;
-  let textApplied = 0;
-  let textEpoch = 0;
-  let textReading: { key: string; on: number; epoch: number; again: boolean } | undefined;
-  let reread: ReturnType<typeof setTimeout> | undefined;
-  // The element whose heading level, text size or bold change is on its way: its bar shows the change at once and its
-  // text controls wait until Lex's tab refuses it, or a later render shows it written (so the next change names a page
-  // that has it). `level` is a heading level on its way (the box shows it, not the tag still on the page); `answeredAt`
-  // the last render come when Lex's tab answered that it was written: only a render after it can show the change.
-  let sending: { key: string; level?: string; answeredAt?: number; timer?: ReturnType<typeof setTimeout> } | undefined;
-  // The guest's last typed letter sent to Lex's tab, and the last one a render has: while letters are on their way the
-  // text controls wait, as a change made then would name a page without them (a lost answer waits no longer).
-  let typedSent = 0;
-  let typedShown = 0;
-  let typedTimer: ReturnType<typeof setTimeout> | undefined;
-  const typingAhead = () => typedSent > typedShown;
-  const textWaiting = () => Boolean(text && (text.epoch !== textEpoch || seen - text.on >= GUEST_RENDERS_KEPT));
   // A refusal is read out too: the bar's warning is one more button in the toolbar.
   const status = document.createElement("p");
   status.className = "live-guest__said";
@@ -156,6 +124,23 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     status.textContent = reason ?? "";
     render();
   };
+
+  const textEdits = createGuestTextEdits({
+    read: async (target, scale: TextSizeScale | undefined) => {
+      const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
+        sources(), import("./native-text-size"), import("./whole-wrapper"),
+      ]);
+      const found = await elementAt(files, target);
+      const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close;
+      if (!found || !close || tag !== target.tag) return undefined;
+      return {
+        size: scale && textSizeable(tag) ? currentTextSize(found.source, found.range.tag, scale) : undefined,
+        bold: TEXT_LINE_TAGS.has(tag) ? Boolean(wholeWrapper(found.source.slice(found.range.tag.end, close.start), ["strong", "b"])) : undefined,
+      };
+    },
+    write, changed: render,
+    answered: (reason) => { if (selected) answered(selected, reason); },
+  });
 
   // A small copy asked for and never come (none could be made, or the message was lost) is asked for again later.
   function want(paths: string[]) {
@@ -332,96 +317,6 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
     }
   }
 
-  /** Reads the selected text element from Lex's sources, for its Text size and Bold. */
-  async function readText(target: Selected) {
-    if (sending?.key === key(target) || typingAhead()) return;
-    if (textReading?.key === key(target) && textReading.on === seen && textReading.epoch === textEpoch) { textReading.again = true; return; }
-    const ticket = ++reading;
-    const mine = { key: key(target), on: seen, epoch: textEpoch, again: false };
-    textReading = mine;
-    try {
-      const on = mine.on;
-      const [files, { currentTextSize, textSizeable }, { wholeWrapper }] = await Promise.all([
-        sources().catch(() => undefined), import("./native-text-size"), import("./whole-wrapper"),
-      ]);
-      const found = await elementAt(files, target);
-      // A change on its way shows on the bar until it is answered, and the sources are read again then.
-      // A newer request may still be waiting: only a newer completed read supersedes this one.
-      if (ticket < textApplied || mine.epoch !== textEpoch || !still(target) || sending?.key === key(target)) return;
-      textApplied = ticket;
-      const tag = found?.range.tag.name.toLowerCase(), close = found?.range.close, scale = sizesOf(context);
-      if (!found || !close || tag !== target.tag) { text = undefined; render(); return; }
-      text = {
-        key: key(target),
-        on,
-        epoch: mine.epoch,
-        size: scale && textSizeable(tag) ? currentTextSize(found.source, found.range.tag, scale) : undefined,
-        bold: TEXT_LINE_TAGS.has(tag) ? Boolean(wholeWrapper(found.source.slice(found.range.tag.end, close.start), ["strong", "b"])) : undefined,
-      };
-      render();
-    } finally {
-      if (textReading === mine) {
-        textReading = undefined;
-        if (mine.again && !closed && selected && selected.tag !== "img" && context?.path === selected.path) {
-          clearTimeout(reread);
-          reread = setTimeout(() => { if (still(target)) void readText(selected!); }, REREAD_MS);
-        }
-      }
-    }
-  }
-
-  /** The host bar's heading level, text size and bold, each sent to Lex's tab as one change. */
-  function textControls(at: Selected): EditBarControl[] {
-    const controls: EditBarControl[] = [], waiting = sending?.key === key(at) || typingAhead() || selectedSeen !== seen;
-    // One change at a time: the bar shows it at once, and Lex's sources are read again once it is settled.
-    const change = (next: GuestChange, shown?: Partial<NonNullable<typeof text>>) => {
-      if (sending?.key === key(at) || typingAhead() || selectedSeen !== seen) { render(); return; }
-      if (next.kind !== "heading" && textWaiting()) { render(); return; }
-      // Bold and size depend on the sources read, not a newer render that may contain different text.
-      const on = next.kind === "heading" ? selectedSeen : text?.on;
-      if (on === undefined) return;
-      const mine: NonNullable<typeof sending> = { key: key(at), ...next.kind === "heading" ? { level: next.level } : {} };
-      textEpoch++;
-      sending = mine;
-      if (shown && text?.key === key(at)) text = { ...text, ...shown };
-      render();
-      const settle = () => {
-        if (sending !== mine) return;
-        clearTimeout(mine.timer);
-        sending = undefined;
-        render();
-        if (still(at)) void readText(selected!);
-      };
-      void write(next, on).then((reason) => {
-        answered(at, reason);
-        if (sending !== mine) return;
-        // Written: settled by the render that shows it (`select`), which Lex's tab sends after its answer; a render
-        // come before the answer left before the change was written. A lost render waits no longer.
-        if (reason) { settle(); return; }
-        mine.answeredAt = seen;
-        mine.timer = setTimeout(settle, RENDER_WAIT_MS);
-      });
-    };
-    if (/^h[1-6]$/.test(at.tag)) controls.push({
-      kind: "select", label: "Heading level", waiting,
-      options: LEVELS.map((level) => ({ label: level.toUpperCase(), value: level })),
-      value: waiting && sending?.level || at.tag,
-      onChange: (value) => change({ kind: "heading", ...at, level: value as GuestHeadingLevel }),
-    });
-    const state = text?.key === key(at) ? text : undefined, scale = sizesOf(context);
-    if (state?.size !== undefined && scale) {
-      const options = [{ label: "Default", value: "default" }, ...scale.sizes.map((size) => ({ label: size.label, value: size.value }))];
-      if (state.size === "custom") options.push({ label: "Custom", value: "custom" });
-      controls.push({ kind: "select", label: "Text size", options, value: state.size, waiting: waiting || textWaiting(), onChange: (size) => change({ kind: "size", ...at, size }, { size }) });
-    }
-    if (state?.bold !== undefined) controls.push({
-      kind: "button", label: "B", ariaLabel: "Bold", title: "Bold", pressed: state.bold, waiting: waiting || textWaiting(),
-      className: "edit-bar__format edit-bar__format--strong",
-      onPress: () => change({ kind: "bold", ...at, on: !state.bold }, { bold: !state.bold }),
-    });
-    return controls;
-  }
-
   function render() {
     const at = selected;
     if (!at || closed) { bar.hide(); return; }
@@ -451,7 +346,7 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
         },
       });
     }
-    if (here && at.tag !== "img") controls.push(...textControls(at));
+    if (here && at.tag !== "img") controls.push(...textEdits.controls());
     // Why the last change was not written, on the bar itself (a link says it on its address); pressing it hides it.
     if (refused && at.tag !== "a") controls.push({
       kind: "button", label: refused, ariaLabel: `${refused} (dismiss)`, title: refused, className: "edit-bar__warning",
@@ -463,32 +358,16 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
   function select(next: Selected | undefined) {
     const moved = key(next) !== key(selected);
     if (moved) {
-      textEpoch++;
       // What was open on the last selection is kept first (the popup's crop, a typed address), then the bar moves.
       popup?.cancel();
       bar.hide();
       draft = undefined;
       refused = undefined;
       status.textContent = "";
-      text = undefined;
     }
-    // The runtime reports the selection again after each render it draws: its node is that render's.
     selected = next;
     selectedSeen = seen;
-    // A text change on its way is settled by another selection, or by the render that shows it written.
-    const shown = Boolean(!moved && sending?.answeredAt !== undefined && selectedSeen > sending.answeredAt);
-    if (moved || shown) {
-      clearTimeout(sending?.timer);
-      sending = undefined;
-    }
-    render();
-    clearTimeout(reread);
-    if (!next || next.tag === "img" || context?.path !== next.path) return;
-    // Keep the proof inside Lex's retained renders during long edits, without reading on every render.
-    const readOn = textReading?.key === key(next) ? textReading.on : text?.on;
-    const needsText = text && text.epoch !== textEpoch && textReading?.epoch !== textEpoch;
-    if (moved || shown || !typingAhead() && needsText || readOn !== undefined && seen - readOn >= GUEST_RENDERS_KEPT / 2) void readText(next);
-    else reread = setTimeout(() => { if (still(next)) void readText(selected!); }, REREAD_MS);
+    textEdits.select(next);
   }
 
   const stops = [
@@ -520,19 +399,12 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       if (message.t === "render") {
         if (Number.isInteger(message.n)) seen = message.n;
         const typed = message.typed && typeof message.typed[me] === "number" ? message.typed[me] : 0;
-        if (typingAhead() && typed >= typedSent) {
-          typedShown = typed;
-          clearTimeout(typedTimer);
-        }
-        render();
+        textEdits.rendered(message.n, typed);
         return false;
       }
       if (message.t === "context") {
-        const moved = context?.path !== message.context?.path;
-        if (moved) textEpoch++;
         context = message.context;
-        render();
-        if (moved && selected && selected.tag !== "img") void readText(selected);
+        textEdits.context(context);
       } else if (message.t === "answer") {
         if (message.to === me) asks.answer(message.ask, { done: message.done, why: message.why });
       } else if (message.t === "sources") {
@@ -552,26 +424,10 @@ export function createGuestEditBar(options: GuestEditBarOptions) {
       return true;
     },
     /** The guest typed: letter `seq` (their frame's numbering) went to Lex's tab. */
-    typing(seq: number) {
-      if (closed || !Number.isInteger(seq)) return;
-      const was = typingAhead();
-      textEpoch++;
-      // A fresh frame numbers its typing from 1 again: the last letter sent is the one to wait for.
-      typedSent = seq;
-      if (seq <= typedShown) typedShown = seq - 1;
-      clearTimeout(typedTimer);
-      typedTimer = setTimeout(() => {
-        typedShown = typedSent;
-        render();
-        if (selected && selected.tag !== "img" && context?.path === selected.path) void readText(selected);
-      }, RENDER_WAIT_MS);
-      if (!was) render();
-    },
+    typing(seq: number) { textEdits.typing(seq); },
     close() {
       closed = true;
-      clearTimeout(reread);
-      clearTimeout(sending?.timer);
-      clearTimeout(typedTimer);
+      textEdits.close();
       // Tiles still waiting for a small copy get none.
       stopThumbnails();
       status.remove();
