@@ -130,16 +130,20 @@ async function startLocalWorker(config: string, { env, timeoutMs = 15_000 }: { e
     return worker;
   } catch (error) {
     // Use devEnv.teardown() directly: worker.dispose() waits on proxy.ready, which never settles after a reload error.
-    // Give startWorker (config.set) up to 5s more to finish before HOME/XDG_CONFIG_HOME are restored, so a slow start
-    // cannot resolve Wrangler's config folder from the real values; never wait on it without a limit.
-    await devEnv.teardown().catch(() => undefined);
+    // Give teardown and startWorker (config.set) up to 5s together before HOME/XDG_CONFIG_HOME are restored, so a slow
+    // start cannot resolve Wrangler's config folder from the real values; never wait on either without a limit.
+    const cleanup = devEnv.teardown().catch(() => undefined).then(() => startPromise?.catch(() => undefined));
     let limit: ReturnType<typeof setTimeout> | undefined;
     const settled = await Promise.race([
-      (startPromise ?? Promise.resolve()).then(() => true, () => true),
+      cleanup.then(() => true),
       new Promise<false>(resolve => { limit = setTimeout(() => resolve(false), 5_000); }),
     ]);
     clearTimeout(limit);
-    if (!settled && error instanceof Error) error.message += " (startWorker still pending)";
+    if (!settled) {
+      // Whatever finishes after the limit is torn down again then, so a late start leaves nothing running.
+      void cleanup.then(() => devEnv.teardown()).catch(() => undefined);
+      if (error instanceof Error) error.message += " (Wrangler teardown or startWorker still pending)";
+    }
     throw error;
   } finally {
     restoreEnv(saved);
@@ -495,10 +499,13 @@ test("local Cloudflare worker tests keep Wrangler state in scratch and fail fast
   // Pointing XDG_CONFIG_HOME at a regular file triggers the same LocalRuntimeController reload error as a read-only ~/.config.
   const blocker = join(root, "unwritable-config");
   writeFileSync(blocker, "");
+  const envBefore = { HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME };
   await assert.rejects(
     startLocalWorker(config, { env: { XDG_CONFIG_HOME: blocker }, timeoutMs: 5_000 }),
     /LocalRuntimeController: Error reloading local server:/,
   );
+  // A failed start puts back the environment it changed.
+  assert.deepEqual({ HOME: process.env.HOME, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME }, envBefore);
 
   // A syntax error in the worker entrypoint rejects quickly with the build error instead of waiting for timeout.
   writeFileSync(join(root, "broken.js"), "export default {");
