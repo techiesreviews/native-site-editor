@@ -8,7 +8,7 @@
 // alone. So a folder page whose URL changes takes its whole folder along
 // (`/about/` → `/company/` moves `about/team/index.html` to
 // `company/team/index.html`), and a single-file page moves alone.
-import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
+import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativePageRoute, nativeRouteFile, parentRoute } from "../shared/native-routes";
 import { rootRoute, routeAddress } from "../shared/site-path-prefix";
 import { pageAddressProblem, parentProblem } from "../shared/site-rules";
 import type { Checked } from "./native-create";
@@ -16,13 +16,6 @@ import type { Checked } from "./native-create";
 export interface FileMove {
   from: string;
   to: string;
-}
-
-/** `/a/b/` and `/a/b.html` are under `/a/`; the top level's parent is `/`. */
-export function parentRoute(route: string): string {
-  if (route === "/") return "/";
-  const trimmed = isFolderRoute(route) ? route.slice(0, -1) : route;
-  return trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
 }
 
 /** The last part of a route: `/a/b/` is `b`, `/a/b.html` is `b.html`. */
