@@ -40,7 +40,8 @@
 .project-overview[hidden] { display: none; }
 .project-opening { display: grid; gap: var(--space-m); inline-size: min(100%, 440px); margin: auto; padding: var(--space-l); }
 main:has(> .project-opening) > #code-split { display: none; }
-.workspace:has(.project-opening) .page-structure { visibility: hidden; }
+/* A fixed path: an open-ended descendant :has() made every editor change recheck the workspace (TOOLS-461). */
+.workspace:has(> main > .project-opening) .page-structure { visibility: hidden; }
 .project-opening > :is(h1, p) { margin: 0; }
 .project-opening h1 { font-size: var(--type-title); letter-spacing: normal; }
 .project-opening .text-button { justify-self: start; }

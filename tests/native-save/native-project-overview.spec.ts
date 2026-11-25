@@ -295,6 +295,9 @@ test('Back to projects stays available while site files load and cancels their l
     await page.locator('.project-overview [data-open="501"]').click();
     await expect.poll(() => fileRequests).toBeGreaterThan(0);
     await expect(page.getByRole('heading', { name: 'Opening native-demo…', exact: true })).toBeVisible();
+    // The opening screen hides the page structure and the code panes behind it.
+    await expect(page.locator('#structure')).toHaveCSS('visibility', 'hidden');
+    await expect(page.locator('#code-split')).toBeHidden();
     await page.getByRole('button', { name: 'Back to projects', exact: true }).click();
     await expect(page.getByRole('searchbox', { name: 'Search projects', exact: true })).toBeVisible();
     const response = page.waitForResponse(/\/api\/files\?/);
