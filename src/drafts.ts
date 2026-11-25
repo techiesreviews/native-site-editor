@@ -110,7 +110,8 @@ export class DraftStore {
   /** Per key, how often this tab changed it: an agent's read-back loses to any change made during its read. */
   private changes = new Map<string, number>();
   error: string | null = null;
-  recoveryNotice: string | null = null;
+  /** Not every stored draft could be read (src/drafts-recovery.ts); nothing failed to save. */
+  notice: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
   /**
@@ -142,7 +143,7 @@ export class DraftStore {
         const key = this.storage.key(i);
         if (key?.startsWith(prefix)) keys.push(key);
       }
-    } catch { this.recoveryNotice = RECOVERY_INCOMPLETE; }
+    } catch { this.notice = RECOVERY_INCOMPLETE; }
     return keys;
   }
   /**
@@ -154,10 +155,10 @@ export class DraftStore {
     const database = this.database;
     try {
       // A normal start has no draft in localStorage, so it never fetches the recovery code.
-      if (this.legacyKeys().length || this.recoveryNotice) {
+      if (this.legacyKeys().length || this.notice) {
         try {
-          this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, (key, value) => this.queue(key, value), valid, prefix);
-        } catch { this.recoveryNotice = RECOVERY_INCOMPLETE; }
+          this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, valid, prefix);
+        } catch { this.notice = RECOVERY_INCOMPLETE; }
       }
       if (!database) return;
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";
@@ -166,15 +167,15 @@ export class DraftStore {
         if (draft && !this.memory.has(key) && !this.deleted.has(key)) this.memory.set(key, draft);
       }
       this.from = from;
-      this.db = database;
+      // The recovery reads and writes the database for the store, so a discard commits with its record.
+      this.db = this.recovery ?? database;
       for (const key of this.deleted) this.queue(key, null);
       this.deleted.clear();
     } catch {}
   }
   private read(key: string): SavedDraft | undefined {
     const kept = this.memory.get(key);
-    if (this.deleted.has(key)) return undefined;
-    // This tab's own change is the newest there is.
+    // This tab's own change (a removal too) is the newest there is.
     if (this.changes.has(key)) return kept;
     if (this.recovery) return this.recovery.read(key, kept);
     if (this.db) return kept;
@@ -183,7 +184,7 @@ export class DraftStore {
       const value = valid(key, JSON.parse(raw ?? "null"));
       if (raw === null || value) return value;
     } catch {}
-    this.recoveryNotice = RECOVERY_INCOMPLETE;
+    this.notice = RECOVERY_INCOMPLETE;
   }
   get(scope: DraftScope, path: string) {
     return this.read(draftKey(scope, path));
@@ -239,10 +240,6 @@ export class DraftStore {
   private drop(scope: DraftScope, path: string) {
     const key = draftKey(scope, path);
     this.changed(key);
-    if (this.db && this.recoveryNotice && !this.recovery) {
-      this.error = REMOVE_FAILED;
-      return false;
-    }
     if (this.publishing?.get(key) === null) return this.publishRecord(key);
     this.memory.delete(key);
     if (this.db) {
@@ -281,7 +278,6 @@ export class DraftStore {
     return (this.writing = settled);
   }
   private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
-    const cleanup = this.recovery?.flush(batch);
     const failed: [string, SavedDraft | null][] = [];
     try {
       await written;
@@ -293,22 +289,19 @@ export class DraftStore {
     const done = batch.filter((change) => !failed.includes(change)).map(([key]) => key);
     if (done.length) this.announce?.(done);
     if (!failed.length) {
-      this.error = null;
+      if (this.failed) this.error = null;
       this.failed = false;
-    } else {
-      // Kept for the next write to try again, unless something newer is pending.
-      for (const [key, value] of failed) if (!this.pending.has(key)) this.pending.set(key, value);
-      this.failed = true;
-      // A discard record (src/drafts-recovery.ts) that failed is a removal that did not hold, not a lost draft.
-      this.error = failed.some(([key, value]) => value && key.startsWith(prefix)) ? SAVE_FAILED : REMOVE_FAILED;
-      this.onError?.(this.error);
+      return;
     }
-    // Last, so a legacy copy that could not be removed shows only when the write itself held.
-    cleanup?.(done);
+    // Kept for the next write to try again, unless something newer is pending.
+    for (const [key, value] of failed) if (!this.pending.has(key)) this.pending.set(key, value);
+    this.failed = true;
+    this.error = failed.some(([, value]) => value) ? SAVE_FAILED : REMOVE_FAILED;
+    this.onError?.(this.error);
   }
   /** Agent-only boundary: manual writes queued meanwhile immediately enter IndexedDB. */
   async fenceAgent(scope: DraftScope, paths: string[]) {
-    if (!this.db || (this.recoveryNotice && !this.recovery)) throw new Error("Agent edits are paused: this browser could not save the change in IndexedDB.");
+    if (!this.db) throw new Error("Agent edits are paused: this browser could not save the change in IndexedDB.");
     const keys = paths.map(path => draftKey(scope, path));
     for (const key of keys) this.agentKeys.add(key);
     const release = () => { for (const key of keys) this.agentKeys.delete(key); };
@@ -381,7 +374,7 @@ export class DraftStore {
     this.changes.clear();
     this.from = "";
     this.error = null;
-    this.recoveryNotice = null;
+    this.notice = null;
     this.failed = false;
   }
 }

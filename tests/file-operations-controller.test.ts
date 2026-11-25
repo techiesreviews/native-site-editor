@@ -245,7 +245,7 @@ test("duplicate refreshes and reveals its saved copy while old draft recovery is
   assert.deepEqual(h.errors, []);
   assert.deepEqual(h.revealed, ["a-copy.txt"]);
   assert.equal(store.get(h.memory.scope, "a-copy.txt")?.content, "source");
-  assert.match(store.recoveryNotice!, /Some drafts could not be recovered/);
+  assert.match(store.notice!, /Some drafts could not be recovered/);
 });
 
 test("a changed file list refuses a URL move", async () => {

@@ -7,7 +7,7 @@ import type { DraftDatabase, DraftStore, SavedDraft } from "./drafts";
  * when localStorage holds a draft or cannot be listed, so a normal start
  * pays nothing for it.
  */
-export interface DraftRecovery {
+export interface DraftRecovery extends DraftDatabase {
   /**
    * The localStorage draft keys a listing must still read: every key it can
    * list (one it cannot list shows the notice), and none once the database
@@ -22,32 +22,38 @@ export interface DraftRecovery {
    */
   load(from: string): Promise<[string, unknown][]>;
   /**
+   * The database's `write`, with each draft's discard record in the same
+   * transaction: a removal that must survive retained legacy bytes puts the
+   * record, and a save deletes it. The store writes through here (also when
+   * it tries a failed batch again one change at a time), so a removal never
+   * commits without its record. Once the transaction has committed, the
+   * legacy bytes of its drafts are removed; a removal that fails is the
+   * store's error until a later write leaves none behind.
+   */
+  write(changes: [string, SavedDraft | null][]): Promise<void>;
+  /**
    * The draft at `key`, which this tab has not changed. `kept` is the
    * store's own copy: it is the answer once the database holds every legacy
    * draft, and otherwise wins over the localStorage copy when newer.
    */
   read(key: string, kept: SavedDraft | undefined): SavedDraft | undefined;
-  /** A queued save clears its discard; a queued removal must survive retained legacy bytes. */
-  save(key: string, value: SavedDraft | null): void;
   /**
-   * A batch is about to commit. Returns the cleanup to run, once the store
-   * has settled the batch, with the keys that did commit: it removes their
-   * legacy bytes, and a removal that fails is the store's error unless the
-   * write itself already left one.
+   * A change was queued. A removal that must survive retained legacy bytes
+   * takes its discard time now, not when it is written: a copy another tab
+   * saves in between is newer and stays. A save ends its draft's discard.
    */
-  flush(batch: [string, SavedDraft | null][]): (done: string[]) => void;
+  save(key: string, value: SavedDraft | null): void;
 }
 
 const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
 const REMOVE_FAILED = "Browser storage could not be updated. An older draft may reappear after reload.";
 const discardPrefix = "astro-site-editor:discard:v1:";
 
-/** `store` shows the notice and a failed cleanup; `queue` is its write queue. */
+/** `store` shows the notice and a failed cleanup. Without a `database`, drafts stay in localStorage and nothing is read from or written to one. */
 export function recoverDrafts(
-  store: Pick<DraftStore, "error" | "onError" | "recoveryNotice">,
+  store: Pick<DraftStore, "error" | "onError" | "notice">,
   storage: Pick<Storage, "getItem" | "removeItem" | "key" | "length">,
   database: DraftDatabase | undefined,
-  queue: (key: string, value: SavedDraft | null) => void,
   validDraft: (key: string, value: unknown) => SavedDraft | undefined,
   draftPrefix: string,
 ): DraftRecovery {
@@ -58,7 +64,9 @@ export function recoverDrafts(
   let account = "";
   /** Unreadable or newer legacy keys remain: reads consult localStorage alongside the database. */
   let active = false;
-  const incomplete = () => { store.recoveryNotice = RECOVERY_INCOMPLETE; };
+  /** The store's error is a legacy copy this module could not remove: the next clean write clears it. */
+  let uncleaned = false;
+  const incomplete = () => { store.notice = RECOVERY_INCOMPLETE; };
   /** A record no newer than its draft's discard: it must not come back. */
   const discarded = (key: string, draft: SavedDraft) => draft.updatedAt <= (discards.get(key) ?? -Infinity);
   /** One key that cannot be listed never hides the others. */
@@ -133,34 +141,43 @@ export function recoverDrafts(
         return kept;
       }
     },
-    save(key, value) {
-      if (!key.startsWith(draftPrefix)) return;
-      if (value) {
-        if (discards.delete(key)) queue(discardKey(key), null);
-      } else if (active) {
-        const [account, repoId, branch, path] = JSON.parse(key.slice(draftPrefix.length)) as [string, number, string, string];
-        const updatedAt = Date.now();
-        discards.set(key, updatedAt);
-        queue(discardKey(key), { account, repoId, branch, path, repo: "", version: 1, baseSha: null, original: "", content: "", updatedAt });
-      }
-    },
-    flush(batch) {
+    get: async (key) => database?.get(key),
+    async write(changes) {
+      const all = [...changes];
+      /** Legacy bytes no newer than their change: removed once it has committed. */
       const before = new Map<string, string>();
-      if (active) for (const [key, value] of batch) try {
-        const raw = storage.getItem(key);
-        const stored = validDraft(key, JSON.parse(raw ?? "null"));
-        const updatedAt = value?.updatedAt ?? discards.get(key);
-        if (raw !== null && stored && updatedAt !== undefined && stored.updatedAt <= updatedAt) before.set(key, raw);
-      } catch {}
-      return (done) => {
-        let failed = false;
-        for (const key of done) if (before.has(key)) try {
-          if (storage.getItem(key) === before.get(key)) storage.removeItem(key);
-        } catch { failed = true; }
-        if (!failed || store.error) return;
+      for (const [key, value] of changes) {
+        const discardedAt = discards.get(key);
+        if (value) all.push([discardKey(key), null]);
+        else if (discardedAt !== undefined) {
+          const [owner, repoId, branch, path] = JSON.parse(key.slice(draftPrefix.length)) as [string, number, string, string];
+          all.push([discardKey(key), { account: owner, repoId, branch, path, repo: "", version: 1, baseSha: null, original: "", content: "", updatedAt: discardedAt }]);
+        }
+        if (active) try {
+          const raw = storage.getItem(key);
+          const stored = validDraft(key, JSON.parse(raw ?? "null"));
+          const updatedAt = value?.updatedAt ?? discardedAt;
+          if (raw !== null && stored && updatedAt !== undefined && stored.updatedAt <= updatedAt) before.set(key, raw);
+        } catch {}
+      }
+      // The transaction starts before the first await, so it is queued when this returns.
+      await database?.write(all);
+      let failed = false;
+      for (const [key, raw] of before) try {
+        if (storage.getItem(key) === raw) storage.removeItem(key);
+      } catch { failed = true; }
+      if (!failed) {
+        if (uncleaned) store.error = null;
+        uncleaned = false;
+      } else if (!store.error) {
+        uncleaned = true;
         store.error = REMOVE_FAILED;
         store.onError?.(REMOVE_FAILED);
-      };
+      }
+    },
+    save(key, value) {
+      if (value) discards.delete(key);
+      else if (active) discards.set(key, Date.now());
     },
   };
 }
