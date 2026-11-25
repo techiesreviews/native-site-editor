@@ -44,6 +44,13 @@ export function nativeRouteFile(route: string): string {
 /** Whether `route` is a folder's (`/`, `/a/b/`), which can have subpages, rather than a file's (`/x.html`). */
 export const isFolderRoute = (route: string) => route.endsWith("/");
 
+/** `/a/b/` and `/a/b.html` are under `/a/`; the top level's parent is `/`. */
+export function parentRoute(route: string): string {
+  if (route === "/") return "/";
+  const trimmed = isFolderRoute(route) ? route.slice(0, -1) : route;
+  return trimmed.slice(0, trimmed.lastIndexOf("/") + 1);
+}
+
 /** Every page among `paths` by its route, in route order. */
 export function deriveNativeRoutes(paths: Iterable<string>): Record<string, string> {
   const found: [string, string][] = [];

@@ -5,11 +5,10 @@ import {
   groupRouteChanges,
   isRouteWithin,
   movedRoute,
-  parentRoute,
   planPageMove,
   rewriteRouteLinks,
 } from "../src/native-page-moves.ts";
-import { deriveNativeRoutes } from "../shared/native-routes.ts";
+import { deriveNativeRoutes, parentRoute } from "../shared/native-routes.ts";
 import { PAGE_ADDRESS_RULE, pageAddressProblem } from "../shared/site-rules.ts";
 
 const plan = (files: string[], from: string, to: string) => {

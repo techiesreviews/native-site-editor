@@ -8,10 +8,9 @@
 // decides what a new page writes: a slug made from the title typed, and the
 // folder and URL it gives. It has no DOM and no I/O.
 import { rootRoute, routeAddress } from "../shared/site-path-prefix";
-import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativeRouteFile } from "../shared/native-routes";
+import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativeRouteFile, parentRoute } from "../shared/native-routes";
 import { pageAddressProblem } from "../shared/site-rules";
 import { routeHeading, type Checked } from "./native-create";
-import { parentRoute } from "./native-page-moves";
 
 export interface NativePageNode {
   /** The page file; none for a folder of pages that has no page of its own. */
