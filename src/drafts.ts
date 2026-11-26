@@ -181,6 +181,8 @@ export class DraftStore {
   notice: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
+  /** `notice` changed after a write's cleanup (src/drafts-recovery.ts): src/components/source-editor.ts shows it again. */
+  onNotice?: () => void;
   /**
    * A record was saved or removed through this store (by any writer in this
    * tab): src/components/source-editor.ts takes a host's write for an open
@@ -442,6 +444,7 @@ export class DraftStore {
   release() {
     void this.flush();
     this.memory.clear();
+    this.recovery?.release();
     this.recovery = undefined;
     this.deleted.clear();
     this.changes.clear();
