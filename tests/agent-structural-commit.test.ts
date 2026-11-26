@@ -31,7 +31,7 @@ async function fixture(t: TestContext, race?: AwaitRace, initialHome = "home") {
   let manualWrites = 0, publication = 0, historyAvailable = true, refresh: "ok" | "throw" | "stale" = "ok";
   const store = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 },
     { ...database, write: changes => { manualWrites++; return database.write(changes); } });
-  await store.load(scope.account);
+  await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const memory = createMemoryWorkspace({ branch: { ...branch, "index.html": initialHome }, open: "index.html" });
   const files = () => [...new Set([...Object.keys(branch), ...store.list(scope).map(draft => draft.path)])].filter(path => !store.get(scope, path)?.deleted);
@@ -164,7 +164,7 @@ for (const mode of ["throw", "stale", "history", "editor"] as const) test(`struc
   assert.equal(f.lastOutcome()?.ok, true);
   assert.equal(f.lastOutcome()?.message, undefined, "guarded commit itself must not relabel a refresh failure as an error");
   const loaded = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 }, indexedDbDrafts(draftDatabaseName, f.fake.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.deepEqual(f.store.list(f.scope), loaded.list(f.scope));
   assert.equal(f.store.list(f.scope).length, 4);
 });

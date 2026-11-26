@@ -1,3 +1,5 @@
+import type { DraftRecovery } from "./drafts-recovery";
+
 export interface DraftScope {
   account: string;
   repoId: number;
@@ -63,8 +65,73 @@ const valid = (key: string, value: unknown): SavedDraft | undefined => {
   )
     return draft;
 };
+const discardPrefix = "astro-site-editor:discard:v1:";
+/**
+ * A draft's discard record, as a database change: kept beside the drafts,
+ * with the discard time as its `updatedAt`, so a localStorage copy no newer
+ * than it never brings the draft back. Without a time, the record's removal.
+ *
+ * A draft and its discard record change together: every writer of a draft
+ * (this store, the recovery code, an agent's commit in src/agent-records.ts)
+ * deletes the record with a save and puts it with a removal that must hold,
+ * in the draft's own transaction. Nothing writes a discard record alone.
+ */
+export const discardChange = (key: string, discardedAt?: number): [string, SavedDraft | null] => {
+  const id = key.slice(prefix.length);
+  if (discardedAt === undefined) return [discardPrefix + id, null];
+  const [account, repoId, branch, path] = JSON.parse(id) as [string, number, string, string];
+  return [discardPrefix + id, { version: 1, account, repoId, repo: "", branch, path, baseSha: null, original: "", content: "", updatedAt: discardedAt }];
+};
+/**
+ * Whether the draft record at `key` is hidden by its discard record: no
+ * newer than the discard (a copy another tab was moving when the draft was
+ * discarded). Every reader that decides on a stored draft asks this.
+ */
+export const discardHides = (key: string, record: unknown, discard: unknown) =>
+  (valid(key, record)?.updatedAt ?? Infinity) <= (valid(key, discard)?.updatedAt ?? -Infinity);
+/**
+ * The database for a store without the recovery code (a normal start, or
+ * one that could not fetch it), with the recovery's promises about discards
+ * (src/drafts-recovery.ts): a removal that a localStorage copy could undo
+ * commits with its discard record, a save deletes the record, and a record
+ * its discard record hides is not read. The localStorage copy stays stored
+ * for the next load.
+ */
+const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): Omit<DraftDatabase, "pair"> & Pick<DraftRecovery, "save"> => {
+  /** Discards queued here, by draft key: each is written with its record. */
+  const discards = new Map<string, number>();
+  /** The record, unless its draft's discard record hides it. */
+  const kept = (key: string, record: unknown, discard: unknown) => discardHides(key, record, discard) ? undefined : record;
+  return {
+    async load(from) {
+      const recorded = async () => new Map((await database.load(discardPrefix + from.slice(prefix.length)))
+        .map(([name, discard]) => [prefix + name.slice(discardPrefix.length), discard]));
+      // Read before the drafts and again after them: the store takes no other tab's announcement
+      // while it loads, so a discard committed meanwhile is known when the load ends. When the second
+      // read fails, the first still holds and the drafts show.
+      const before = await recorded(), records = await database.load(from), after = await recorded().catch(() => before);
+      return records.filter(([key, record]) => kept(key, kept(key, record, before.get(key)), after.get(key)));
+    },
+    // The draft with its discard record, as one transaction left them: no save or discard falls between the two.
+    get: async (key) => kept(key, ...await database.pair(key, discardChange(key)[0])),
+    write: (changes) => database.write(changes.flatMap(([key, value]) => {
+      const discardedAt = discards.get(key);
+      return value || discardedAt !== undefined ? [[key, value], discardChange(key, value ? undefined : discardedAt)] : [[key, value]];
+    })),
+    save(key, value) {
+      discards.delete(key);
+      if (value) return;
+      try {
+        if (storage.getItem(key) === null) return;
+      } catch {}
+      // The time it was queued, not written: a copy another tab saves in between is newer and stays.
+      discards.set(key, Date.now());
+    },
+  };
+};
 const SAVE_FAILED = "Draft could not be saved in this browser. Download it before leaving.";
 const REMOVE_FAILED = "Browser storage could not be updated. An older draft may reappear after reload.";
+const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
 /** Pending writes wait at most this long, so a burst of typing is one transaction. */
 const FLUSH_DELAY = 200;
 
@@ -76,6 +143,8 @@ export interface DraftDatabase {
   /** Every record whose key starts with `from`, as [key, record]. */
   load(from: string): Promise<[string, unknown][]>;
   get(key: string): Promise<unknown>;
+  /** The records at `key` and `other`, read in one transaction: a draft with its discard record. */
+  pair(key: string, other: string): Promise<[unknown, unknown]>;
   /** Puts (a record) and deletes (null) in one transaction; resolves once it commits. */
   write(changes: [string, SavedDraft | null][]): Promise<void>;
 }
@@ -91,8 +160,11 @@ export interface DraftDatabase {
  */
 export class DraftStore {
   private memory = new Map<string, SavedDraft>();
+  /** Legacy localStorage drafts and damaged records: loaded only when `load` finds one (src/drafts-recovery.ts). */
+  private recovery?: DraftRecovery;
   private deleted = new Set<string>();
-  private db?: DraftDatabase;
+  /** The database in use: the recovery, or its stand-in, when a discard must leave a record (`save` is told each queued change). */
+  private db?: Omit<DraftDatabase, "pair"> & Partial<Pick<DraftRecovery, "save">>;
   /** Key prefix of the loaded account's drafts. */
   private from = "";
   private pending = new Map<string, SavedDraft | null>();
@@ -105,6 +177,8 @@ export class DraftStore {
   /** Per key, how often this tab changed it: an agent's read-back loses to any change made during its read. */
   private changes = new Map<string, number>();
   error: string | null = null;
+  /** Not every stored draft could be read (src/drafts-recovery.ts); nothing failed to save. */
+  notice: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
   /**
@@ -128,73 +202,69 @@ export class DraftStore {
     >,
     private database?: DraftDatabase,
   ) {}
+  /** The draft keys in localStorage; nothing when it cannot be listed. */
   private legacyKeys() {
     const keys: string[] = [];
-    for (let i = 0; i < this.storage.length; i++) {
-      const key = this.storage.key(i);
-      if (key?.startsWith(prefix)) keys.push(key);
-    }
+    try {
+      for (let i = 0; i < this.storage.length; i++) {
+        const key = this.storage.key(i);
+        if (key?.startsWith(prefix)) keys.push(key);
+      }
+    } catch { this.notice = RECOVERY_INCOMPLETE; }
     return keys;
   }
   /**
    * Moves every localStorage draft (all accounts) into the database, then
    * loads `account`'s drafts into memory. localStorage keys go only after
    * the database committed them. Stays on localStorage when it fails.
+   * `loadRecovery` fetches src/drafts-recovery.ts, which does the move: it
+   * is called only when localStorage holds a draft or cannot be listed. A
+   * record that cannot be read stays stored and sets `notice`.
    */
-  async load(account: string) {
+  async load(account: string, loadRecovery: () => Promise<typeof import("./drafts-recovery")>) {
     const database = this.database;
-    if (!database) return;
     try {
-      const legacy: [string, SavedDraft][] = [];
-      try {
-        for (const key of this.legacyKeys()) {
-          const value = valid(key, JSON.parse(this.storage.getItem(key) ?? "null"));
-          if (value) legacy.push([key, value]);
-        }
-      } catch {}
-      const moved: [string, SavedDraft][] = [];
-      for (const [key, value] of legacy) {
-        // A copy written while the database was unavailable may be the newer one.
-        const kept = valid(key, await database.get(key));
-        if (!kept || kept.updatedAt <= value.updatedAt) moved.push([key, value]);
+      // A normal start has no draft in localStorage, so it never fetches the recovery code.
+      if (this.legacyKeys().length || this.notice) {
+        try {
+          this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, valid, prefix, discardChange);
+        } catch { this.notice = RECOVERY_INCOMPLETE; }
       }
-      if (moved.length) await database.write(moved);
+      if (!database) return;
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";
-      const records = await database.load(from);
-      for (const [key] of legacy) try { this.storage.removeItem(key); } catch {}
-      for (const [key, value] of records) {
+      // The recovery reads and writes the database for the store: a discard commits with its record, a
+      // save with the record's removal, and a copy its discard record hides is never read. A start
+      // without the recovery code keeps the same promises through its stand-in.
+      const db = this.recovery ?? guardDiscards(database, this.storage);
+      for (const [key, value] of await db.load(from)) {
         const draft = valid(key, value);
         if (draft && !this.memory.has(key) && !this.deleted.has(key)) this.memory.set(key, draft);
       }
       this.from = from;
-      this.db = database;
+      this.db = db;
       for (const key of this.deleted) this.queue(key, null);
       this.deleted.clear();
     } catch {}
   }
   private read(key: string): SavedDraft | undefined {
-    if (this.db) return this.memory.get(key);
-    if (this.deleted.has(key)) return undefined;
-    if (this.memory.has(key)) return this.memory.get(key);
+    const kept = this.memory.get(key);
+    // This tab's own change (a removal too) is the newest there is.
+    if (this.changes.has(key)) return kept;
+    if (this.recovery) return this.recovery.read(key, kept);
+    if (this.db) return kept;
     try {
-      return valid(key, JSON.parse(this.storage.getItem(key) ?? "null"));
-    } catch {
-      this.error =
-        "Browser draft storage is unavailable or damaged. Download your draft to keep a copy.";
-    }
+      const raw = this.storage.getItem(key);
+      const value = valid(key, JSON.parse(raw ?? "null"));
+      if (raw === null || value) return value;
+    } catch {}
+    this.notice = RECOVERY_INCOMPLETE;
   }
   get(scope: DraftScope, path: string) {
     return this.read(draftKey(scope, path));
   }
   list(scope: DraftScope) {
-    const keys = new Set(this.memory.keys());
-    if (!this.db)
-      try {
-        for (const key of this.legacyKeys()) keys.add(key);
-      } catch {
-        this.error =
-          "Browser draft storage is unavailable. Download your draft to keep a copy.";
-      }
+    // Before the database is in use, drafts are in localStorage.
+    const keys = new Set([...this.memory.keys(), ...this.recovery?.keys() ?? (this.db ? [] : this.legacyKeys())]);
     return [...keys]
       .map((key) => this.read(key))
       .filter(
@@ -260,6 +330,7 @@ export class DraftStore {
     }
   }
   private queue(key: string, value: SavedDraft | null) {
+    this.db?.save?.(key, value);
     this.pending.set(key, value);
     if (this.agentKeys.has(key)) { void this.flush(); return; }
     this.timer ??= setTimeout(() => void this.flush(), FLUSH_DELAY);
@@ -279,7 +350,7 @@ export class DraftStore {
     void settled.finally(() => this.writes.delete(settled));
     return (this.writing = settled);
   }
-  private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
+  private async settle(db: Pick<DraftDatabase, "write">, batch: [string, SavedDraft | null][], written: Promise<void>) {
     const failed: [string, SavedDraft | null][] = [];
     try {
       await written;
@@ -371,10 +442,12 @@ export class DraftStore {
   release() {
     void this.flush();
     this.memory.clear();
+    this.recovery = undefined;
     this.deleted.clear();
     this.changes.clear();
     this.from = "";
     this.error = null;
+    this.notice = null;
     this.failed = false;
   }
 }
@@ -438,6 +511,10 @@ export function indexedDbDrafts(name = draftDatabaseName, factory: IDBFactory | 
     async get(key) {
       return request((await connection.open()).transaction("drafts", "readonly").objectStore("drafts").get(key));
     },
+    async pair(key, other) {
+      const store = (await connection.open()).transaction("drafts", "readonly").objectStore("drafts");
+      return Promise.all([request(store.get(key)), request(store.get(other))]);
+    },
     // Synchronous when open, so the transaction is queued before this returns.
     write(changes) {
       if (connection.current)
@@ -454,6 +531,7 @@ export function memoryDrafts(): DraftDatabase & { map: Map<string, SavedDraft> }
     map,
     async load(from) { return [...map].filter(([key]) => key.startsWith(from)).map(([key, value]) => [key, structuredClone(value)]); },
     async get(key) { return structuredClone(map.get(key)); },
+    async pair(key, other) { return [structuredClone(map.get(key)), structuredClone(map.get(other))]; },
     async write(changes) { for (const [key, value] of changes) value ? map.set(key, structuredClone(value)) : map.delete(key); },
   };
 }

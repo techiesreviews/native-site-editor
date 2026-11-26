@@ -1,5 +1,5 @@
 import { payloadIdentity, workspaceKey, type AgentOutcome, type AgentReceipt, type AgentWorkspace, type JsonValue, type OperationId } from "../shared/agent-command.ts";
-import { draftDatabaseName, draftKey, draftStores, openDraftDatabase, type SavedDraft } from "./drafts.ts";
+import { discardChange, discardHides, draftDatabaseName, draftKey, draftStores, openDraftDatabase, type SavedDraft } from "./drafts.ts";
 import { OPEN_REQUESTS_LIMIT, type AgentRequestState } from "../shared/agent.ts";
 
 /**
@@ -282,6 +282,14 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
   const expired = (receipt: AgentReceipt, time = now()) => receipt.createdAt <= time - RECEIPT_RETENTION_MS;
   const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
   const belongs = (key: string, workspace: AgentWorkspace) => key.startsWith(draftKey({ ...workspace, repo: "" }, "").slice(0, -3));
+  /**
+   * The workspace's drafts out of one whole read of the drafts store, as the editor shows them
+   * (src/drafts.ts): a copy its discard record hides is left out.
+   */
+  const shownDrafts = (keys: IDBValidKey[], values: SavedDraft[], workspace: AgentWorkspace) => {
+    const rows = new Map(keys.map((key, i) => [String(key), values[i]]));
+    return [...rows].filter(([key, value]) => belongs(key, workspace) && !discardHides(key, value, rows.get(discardChange(key)[0])));
+  };
   type Read = <T>(request: IDBRequest<T>, use: (value: T) => void) => void;
   const run = async <T>(stores: string[], mode: IDBTransactionMode, work: (tx: IDBTransaction, read: Read, done: (result: T) => void) => void): Promise<T> => {
     let db: IDBDatabase;
@@ -372,21 +380,36 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
                     const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [receiptKeyOf(value), value]);
                     const decided = receiptRetention(rows, fences.filter(([, fence]) => fence.workspace === key), time, [receiptKey, committed]);
                     const horizon = retain(receipts, workspaces, decided, new Set(rows.map(([key]) => key)), current.horizon);
-                    for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
+                    for (const [draft, value] of drafts) {
+                      if (value) files.put(value, draft);
+                      else files.delete(draft);
+                      // With its discard record, as every draft writer does (discardChange): a save ends the
+                      // discard, and the removal of a stored draft holds from this commit's time over any copy
+                      // left in localStorage. A later discard already recorded stays.
+                      const [name, record] = discardChange(draft, value ? undefined : time);
+                      if (!record) files.delete(name);
+                      else if (held.has(draft) && !discardHides(draft, record, held.get(draft))) files.put(record, name);
+                    }
                     receipts.put(committed, receiptKey);
                     // Landed: a waiting record of it (ticket 52) no longer answers for it.
                     workspaces.delete(waitingKey(workspace, receipt.operationId, receipt.authorizationId));
                     workspaces.put(withHorizon({ ...current, revision: committed.revision }, horizon), key);
                     done({ receipt: committed, duplicate: false });
                   });
+                  /** The expected drafts the database holds and shows, by draft key, each with its stored discard record (if any). */
+                  const held = new Map<string, unknown>();
                   let remaining = expectedDrafts.length;
                   if (!remaining) apply();
                   for (const [draft, wanted] of expectedDrafts) {
                     if (!belongs(draft, workspace)) conflict();
-                    read(files.get(draft), (saved: SavedDraft | undefined) => {
-                      if (same(saved) !== same(wanted)) conflict();
+                    // Read with its discard record, in this transaction: a copy the record hides is no draft
+                    // for the editor (src/drafts.ts), so it is none here.
+                    read(files.get(draft), (saved: SavedDraft | undefined) => read(files.get(discardChange(draft)[0]), (discard: unknown) => {
+                      const shown = discardHides(draft, saved, discard) ? undefined : saved;
+                      if (same(shown) !== same(wanted)) conflict();
+                      if (shown) held.set(draft, discard);
                       if (--remaining === 0) apply();
-                    });
+                    }));
                   }
                 });
               });
@@ -621,7 +644,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
           read(tx.objectStore(draftStores.drafts).getAllKeys(), (keys) => {
             read(tx.objectStore(draftStores.drafts).getAll(), (values: SavedDraft[]) => {
               const expected = new Map(proof.drafts);
-              const actual = keys.map((key, i) => [String(key), values[i]] as const).filter(([key]) => belongs(key, scope));
+              const actual = shownDrafts(keys, values, scope);
               if (actual.length !== expected.size || actual.some(([key, value]) => same(value) !== same(expected.get(key)))) conflict();
               change();
             });
@@ -647,8 +670,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         read(tx.objectStore(draftStores.workspaces).get(key), (stored: WorkspaceRecord | undefined) => {
           const store = tx.objectStore(draftStores.drafts);
           read(store.getAllKeys(), (keys) => read(store.getAll(), (values: SavedDraft[]) => {
-            const drafts: [string, SavedDraft][] = keys.map((key, i) => [String(key), values[i]]);
-            done({ ...(stored ?? initial()), drafts: drafts.filter(([key]) => belongs(key, scope)) });
+            done({ ...(stored ?? initial()), drafts: shownDrafts(keys, values, scope) });
           }));
         });
       });

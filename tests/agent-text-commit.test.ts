@@ -39,8 +39,9 @@ async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
   // `hold`: a read returns the record it read only once the hold settles (a slow IndexedDB read).
   const reads: { hold?: Promise<void>; started?: () => void } = {};
   const store = new DraftStore(disk, { ...database, write: changes => { manualWrites++; return database.write(changes); },
-    get: async key => { const value = await database.get(key); if (reads.hold) { reads.started?.(); await reads.hold; } return value; } });
-  await store.load(scope.account);
+    // The store reads a draft with its discard record (`pair`).
+    pair: async (key, other) => { const value = await database.pair(key, other); if (reads.hold) { reads.started?.(); await reads.hold; } return value; } });
+  await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const models = createDraftStore({ persistence: store });
   const base = new Map([["index.html", "before"], ["other.css", "old css"]]);
@@ -142,7 +143,7 @@ test("text drafts and receipt commit together before model, history and preview 
   assert.deepEqual((await f.records.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
   assert.equal(outcome?.result?.hash, await textHash("agent"));
   const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.fake.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.equal(loaded.get(f.scope, "index.html")?.content, "agent");
   const reloadedRecords = indexedDbAgentRecords(draftDatabaseName, f.fake.factory);
   assert.deepEqual((await reloadedRecords.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
@@ -398,7 +399,7 @@ test("an editor change while the transaction commits still leaves this tab's dra
   assert.equal(f.store.get(f.scope, "index.html")?.content, "agent");
   assert.ok(await f.records.receipt(f.scope, f.command.id, f.command.grantId!));
   const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.fake.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.equal(loaded.get(f.scope, "index.html")?.content, "agent");
 });
 

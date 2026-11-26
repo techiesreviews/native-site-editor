@@ -53,6 +53,39 @@ test("a draft an older version kept in localStorage moves into IndexedDB on load
   expect((await storedDrafts(page)).map((draft) => draft.path)).toEqual(["docs/kept.md", "notes.txt"]);
 });
 
+test("a damaged old draft keeps healthy drafts visible and reports incomplete recovery after reload", async ({ page, baseURL }) => {
+  const content = indexSource.replace("A native browser preview", "Recovered unsaved page");
+  await page.addInitScript(({ scope, content, original }) => {
+    if (window !== window.top) return;
+    // Storage enumeration order is unspecified. Force the damaged record first.
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- The native receiver is supplied with call below.
+    const key = Storage.prototype.key;
+    Storage.prototype.key = function(index) {
+      if (this !== localStorage) return key.call(this, index);
+      return Object.keys(this).sort((a, b) => Number(b.endsWith(":damaged")) - Number(a.endsWith(":damaged")))[index] ?? null;
+    };
+    if (sessionStorage.getItem("draft-recovery-seeded")) return;
+    sessionStorage.setItem("draft-recovery-seeded", "1");
+    localStorage.setItem("astro-site-editor:draft:v1:damaged", "{");
+    for (const [path, text] of [["index.html", content], ["notes.txt", "Recovered notes"]]) {
+      const key = "astro-site-editor:draft:v1:" + JSON.stringify([scope.account, scope.repoId, scope.branch, path]);
+      localStorage.setItem(key, JSON.stringify({ ...scope, version: 1, path, baseSha: path === "index.html" ? "a".repeat(40) : null,
+        original: path === "index.html" ? original : "", content: text, updatedAt: 1 }));
+    }
+  }, { scope, content, original: indexSource });
+  for (let load = 0; load < 2; load++) {
+    await open(page, baseURL);
+    await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("Recovered unsaved page");
+    await expect(page.locator("#content .code-editor__notice")).toContainText("Some drafts could not be recovered");
+    await expect(page.locator("#content .code-editor__notice")).toBeVisible();
+    expect((await storedDrafts(page)).map(value => value.path)).toEqual(["index.html", "notes.txt"]);
+    expect(await page.evaluate(() => localStorage.getItem("astro-site-editor:draft:v1:damaged"))).toBe("{");
+    await showPublish(page);
+    for (const path of ["index.html", "notes.txt"])
+      await expect(page.locator("#publish-files .publish-menu__file", { hasText: path })).toBeVisible();
+  }
+});
+
 test("an edit survives a reload made right after it", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const textbox = page.locator("#content [role=\"textbox\"]").first();
