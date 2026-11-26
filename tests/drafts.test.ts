@@ -113,6 +113,51 @@ test("a failed recovery import still lets drafts be removed, renamed and edited 
   await again.load("lex", loadRecovery);
   assert.deepEqual(again.list(draft), []);
 });
+test("a discard made after a failed recovery import survives a reload over the matching legacy copy", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const store = new DraftStore(disk, db);
+  await store.load("lex", () => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+  assert.deepEqual(store.get(draft, draft.path), draft);
+  assert.equal(store.remove(draft, draft.path), true);
+  await store.flush();
+  assert.equal(store.error, null);
+  // The legacy copy is still stored when the recovery code loads again.
+  assert.equal(disk.getItem(key), JSON.stringify(draft));
+  const again = new DraftStore(disk, db);
+  await again.load("lex", loadRecovery);
+  assert.equal(again.get(draft, draft.path), undefined);
+  assert.deepEqual(again.list(draft), []);
+});
+test("after a failed recovery import, only a discard a legacy copy could undo leaves a record", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  const other = { ...draft, path: "database-only.txt" };
+  await db.write([[key, draft], [draftKey(other, other.path), other]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const store = new DraftStore(disk, db);
+  await store.load("lex", () => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+  store.remove(draft, draft.path);
+  store.remove(other, other.path);
+  await store.flush();
+  assert.deepEqual([...db.map.keys()], ["astro-site-editor:discard:v1:" + key.slice("astro-site-editor:draft:v1:".length)]);
+});
+test("a draft saved again after a failed recovery import ends its discard", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const store = new DraftStore(disk, db);
+  await store.load("lex", () => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+  store.remove(draft, draft.path);
+  await store.flush();
+  // Its time is older than the discard: only the record's removal lets it show after a reload.
+  store.save({ ...draft, content: "written again", updatedAt: 2 });
+  await store.flush();
+  assert.deepEqual([...db.map.keys()], [key]);
+  const again = new DraftStore(disk, db);
+  await again.load("lex", loadRecovery);
+  assert.equal(again.get(draft, draft.path)?.content, "written again");
+});
 test("a discard and its record commit together or not at all when the database refuses the record", async () => {
   const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
   const discards = () => [...db.map.keys()].filter((name) => name.startsWith("astro-site-editor:discard:v1:")).length;
@@ -313,6 +358,129 @@ for (const release of [false, true]) test(`discarding an unreadable legacy and d
   const again = new DraftStore(disk, db);
   await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path), undefined);
+});
+test("a discard holds when legacy storage is readable again after a reload that could not read it", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const getItem = disk.getItem;
+  disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.equal(store.remove(draft, draft.path), true);
+  await store.flush();
+  // The reload still cannot read the legacy copy, so it cannot compare it with the discard.
+  const again = new DraftStore(disk, db);
+  await again.load("lex", loadRecovery);
+  assert.equal(again.get(draft, draft.path), undefined);
+  disk.getItem = getItem;
+  assert.equal(disk.getItem(key), JSON.stringify(draft));
+  assert.equal(again.get(draft, draft.path), undefined);
+  assert.deepEqual(again.list(draft), []);
+});
+test("another tab's discard holds here when unreadable legacy storage is readable again", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const getItem = disk.getItem;
+  disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
+  const one = new DraftStore(disk, db), two = new DraftStore(disk, db);
+  one.announce = (keys) => void two.refresh(keys);
+  await one.load("lex", loadRecovery);
+  await two.load("lex", loadRecovery);
+  assert.deepEqual(two.get(draft, draft.path), draft);
+  assert.equal(one.remove(draft, draft.path), true);
+  await one.flush();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(two.get(draft, draft.path), undefined);
+  disk.getItem = getItem;
+  assert.equal(disk.getItem(key), JSON.stringify(draft));
+  assert.equal(two.get(draft, draft.path), undefined);
+  assert.deepEqual(two.list(draft), []);
+});
+test("a discard another tab commits while this tab loads is known when the load ends", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  const getItem = disk.getItem;
+  disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
+  const one = new DraftStore(disk, db);
+  await one.load("lex", loadRecovery);
+  // The discard commits just after this tab read its drafts; a loading tab cannot take its announcement.
+  const two = new DraftStore(disk, { ...db, async load(from) {
+    const records = await db.load(from);
+    if (from.startsWith("astro-site-editor:draft:v1:")) {
+      one.remove(draft, draft.path);
+      await one.flush();
+    }
+    return records;
+  } });
+  await two.load("lex", loadRecovery);
+  assert.equal(two.get(draft, draft.path), undefined);
+  disk.getItem = getItem;
+  assert.equal(disk.getItem(key), JSON.stringify(draft));
+  assert.equal(two.get(draft, draft.path), undefined);
+  assert.deepEqual(two.list(draft), []);
+});
+test("another tab's discard holds across every await of this tab's load", async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    const stored = db.write([[key, draft]]);
+    disk.setItem(key, JSON.stringify(draft));
+    const getItem = disk.getItem;
+    disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
+    const one = new DraftStore(disk, db);
+    const two = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
+      write: race.port("write", changes => db.write(changes)),
+    });
+    // A BroadcastChannel delivers in a later task, never inside the sender's.
+    one.announce = keys => void setTimeout(() => void two.refresh(keys));
+    const done = stored.then(() => one.load("lex", loadRecovery)).then(() => two.load("lex", loadRecovery));
+    return { done, disk, key, one, two, restore: () => { disk.getItem = getItem; } };
+  }, async run => {
+    run.one.remove(draft, draft.path);
+    await run.one.flush();
+  }, async run => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    run.restore();
+    assert.equal(run.disk.getItem(run.key), JSON.stringify(draft));
+    assert.equal(run.two.get(draft, draft.path), undefined);
+    assert.deepEqual(run.two.list(draft), []);
+  });
+  assert.ok(count >= 3);
+});
+test("a discard record goes once the legacy copy it guards is gone, and stays while a copy it hides is stored", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  const discards = () => [...db.map.keys()].filter((name) => name.startsWith("astro-site-editor:discard:v1:"));
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  // A damaged legacy record stays stored, so every start loads the recovery code.
+  disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+  const getItem = disk.getItem;
+  disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  store.remove(draft, draft.path);
+  await store.flush();
+  assert.equal(discards().length, 1);
+  const [name] = discards(), record = db.map.get(name)!;
+  // A database copy no newer than the discard (another tab's migration, racing it) keeps the record.
+  await db.write([[key, draft]]);
+  disk.getItem = getItem;
+  const racing = new DraftStore(disk, db);
+  await racing.load("lex", loadRecovery);
+  assert.equal(racing.get(draft, draft.path), undefined);
+  assert.equal(disk.getItem(key), null);
+  assert.deepEqual(discards(), [name]);
+  // Without that copy, the next load finds the record has nothing left to guard.
+  await db.write([[key, null], [name, record]]);
+  for (const reload of [1, 2]) {
+    const again = new DraftStore(disk, db);
+    await again.load("lex", loadRecovery);
+    assert.deepEqual(again.list(draft), [], `reload ${reload}`);
+    assert.equal(db.map.size, 0, `reload ${reload}`);
+  }
 });
 test("failed legacy cleanup reports a discard failure without resurrecting the discarded draft", async () => {
   const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);

@@ -65,6 +65,44 @@ const valid = (key: string, value: unknown): SavedDraft | undefined => {
   )
     return draft;
 };
+const discardPrefix = "astro-site-editor:discard:v1:";
+/**
+ * A draft's discard record, as a database change: kept beside the drafts,
+ * with the discard time as its `updatedAt`, so a localStorage copy no newer
+ * than it never brings the draft back. Without a time, the record's removal.
+ */
+const discardChange = (key: string, discardedAt?: number): [string, SavedDraft | null] => {
+  const id = key.slice(prefix.length);
+  if (discardedAt === undefined) return [discardPrefix + id, null];
+  const [account, repoId, branch, path] = JSON.parse(id) as [string, number, string, string];
+  return [discardPrefix + id, { version: 1, account, repoId, repo: "", branch, path, baseSha: null, original: "", content: "", updatedAt: discardedAt }];
+};
+/**
+ * The database for a store whose recovery code could not be fetched: a
+ * removal that a localStorage copy could undo commits with its discard
+ * record, and a save deletes the record, as the recovery itself does
+ * (src/drafts-recovery.ts). The copy stays stored for the next load.
+ */
+const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): DraftDatabase & Pick<DraftRecovery, "save"> => {
+  const discards = new Map<string, number>();
+  return {
+    load: (from) => database.load(from),
+    get: (key) => database.get(key),
+    write: (changes) => database.write(changes.flatMap(([key, value]) => {
+      const discardedAt = discards.get(key);
+      return value || discardedAt !== undefined ? [[key, value], discardChange(key, value ? undefined : discardedAt)] : [[key, value]];
+    })),
+    save(key, value) {
+      discards.delete(key);
+      if (value) return;
+      try {
+        if (storage.getItem(key) === null) return;
+      } catch {}
+      // The time it was queued, not written: a copy another tab saves in between is newer and stays.
+      discards.set(key, Date.now());
+    },
+  };
+};
 const SAVE_FAILED = "Draft could not be saved in this browser. Download it before leaving.";
 const REMOVE_FAILED = "Browser storage could not be updated. An older draft may reappear after reload.";
 const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
@@ -97,7 +135,8 @@ export class DraftStore {
   /** Legacy localStorage drafts and damaged records: loaded only when `load` finds one (src/drafts-recovery.ts). */
   private recovery?: DraftRecovery;
   private deleted = new Set<string>();
-  private db?: DraftDatabase;
+  /** The database in use: the recovery, or its stand-in, when a discard must leave a record (`save` is told each queued change). */
+  private db?: DraftDatabase & Partial<Pick<DraftRecovery, "save">>;
   /** Key prefix of the loaded account's drafts. */
   private from = "";
   private pending = new Map<string, SavedDraft | null>();
@@ -157,7 +196,7 @@ export class DraftStore {
       // A normal start has no draft in localStorage, so it never fetches the recovery code.
       if (this.legacyKeys().length || this.notice) {
         try {
-          this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, valid, prefix);
+          this.recovery ??= (await loadRecovery()).recoverDrafts(this, this.storage, database, valid, prefix, discardChange);
         } catch { this.notice = RECOVERY_INCOMPLETE; }
       }
       if (!database) return;
@@ -168,7 +207,8 @@ export class DraftStore {
       }
       this.from = from;
       // The recovery reads and writes the database for the store, so a discard commits with its record.
-      this.db = this.recovery ?? database;
+      // When it was needed and could not be fetched (the notice is set), its stand-in keeps that promise.
+      this.db = this.recovery ?? (this.notice ? guardDiscards(database, this.storage) : database);
       for (const key of this.deleted) this.queue(key, null);
       this.deleted.clear();
     } catch {}
@@ -257,7 +297,7 @@ export class DraftStore {
     }
   }
   private queue(key: string, value: SavedDraft | null) {
-    this.recovery?.save(key, value);
+    this.db?.save?.(key, value);
     this.pending.set(key, value);
     if (this.agentKeys.has(key)) { void this.flush(); return; }
     this.timer ??= setTimeout(() => void this.flush(), FLUSH_DELAY);
