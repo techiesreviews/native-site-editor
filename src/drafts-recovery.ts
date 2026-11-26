@@ -39,7 +39,8 @@ export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
    * it tries a failed batch again one change at a time), so a removal never
    * commits without its record. Once the transaction has committed, the
    * legacy bytes of its drafts are removed; a removal that fails is the
-   * store's error until a later write leaves none behind.
+   * store's notice (never its error: the change itself was saved) until a
+   * later write leaves none behind.
    */
   write(changes: [string, SavedDraft | null][]): Promise<void>;
   /**
@@ -58,15 +59,19 @@ export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
 }
 
 const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
-/** The change itself is committed, with its discard record: the copy left behind never comes back as the draft. */
+/**
+ * Only the removal of the legacy bytes failed. The change itself committed (a removal puts its discard
+ * record, a save deletes it), and the copy left behind is no newer than that change, so it never comes
+ * back as the draft. Nothing failed to save: this is the store's notice, never its error.
+ */
 const CLEANUP_FAILED = "Browser storage could not be updated. An old copy of a draft is still stored in this browser.";
 
 /**
- * `store` shows the notice and a failed cleanup. Without a `database`, drafts stay in localStorage and nothing is read from or written to one.
+ * `store` shows the notice, a failed cleanup included. Without a `database`, drafts stay in localStorage and nothing is read from or written to one.
  * `discardChange` is the store's discard record for a draft key (src/drafts.ts), as a database change.
  */
 export function recoverDrafts(
-  store: Pick<DraftStore, "error" | "onError" | "notice">,
+  store: Pick<DraftStore, "notice">,
   storage: Pick<Storage, "getItem" | "removeItem" | "key" | "length">,
   database: DraftDatabase | undefined,
   validDraft: (key: string, value: unknown) => SavedDraft | undefined,
@@ -91,8 +96,6 @@ export function recoverDrafts(
   let account = "";
   /** Unreadable or newer legacy keys remain: reads consult localStorage alongside the database. */
   let active = false;
-  /** The store's error is a legacy copy this module could not remove: the next clean write clears it. */
-  let uncleaned = false;
   const incomplete = () => { store.notice = RECOVERY_INCOMPLETE; };
   /** localStorage holds a copy at `key` (another tab's, written since this tab loaded), or cannot say. */
   const retained = (key: string) => { try { return storage.getItem(key) !== null; } catch { return true; } };
@@ -211,14 +214,10 @@ export function recoverDrafts(
       for (const [key, raw] of before) try {
         if (storage.getItem(key) === raw) storage.removeItem(key);
       } catch { failed = true; }
+      // A notice already shown (incomplete recovery) stays; the next clean write clears only this one.
       if (!failed) {
-        if (uncleaned) store.error = null;
-        uncleaned = false;
-      } else if (!store.error) {
-        uncleaned = true;
-        store.error = CLEANUP_FAILED;
-        store.onError?.(CLEANUP_FAILED);
-      }
+        if (store.notice === CLEANUP_FAILED) store.notice = null;
+      } else store.notice ??= CLEANUP_FAILED;
     },
     save(key, value) {
       if (value) discards.delete(key);
