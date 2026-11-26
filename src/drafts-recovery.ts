@@ -25,9 +25,11 @@ export interface DraftRecovery extends DraftDatabase {
    */
   load(from: string): Promise<[string, unknown][]>;
   /**
-   * The database's `get`. While localStorage copies are still read, it also
-   * reads the draft's discard record, after the draft: a discard another
-   * tab committed is known here before the copy it guards can be read.
+   * The database's `get`, with the draft's discard record read after the
+   * draft: a record its discard hides (a copy another tab was moving when
+   * the draft was discarded) is not returned. While localStorage copies are
+   * still read, the discard is also known here before the copy it guards
+   * can be read.
    */
   get(key: string): Promise<unknown>;
   /**
@@ -190,8 +192,9 @@ export function recoverDrafts(
     async get(key) {
       const record = await database?.get(key);
       // The draft first: a discard committed between the two reads is then seen with its record.
-      if (active) learn(key, await database?.get(discardKey(key)));
-      return record;
+      const discard = (active ? learn : validDraft)(key, await database?.get(discardKey(key)));
+      const draft = validDraft(key, record);
+      return draft && discard && draft.updatedAt <= discard.updatedAt ? undefined : record;
     },
     async write(changes) {
       const all = [...changes];

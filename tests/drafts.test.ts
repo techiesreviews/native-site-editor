@@ -450,6 +450,161 @@ test("another tab's discard holds across every await of this tab's load", async 
   });
   assert.ok(count >= 3);
 });
+/**
+ * Another tab discards the draft while this tab moves its legacy copy: the
+ * move writes the copy back to the database, beside the discard's record,
+ * and removes the last localStorage copy. Later starts find no legacy draft.
+ */
+async function discardedDuringMove() {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  disk.setItem(key, JSON.stringify(draft));
+  // The discarding tab could not fetch the recovery code: the stored legacy copy makes its discard leave a record.
+  const one = new DraftStore(disk, db);
+  await one.load("lex", () => Promise.reject(new Error("Failed to fetch dynamically imported module")));
+  let discarded = false;
+  const two = new DraftStore(disk, { ...db, async get(name) {
+    const record = await db.get(name);
+    if (name === key && !discarded) {
+      discarded = true;
+      one.remove(draft, draft.path);
+      await one.flush();
+    }
+    return record;
+  } });
+  await two.load("lex", loadRecovery);
+  assert.equal(two.get(draft, draft.path), undefined);
+  assert.equal(disk.getItem(key), null);
+  assert.deepEqual([...db.map.keys()].sort(), ["astro-site-editor:discard:v1:" + key.slice("astro-site-editor:draft:v1:".length), key]);
+  return { disk, db, key };
+}
+test("a draft discarded while another tab moved its legacy copy stays absent on every later start", async () => {
+  const { disk, db } = await discardedDuringMove();
+  for (const reload of [1, 2]) {
+    let calls = 0;
+    const again = new DraftStore(disk, db);
+    await again.load("lex", () => { calls++; return loadRecovery(); });
+    // No legacy draft is left, so these starts run without the recovery code.
+    assert.equal(calls, 0, `reload ${reload}`);
+    assert.equal(again.get(draft, draft.path), undefined, `reload ${reload}`);
+    assert.deepEqual(again.list(draft), [], `reload ${reload}`);
+  }
+});
+const failedImport = () => Promise.reject(new Error("Failed to fetch dynamically imported module"));
+test("a discard holds across every await of another tab's move of the legacy copy, and on later starts", async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    const stored = db.write([[key, draft]]);
+    disk.setItem(key, JSON.stringify(draft));
+    // While the legacy copy is stored, this tab's discard leaves a record.
+    const one = new DraftStore(disk, db);
+    const two = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
+      write: race.port("write", changes => db.write(changes)),
+    });
+    // A BroadcastChannel delivers in a later task, never inside the sender's.
+    one.announce = keys => void setTimeout(() => void two.refresh(keys));
+    const done = stored.then(() => one.load("lex", failedImport)).then(() => two.load("lex", loadRecovery));
+    return { done, disk, db, one, two };
+  }, async run => {
+    run.one.remove(draft, draft.path);
+    await run.one.flush();
+  }, async run => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(run.two.get(draft, draft.path), undefined);
+    for (const reload of [1, 2]) {
+      const again = new DraftStore(run.disk, run.db);
+      await again.load("lex", loadRecovery);
+      assert.equal(again.get(draft, draft.path), undefined, `reload ${reload}`);
+      assert.deepEqual(again.list(draft), [], `reload ${reload}`);
+    }
+  });
+  assert.ok(count >= 5);
+});
+test("a discard, and a moved copy written back after it, hold across every await of a load without the recovery code", async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    const stored = db.write([[key, draft]]);
+    disk.setItem(key, JSON.stringify(draft));
+    const one = new DraftStore(disk, db);
+    const two = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
+      write: race.port("write", changes => db.write(changes)),
+    });
+    one.announce = keys => void setTimeout(() => void two.refresh(keys));
+    const done = stored.then(() => one.load("lex", failedImport)).then(() => two.load("lex", failedImport));
+    return { done, db, key, one, two };
+  }, async run => {
+    run.one.remove(draft, draft.path);
+    await run.one.flush();
+    // A third tab was moving the legacy copy: its write lands after the discard.
+    await run.db.write([[run.key, draft]]);
+  }, async run => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(run.two.get(draft, draft.path), undefined);
+    assert.deepEqual(run.two.list(draft), []);
+  });
+  assert.ok(count >= 3);
+});
+test("a load without the recovery code knows a discard, or its end, that another tab commits after the drafts were read", async () => {
+  // A loading tab cannot take another tab's announcement, so each case commits just after the drafts were read.
+  const afterDraftsRead = (db: DraftDatabase, commit: () => Promise<void>): DraftDatabase => ({ ...db, async load(from) {
+    const records = await db.load(from);
+    if (from.startsWith("astro-site-editor:draft:v1:")) await commit();
+    return records;
+  } });
+  {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    await db.write([[key, draft]]);
+    disk.setItem(key, JSON.stringify(draft));
+    const one = new DraftStore(disk, db);
+    await one.load("lex", failedImport);
+    const two = new DraftStore(disk, afterDraftsRead(db, async () => {
+      one.remove(draft, draft.path);
+      await one.flush();
+    }));
+    await two.load("lex", failedImport);
+    assert.equal(two.get(draft, draft.path), undefined);
+    assert.deepEqual(two.list(draft), []);
+  }
+  {
+    // The database holds a discarded copy; another tab saves the draft again, which ends the discard.
+    const { disk, db } = await discardedDuringMove();
+    const one = new DraftStore(disk, db);
+    await one.load("lex", loadRecovery);
+    const two = new DraftStore(disk, afterDraftsRead(db, async () => {
+      one.save({ ...draft, content: "written again", updatedAt: Date.now() });
+      await one.flush();
+    }));
+    await two.load("lex", loadRecovery);
+    // The copy read was the discarded one: it is never shown as the draft.
+    assert.notEqual(two.get(draft, draft.path)?.content, draft.content);
+  }
+});
+test("another tab's announcement never brings back a copy its discard record hides", async () => {
+  const { disk, db, key } = await discardedDuringMove();
+  // A damaged legacy record makes the second store load the recovery code; the first runs without it.
+  for (const damaged of [false, true]) {
+    if (damaged) disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+    const store = new DraftStore(disk, db);
+    await store.load("lex", loadRecovery);
+    await store.refresh([key]);
+    assert.equal(store.get(draft, draft.path), undefined, `damaged ${damaged}`);
+    assert.deepEqual(store.list(draft), [], `damaged ${damaged}`);
+  }
+});
+test("a draft saved again over a discarded copy the database still holds shows after a reload", async () => {
+  const { disk, db, key } = await discardedDuringMove();
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  // Its time is older than the discard: only the record's removal lets it show after a reload.
+  store.save({ ...draft, content: "written again", updatedAt: 2 });
+  await store.flush();
+  assert.deepEqual([...db.map.keys()], [key]);
+  const again = new DraftStore(disk, db);
+  await again.load("lex", loadRecovery);
+  assert.equal(again.get(draft, draft.path)?.content, "written again");
+});
 test("a discard record goes once the legacy copy it guards is gone, and stays while a copy it hides is stored", async () => {
   const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
   const discards = () => [...db.map.keys()].filter((name) => name.startsWith("astro-site-editor:discard:v1:"));

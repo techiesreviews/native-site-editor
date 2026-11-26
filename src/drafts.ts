@@ -78,16 +78,33 @@ const discardChange = (key: string, discardedAt?: number): [string, SavedDraft |
   return [discardPrefix + id, { version: 1, account, repoId, repo: "", branch, path, baseSha: null, original: "", content: "", updatedAt: discardedAt }];
 };
 /**
- * The database for a store whose recovery code could not be fetched: a
- * removal that a localStorage copy could undo commits with its discard
- * record, and a save deletes the record, as the recovery itself does
- * (src/drafts-recovery.ts). The copy stays stored for the next load.
+ * The database for a store without the recovery code (a normal start, or
+ * one that could not fetch it), with the recovery's promises about discards
+ * (src/drafts-recovery.ts): a removal that a localStorage copy could undo
+ * commits with its discard record, a save deletes the record, and a record
+ * its discard record hides is not read. The localStorage copy stays stored
+ * for the next load.
  */
 const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): DraftDatabase & Pick<DraftRecovery, "save"> => {
+  /** Discards queued here, by draft key: each is written with its record. */
   const discards = new Map<string, number>();
+  /** The record, unless its draft's discard record is no older: a copy another tab was moving when the draft was discarded. */
+  const kept = (key: string, record: unknown, discard: unknown) =>
+    (valid(key, record)?.updatedAt ?? Infinity) <= (valid(key, discard)?.updatedAt ?? -Infinity) ? undefined : record;
   return {
-    load: (from) => database.load(from),
-    get: (key) => database.get(key),
+    async load(from) {
+      const recorded = async () => new Map((await database.load(discardPrefix + from.slice(prefix.length)))
+        .map(([name, discard]) => [prefix + name.slice(discardPrefix.length), discard]));
+      // Read before the drafts and again after them: the store takes no other tab's announcement
+      // while it loads, so a discard committed meanwhile is known when the load ends.
+      const before = await recorded(), records = await database.load(from), after = await recorded();
+      return records.filter(([key, record]) => kept(key, kept(key, record, before.get(key)), after.get(key)));
+    },
+    async get(key) {
+      // The draft first: a discard committed between the two reads is then seen with its record.
+      const record = await database.get(key);
+      return kept(key, record, await database.get(discardChange(key)[0]));
+    },
     write: (changes) => database.write(changes.flatMap(([key, value]) => {
       const discardedAt = discards.get(key);
       return value || discardedAt !== undefined ? [[key, value], discardChange(key, value ? undefined : discardedAt)] : [[key, value]];
@@ -201,14 +218,16 @@ export class DraftStore {
       }
       if (!database) return;
       const from = prefix + JSON.stringify([account.toLowerCase()]).slice(0, -1) + ",";
-      for (const [key, value] of await (this.recovery ?? database).load(from)) {
+      // The recovery reads and writes the database for the store: a discard commits with its record, a
+      // save with the record's removal, and a copy its discard record hides is never read. A start
+      // without the recovery code keeps the same promises through its stand-in.
+      const db = this.recovery ?? guardDiscards(database, this.storage);
+      for (const [key, value] of await db.load(from)) {
         const draft = valid(key, value);
         if (draft && !this.memory.has(key) && !this.deleted.has(key)) this.memory.set(key, draft);
       }
       this.from = from;
-      // The recovery reads and writes the database for the store, so a discard commits with its record.
-      // When it was needed and could not be fetched (the notice is set), its stand-in keeps that promise.
-      this.db = this.recovery ?? (this.notice ? guardDiscards(database, this.storage) : database);
+      this.db = db;
       for (const key of this.deleted) this.queue(key, null);
       this.deleted.clear();
     } catch {}
