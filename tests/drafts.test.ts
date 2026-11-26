@@ -10,6 +10,8 @@ function storage() {
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
 }
 const draft: SavedDraft = { version: 1, account: "lex", repoId: 1, repo: "lex/site", branch: "main", path: "src/index.astro", baseSha: "a".repeat(40), original: "original", content: "draft", updatedAt: 1 };
+/** Where the database keeps the discard record of the draft at `key`. */
+const discardRecordKey = (key: string) => "astro-site-editor:discard:v1:" + key.slice("astro-site-editor:draft:v1:".length);
 test("drafts survive a fresh store and are isolated by account, repository ID and branch", () => {
   const disk = storage();
   const first = new DraftStore(disk);
@@ -235,6 +237,75 @@ for (const badAt of [0, 1, 2, 3]) test(`a damaged legacy draft at position ${bad
     assert.equal(disk.getItem(damagedKey), "{");
     assert.equal(db.map.size, 3);
     assert.equal(disk.length, 1);
+  }
+});
+for (const failing of ["a discard record's draft", "the last read of the discard records"]) test(`a database read that fails once the legacy copies are removed (${failing}) never hides healthy drafts`, async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  const about = { ...draft, path: "src/about.astro" }, kept = { ...draft, path: "src/kept.astro" };
+  // A discard record with no copy left to hide: the load reads its draft once the legacy copies are gone.
+  await db.write([[draftKey(kept, kept.path), kept], [discardRecordKey(key), { ...draft, original: "", content: "", updatedAt: 5 }]]);
+  disk.setItem(draftKey(about, about.path), JSON.stringify(about));
+  let discardReads = 0;
+  const store = new DraftStore(disk, {
+    ...db,
+    async get(name) {
+      if (failing === "a discard record's draft" && name === key) throw new Error("Read failed");
+      return db.get(name);
+    },
+    async load(from) {
+      if (failing !== "a discard record's draft" && from.startsWith("astro-site-editor:discard:v1:") && ++discardReads === 2) throw new Error("Read failed");
+      return db.load(from);
+    },
+  });
+  await store.load("lex", loadRecovery);
+  assert.equal(disk.length, 0);
+  assert.deepEqual(store.list(draft).map((value) => value.path), ["src/about.astro", "src/kept.astro"]);
+  // Saving still reaches the database.
+  store.save({ ...about, content: "later" });
+  await store.flush();
+  assert.equal(db.map.get(draftKey(about, about.path))?.content, "later");
+});
+test("a start without legacy drafts still shows its drafts when the second read of the discard records fails", async () => {
+  const secondReadFails = (db: DraftDatabase): DraftDatabase => {
+    let discardReads = 0;
+    return { ...db, async load(from) {
+      if (from.startsWith("astro-site-editor:discard:v1:") && ++discardReads === 2) throw new Error("Read failed");
+      return db.load(from);
+    } };
+  };
+  {
+    const db = memoryDrafts(), key = draftKey(draft, draft.path);
+    await db.write([[key, draft]]);
+    const store = new DraftStore(storage(), secondReadFails(db));
+    await store.load("lex", loadRecovery);
+    assert.deepEqual(store.list(draft), [draft]);
+    store.save({ ...draft, content: "later" });
+    await store.flush();
+    assert.equal(db.map.get(key)?.content, "later");
+  }
+  {
+    // What the first read found still holds: a copy its discard record hides stays hidden.
+    const { disk, db } = await discardedDuringMove();
+    const store = new DraftStore(disk, secondReadFails(db));
+    await store.load("lex", loadRecovery);
+    assert.deepEqual(store.list(draft), []);
+  }
+});
+test("a damaged discard record never hides its draft", async () => {
+  // A damaged legacy record makes the second start load the recovery code; the first runs without it.
+  for (const damaged of [false, true]) {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    await db.write([[key, draft]]);
+    db.map.set(discardRecordKey(key), { version: 1, updatedAt: 9 } as SavedDraft);
+    if (damaged) disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+    const store = new DraftStore(disk, db);
+    await store.load("lex", loadRecovery);
+    assert.equal(store.get(draft, draft.path)?.content, "draft", `damaged ${damaged}`);
+    await store.refresh([key]);
+    assert.equal(store.get(draft, draft.path)?.content, "draft", `damaged ${damaged}`);
+    assert.deepEqual(store.list(draft), [draft], `damaged ${damaged}`);
+    // Like any record that cannot be read, it stays stored.
+    assert.ok(db.map.has(discardRecordKey(key)), `damaged ${damaged}`);
   }
 });
 test("an invalid legacy record stays stored and reports incomplete recovery", async () => {
@@ -475,7 +546,7 @@ async function discardedDuringMove() {
   await two.load("lex", loadRecovery);
   assert.equal(two.get(draft, draft.path), undefined);
   assert.equal(disk.getItem(key), null);
-  assert.deepEqual([...db.map.keys()].sort(), ["astro-site-editor:discard:v1:" + key.slice("astro-site-editor:draft:v1:".length), key]);
+  assert.deepEqual([...db.map.keys()].sort(), [discardRecordKey(key), key]);
   return { disk, db, key };
 }
 test("a draft discarded while another tab moved its legacy copy stays absent on every later start", async () => {
@@ -569,7 +640,7 @@ test("a load without the recovery code knows a discard, or its end, that another
   }
   {
     // The database holds a discarded copy; another tab saves the draft again, which ends the discard.
-    const { disk, db } = await discardedDuringMove();
+    const { disk, db, key } = await discardedDuringMove();
     const one = new DraftStore(disk, db);
     await one.load("lex", loadRecovery);
     const two = new DraftStore(disk, afterDraftsRead(db, async () => {
@@ -577,8 +648,12 @@ test("a load without the recovery code knows a discard, or its end, that another
       await one.flush();
     }));
     await two.load("lex", loadRecovery);
-    // The copy read was the discarded one: it is never shown as the draft.
-    assert.notEqual(two.get(draft, draft.path)?.content, draft.content);
+    // The copy read was the discarded one: it is never shown as the draft. Like any save another tab
+    // commits during a load, the new one shows with the next announcement of its key.
+    assert.equal(two.get(draft, draft.path), undefined);
+    await two.refresh([key]);
+    assert.equal(two.get(draft, draft.path)?.content, "written again");
+    assert.deepEqual(two.list(draft).map((value) => value.content), ["written again"]);
   }
 });
 test("another tab's announcement never brings back a copy its discard record hides", async () => {
@@ -637,7 +712,7 @@ test("a discard record goes once the legacy copy it guards is gone, and stays wh
     assert.equal(db.map.size, 0, `reload ${reload}`);
   }
 });
-test("failed legacy cleanup reports a discard failure without resurrecting the discarded draft", async () => {
+test("failed legacy cleanup says an old copy is still stored, and never brings the discarded draft back", async () => {
   const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
   disk.setItem(key, JSON.stringify(draft));
   const getItem = disk.getItem, removeItem = disk.removeItem;
@@ -648,7 +723,9 @@ test("failed legacy cleanup reports a discard failure without resurrecting the d
   disk.removeItem = () => { throw new Error("Removal denied"); };
   store.remove(draft, draft.path);
   await store.flush();
-  assert.match(store.error!, /older draft may reappear/);
+  // The discard committed with its record, so the message promises no return of the draft.
+  assert.match(store.error!, /old copy of a draft is still stored/);
+  assert.doesNotMatch(store.error!, /reappear/);
   assert.equal(disk.getItem(key), JSON.stringify(draft));
   const again = new DraftStore(disk, db);
   await again.load("lex", loadRecovery);

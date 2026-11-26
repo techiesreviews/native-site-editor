@@ -57,7 +57,8 @@ export interface DraftRecovery extends DraftDatabase {
 }
 
 const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
-const REMOVE_FAILED = "Browser storage could not be updated. An older draft may reappear after reload.";
+/** The change itself is committed, with its discard record: the copy left behind never comes back as the draft. */
+const CLEANUP_FAILED = "Browser storage could not be updated. An old copy of a draft is still stored in this browser.";
 
 /**
  * `store` shows the notice and a failed cleanup. Without a `database`, drafts stay in localStorage and nothing is read from or written to one.
@@ -153,14 +154,16 @@ export function recoverDrafts(
           else if (current !== null) active = true;
         } catch { active = true; incomplete(); }
       }
+      // The drafts are read and their legacy copies gone: from here on a read that fails costs only its own
+      // step, never the load.
       // A discard record has done its work once no copy it hides is left: none in localStorage, none in the database.
       const spent: string[] = [];
       for (const [key, discardedAt] of recorded) {
         try {
           if (discards.get(key) !== discardedAt || storage.getItem(key) !== null) continue;
-        } catch { continue; }
-        const kept = validDraft(key, await database.get(key));
-        if (!kept || !discarded(key, kept)) spent.push(key);
+          const kept = validDraft(key, await database.get(key));
+          if (!kept || !discarded(key, kept)) spent.push(key);
+        } catch {}
       }
       if (spent.length) {
         // Housekeeping: a record that stays is read again, and tried again, at the next load.
@@ -169,7 +172,8 @@ export function recoverDrafts(
       }
       // Read again as the last step: the store cannot take another tab's announcement until this load has
       // ended, so a discard committed meanwhile is learned here, after the drafts it removed were read.
-      await readDiscards(database);
+      // When this read fails, the discards read before the move still hold.
+      await readDiscards(database).catch(() => {});
       account = from;
       return records.filter(([key, value]) => {
         const draft = validDraft(key, value);
@@ -221,8 +225,8 @@ export function recoverDrafts(
         uncleaned = false;
       } else if (!store.error) {
         uncleaned = true;
-        store.error = REMOVE_FAILED;
-        store.onError?.(REMOVE_FAILED);
+        store.error = CLEANUP_FAILED;
+        store.onError?.(CLEANUP_FAILED);
       }
     },
     save(key, value) {

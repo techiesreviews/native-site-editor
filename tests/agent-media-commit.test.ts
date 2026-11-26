@@ -143,7 +143,7 @@ test("agent bytes complete before one records transaction, then publish without 
   assert.deepEqual(receipt?.outcome, outcome);
   assert.ok(!receipt!.payloadIdentity.includes("WEBVTT"));
   const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.drafts.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.equal(loaded.list(f.scope).length, 3);
   const upload = loaded.list(f.scope).find(draft => draft.upload)!;
   assert.ok(await indexedDbUploadBytes().get(uploadKey(f.scope, upload.sourceSha!)));
@@ -339,7 +339,7 @@ test("a page draft another tab persisted after this tab read it refuses removal 
   const f = await setup(t, ["media/unused.png"]);
   // Another tab adds a use of the picture; this tab's memory has not heard (its notification is delayed).
   const other = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.drafts.factory));
-  await other.load(f.scope.account);
+  await other.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.ok(other.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: f.model(),
     content: `${f.model()}<img src="media/unused.png">`, updatedAt: Date.now() }));
   await other.flush();

@@ -164,7 +164,7 @@ for (const mode of ["throw", "stale", "history", "editor"] as const) test(`struc
   assert.equal(f.lastOutcome()?.ok, true);
   assert.equal(f.lastOutcome()?.message, undefined, "guarded commit itself must not relabel a refresh failure as an error");
   const loaded = new DraftStore({ getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 }, indexedDbDrafts(draftDatabaseName, f.fake.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.deepEqual(f.store.list(f.scope), loaded.list(f.scope));
   assert.equal(f.store.list(f.scope).length, 4);
 });

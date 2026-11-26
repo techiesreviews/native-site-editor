@@ -142,7 +142,7 @@ test("text drafts and receipt commit together before model, history and preview 
   assert.deepEqual((await f.records.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
   assert.equal(outcome?.result?.hash, await textHash("agent"));
   const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.fake.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.equal(loaded.get(f.scope, "index.html")?.content, "agent");
   const reloadedRecords = indexedDbAgentRecords(draftDatabaseName, f.fake.factory);
   assert.deepEqual((await reloadedRecords.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
@@ -398,7 +398,7 @@ test("an editor change while the transaction commits still leaves this tab's dra
   assert.equal(f.store.get(f.scope, "index.html")?.content, "agent");
   assert.ok(await f.records.receipt(f.scope, f.command.id, f.command.grantId!));
   const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.fake.factory));
-  await loaded.load(f.scope.account);
+  await loaded.load(f.scope.account, () => import("../src/drafts-recovery.ts"));
   assert.equal(loaded.get(f.scope, "index.html")?.content, "agent");
 });
 

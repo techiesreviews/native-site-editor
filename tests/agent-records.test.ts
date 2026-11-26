@@ -65,7 +65,7 @@ test("missing factory and open errors refuse agent operations while manual fallb
     await assert.rejects(records.conversations(draft), code("unavailable"));
   }
   const disk = storage(), manual = new DraftStore(disk, indexedDbDrafts(draftDatabaseName, fake.factory));
-  await manual.load("lex"); assert.equal(manual.save(draft), true);
+  await manual.load("lex", () => import("../src/drafts-recovery.ts")); assert.equal(manual.save(draft), true);
   assert.deepEqual(new DraftStore(disk).get(draft, draft.path), draft);
 });
 

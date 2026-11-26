@@ -96,8 +96,9 @@ const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem"
       const recorded = async () => new Map((await database.load(discardPrefix + from.slice(prefix.length)))
         .map(([name, discard]) => [prefix + name.slice(discardPrefix.length), discard]));
       // Read before the drafts and again after them: the store takes no other tab's announcement
-      // while it loads, so a discard committed meanwhile is known when the load ends.
-      const before = await recorded(), records = await database.load(from), after = await recorded();
+      // while it loads, so a discard committed meanwhile is known when the load ends. When the second
+      // read fails, the first still holds and the drafts show.
+      const before = await recorded(), records = await database.load(from), after = await recorded().catch(() => before);
       return records.filter(([key, record]) => kept(key, kept(key, record, before.get(key)), after.get(key)));
     },
     async get(key) {
@@ -206,6 +207,9 @@ export class DraftStore {
    * Moves every localStorage draft (all accounts) into the database, then
    * loads `account`'s drafts into memory. localStorage keys go only after
    * the database committed them. Stays on localStorage when it fails.
+   * `loadRecovery` fetches src/drafts-recovery.ts, which does the move: it
+   * is called only when localStorage holds a draft or cannot be listed. A
+   * record that cannot be read stays stored and sets `notice`.
    */
   async load(account: string, loadRecovery: () => Promise<typeof import("./drafts-recovery")>) {
     const database = this.database;
