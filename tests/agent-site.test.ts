@@ -370,6 +370,8 @@ test("a media change whose read-back fails says why; a media record not there ye
   assert.equal(placed.message, `Placed images/a.png in 0.0.0 on ${path}, unsaved.`);
   assert.equal(placed.result!.hash, null);
   assert.match(String(placed.result!.hashError), /reading index\.html back failed \(The connection dropped\.\).*Do not apply it again/);
+  // Its alt is unknown, not empty: left out.
+  assert.equal("alt" in placed.result!, false);
   readFails = false;
   const described = await applySiteCommand(actions as unknown as AgentSiteActions, command("describe_media", { file: "images/a.png", text: "A loaf" })); // eslint-disable-line no-restricted-syntax -- as above.
   assert.match(String(described.result!.hashError), /reading \.editor\/media\.json back failed \(The connection dropped\.\)/);

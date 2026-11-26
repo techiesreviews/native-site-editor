@@ -923,6 +923,12 @@ test("a kept page command whose live read-back fails answers with its receipt's 
   const scoped = { actions, readDrafts: new Map(), current: () => true, dispose: () => {} };
   const command: AgentCommand = { id: "kept", grantId: "grant", operation: "set_page_details", path: "index.html", branch: "main", commit: "commit", content: "", state: "pending", createdAt: 1, args: { title: "New" } };
   assert.deepEqual(await applyStructural(command, kept, scoped), outcome);
+  // A receipt with no hash (nothing needed changing) is not contradicted by "the change is applied" either.
+  const unchanged = { message: "Nothing needed changing; index.html is as it was.", result: { path: "index.html" } };
+  const keptUnchanged = { ...kept, outcome: unchanged } as unknown as Parameters<typeof applyStructural>[1]; // eslint-disable-line no-restricted-syntax -- as above.
+  const answer = await applyStructural(command, keptUnchanged, scoped);
+  assert.equal(answer.message, unchanged.message);
+  assert.equal("hashError" in answer.result!, false);
 });
 
 // Grok on 34 (ticket 36): what follows a kept step throwing is not the step failing: no recovery, run once, the receipt answers.
