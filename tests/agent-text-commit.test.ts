@@ -915,6 +915,16 @@ test("a kept page command whose follow-up fails answers with its receipt and is 
   assert.deepEqual([applied, recovered, disposed], [1, 1, 1]);
 });
 
+// TOOLS-444: the receipt's hash is the reply's, however the live read-back after it went.
+test("a kept page command whose live read-back fails answers with its receipt's hash and no read failure", async () => {
+  const outcome = { message: "Page details of index.html updated, unsaved.", result: { path: "index.html", hash: "kept-hash" } };
+  const kept = { applied: true, outcome, finish: async () => {}, recover: async () => {} } as unknown as Parameters<typeof applyStructural>[1]; // eslint-disable-line no-restricted-syntax -- only these members of a prepared receipt are read.
+  const actions = { setPageDetails: async () => undefined, text: async () => { throw new Error("The draft store is unavailable."); } } as unknown as AgentSiteActions; // eslint-disable-line no-restricted-syntax -- set_page_details reads only these two.
+  const scoped = { actions, readDrafts: new Map(), current: () => true, dispose: () => {} };
+  const command: AgentCommand = { id: "kept", grantId: "grant", operation: "set_page_details", path: "index.html", branch: "main", commit: "commit", content: "", state: "pending", createdAt: 1, args: { title: "New" } };
+  assert.deepEqual(await applyStructural(command, kept, scoped), outcome);
+});
+
 // Grok on 34 (ticket 36): what follows a kept step throwing is not the step failing: no recovery, run once, the receipt answers.
 test("a kept page command whose count or labels throw answers with its receipt, runs them once and recovers nothing", async () => {
   const outcome = { message: "Page details of index.html updated, unsaved.", result: { path: "index.html" } };

@@ -791,10 +791,20 @@ async function openPage(actions: AgentSiteActions, path: string, expected: strin
   return read();
 }
 
-const hashOf = async (actions: AgentSiteActions, path: string) => {
-  const text = await actions.text(path).catch(() => undefined);
-  return text === undefined ? null : await textHash(text);
-};
+/**
+ * A changed file read back, with its hash: null when there is no such file. A read that fails is not a missing
+ * file (TOOLS-444): its `hashError` says why, and that the change stays applied, so it is not made twice.
+ */
+async function readBack(actions: AgentSiteActions, path: string): Promise<{ text?: string; result: { hash: string | null; hashError?: string } }> {
+  try {
+    const text = await actions.text(path);
+    return { text, result: { hash: text === undefined ? null : await textHash(text) } };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { result: { hash: null, hashError: `The change is applied, but reading ${path} back failed (${reason}), so its hash is unknown. Do not apply it again; read ${path} for its hash.` } };
+  }
+}
+const hashOf = async (actions: AgentSiteActions, path: string) => (await readBack(actions, path)).result;
 
 /** Why `tag` cannot go between the sections of the site `r` reads, or nothing. */
 function sectionComponentProblem(r: Reads, tag: string) {
@@ -952,14 +962,14 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       }
       return {
         message: `${before === undefined ? "Created" : "Changed"} ${path} in the editor as an unsaved draft.`,
-        result: { path, hash: await hashOf(actions, path) },
+        result: { path, ...await hashOf(actions, path) },
       };
     }
     case "create_page": {
       const title = String(args.title ?? "").trim();
       const made = await actions.createPage({ parent: String(args.parent ?? "/"), title, slug: args.slug ?? toPageAddress(title) });
       if (typeof made === "string") throw new Error(made);
-      return { message: `Created the page ${title} at ${made.route} (${made.file}), unsaved.`, result: { file: made.file, route: made.route, hash: await hashOf(actions, made.file) } };
+      return { message: `Created the page ${title} at ${made.route} (${made.file}), unsaved.`, result: { file: made.file, route: made.route, ...await hashOf(actions, made.file) } };
     }
     case "set_page_details": {
       if (actions.setPageDetails) {
@@ -971,7 +981,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
         const error = await actions.setPageDetail(path, field, value);
         if (error) throw new Error(error);
       }
-      return { message: `Page details of ${path} updated, unsaved.`, result: { path, hash: await hashOf(actions, path) } };
+      return { message: `Page details of ${path} updated, unsaved.`, result: { path, ...await hashOf(actions, path) } };
     }
     case "make_component": {
       // A malformed id is refused before the page opens; the element and the name are the editor's Make component's, on the page as it is now.
@@ -983,7 +993,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
         message: `Made <${made.tag}> from element ${args.element} on ${path}; the page has the instance, unsaved.`,
         result: {
           tag: made.tag, files: made.files.join(", "), slots: made.slots.map((name) => name || "(unnamed)").join(", "),
-          cards: made.cards.join(", "), notes: made.notes.join("\n"), hash: await hashOf(actions, path),
+          cards: made.cards.join(", "), notes: made.notes.join("\n"), ...await hashOf(actions, path),
         },
       };
     }
@@ -1039,13 +1049,13 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
           if (!("refuse" in plan)) planned = plan;
           return plan;
         }, { anchor: path }));
-        return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${planned?.added ? ` ${planned.added}` : ""}`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
+        return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${planned?.added ? ` ${planned.added}` : ""}`, result: { section: outlineId([...parent, index]), ...await hashOf(actions, path) } };
       }
       if (command.operation === "remove_section") {
         const label = componentLabel(section!.tag), located = range!;
         await guarded(actions.edits.run(r => r.source(path) !== source ? { refuse: changedSinceRead(path) }
           : { edits: new Map([[path, [removeEdit(source, located)]]]), done: `${label} removed`, undone: `Undid removing the ${label}.` }, { anchor: path }));
-        return { message: `Section ${section!.id} removed from ${path}, unsaved.`, result: { hash: await hashOf(actions, path) } };
+        return { message: `Section ${section!.id} removed from ${path}, unsaved.`, result: { ...await hashOf(actions, path) } };
       }
       // Among its own siblings only: the Block move decides, as for a drag in the page structure.
       const moving = actions.moveSection({ path, node: node!, painted: source }, at);
@@ -1058,7 +1068,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       const id = outlineId(outcome.status === "moved" ? outcome.node : node!);
       return {
         message: outcome.status === "stayed" ? "The section is already there." : `Section moved to ${id}, unsaved.`,
-        result: { section: id, hash: await hashOf(actions, path) },
+        result: { section: id, ...await hashOf(actions, path) },
       };
     }
     case "move_file": {
@@ -1083,7 +1093,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       const range = locateNativeElementRange(source, node);
       if (!range || range.tag.name !== "img") throw new Conflict("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
       const outcome = (await actions.media(command))!;
-      return { ...outcome, result: { ...outcome.result, hash: await hashOf(actions, path) } };
+      return { ...outcome, result: { ...outcome.result, ...await hashOf(actions, path) } };
     }
     case "place_media": {
       // Loaded first, so nothing awaits between the page's hash check and the placement's own proof.
@@ -1093,15 +1103,16 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       const range = locatePageElement(source, node);
       if (!range) throw new Conflict("That element is no longer on the page.");
       const outcome = await actions.media(command);
-      if (outcome) return { ...outcome, result: { ...outcome.result, hash: await hashOf(actions, path) } };
-      const placedSource = await actions.text(path) ?? "";
-      const placed = locateNativeElement(placedSource, node);
-      return { message: `Placed ${args.file} in ${args.element} on ${path}, unsaved.`, result: { hash: await hashOf(actions, path), alt: decodeHtmlEntities(placed ? startTagAttribute(placedSource, placed, "alt")?.value ?? "" : "", true) } };
+      if (outcome) return { ...outcome, result: { ...outcome.result, ...await hashOf(actions, path) } };
+      // Placed already: a failed read-back leaves the alt unknown (empty), never the placement unsaid.
+      const { text: placedSource, result } = await readBack(actions, path);
+      const placed = placedSource === undefined ? undefined : locateNativeElement(placedSource, node);
+      return { message: `Placed ${args.file} in ${args.element} on ${path}, unsaved.`, result: { ...result, alt: decodeHtmlEntities(placed ? startTagAttribute(placedSource!, placed, "alt")?.value ?? "" : "", true) } };
     }
     case "describe_media":
       if (args.page) await openPage(actions, args.page, command.expectedHash);
       await actions.media(command);
-      return { message: `Changed description of ${args.file}, unsaved.`, result: { hash: await hashOf(actions, args.page ?? ".editor/media.json") } };
+      return { message: `Changed description of ${args.file}, unsaved.`, result: { ...await hashOf(actions, args.page ?? ".editor/media.json") } };
     case "loop_video":
       if (args.looping !== undefined) await openPage(actions, path, command.expectedHash);
       else await expectHash(actions, path, command.expectedHash);
@@ -1466,8 +1477,10 @@ export async function applyStructural(command: AgentCommand, kept: PreparedText,
   try {
     const detail = await run(() => applySiteCommand(scoped.actions, command));
     await kept.finish!(() => scoped.current(), scoped.readDrafts);
-    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields.
-    outcome = { ...kept.outcome!, result: { ...detail.result, ...kept.outcome!.result } };
+    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields. A recorded
+    // hash answers for the live read-back, so its failure (TOOLS-444) is not told beside it.
+    const { hashError, ...live } = detail.result ?? {};
+    outcome = { ...kept.outcome!, result: { ...live, ...(kept.outcome!.result?.hash === undefined && hashError !== undefined ? { hashError } : {}), ...kept.outcome!.result } };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
     if (!kept.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
