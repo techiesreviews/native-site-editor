@@ -70,13 +70,25 @@ const discardPrefix = "astro-site-editor:discard:v1:";
  * A draft's discard record, as a database change: kept beside the drafts,
  * with the discard time as its `updatedAt`, so a localStorage copy no newer
  * than it never brings the draft back. Without a time, the record's removal.
+ *
+ * A draft and its discard record change together: every writer of a draft
+ * (this store, the recovery code, an agent's commit in src/agent-records.ts)
+ * deletes the record with a save and puts it with a removal that must hold,
+ * in the draft's own transaction. Nothing writes a discard record alone.
  */
-const discardChange = (key: string, discardedAt?: number): [string, SavedDraft | null] => {
+export const discardChange = (key: string, discardedAt?: number): [string, SavedDraft | null] => {
   const id = key.slice(prefix.length);
   if (discardedAt === undefined) return [discardPrefix + id, null];
   const [account, repoId, branch, path] = JSON.parse(id) as [string, number, string, string];
   return [discardPrefix + id, { version: 1, account, repoId, repo: "", branch, path, baseSha: null, original: "", content: "", updatedAt: discardedAt }];
 };
+/**
+ * Whether the draft record at `key` is hidden by its discard record: no
+ * newer than the discard (a copy another tab was moving when the draft was
+ * discarded). Every reader that decides on a stored draft asks this.
+ */
+export const discardHides = (key: string, record: unknown, discard: unknown) =>
+  (valid(key, record)?.updatedAt ?? Infinity) <= (valid(key, discard)?.updatedAt ?? -Infinity);
 /**
  * The database for a store without the recovery code (a normal start, or
  * one that could not fetch it), with the recovery's promises about discards
@@ -88,9 +100,8 @@ const discardChange = (key: string, discardedAt?: number): [string, SavedDraft |
 const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): DraftDatabase & Pick<DraftRecovery, "save"> => {
   /** Discards queued here, by draft key: each is written with its record. */
   const discards = new Map<string, number>();
-  /** The record, unless its draft's discard record is no older: a copy another tab was moving when the draft was discarded. */
-  const kept = (key: string, record: unknown, discard: unknown) =>
-    (valid(key, record)?.updatedAt ?? Infinity) <= (valid(key, discard)?.updatedAt ?? -Infinity) ? undefined : record;
+  /** The record, unless its draft's discard record hides it. */
+  const kept = (key: string, record: unknown, discard: unknown) => discardHides(key, record, discard) ? undefined : record;
   return {
     async load(from) {
       const recorded = async () => new Map((await database.load(discardPrefix + from.slice(prefix.length)))

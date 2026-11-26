@@ -11,6 +11,9 @@ const partial = <T>(value: Partial<T>): T => value as T;
 
 const draft: SavedDraft = { version: 1, account: "Lex", repoId: 1, repo: "lex/site", branch: "main", path: "index.html", baseSha: null, original: "", content: "draft", updatedAt: 1 };
 const key = draftKey(draft, draft.path);
+/** Where the database keeps the discard record of the draft at `key`, and that record for a discard at `at`. */
+const discardKey = "astro-site-editor:discard:v1:" + key.slice("astro-site-editor:draft:v1:".length);
+const discardAt = (at: number): SavedDraft => ({ version: 1, account: "lex", repoId: draft.repoId, repo: "", branch: draft.branch, path: draft.path, baseSha: null, original: "", content: "", updatedAt: at });
 // Issue times only increase, as an issuer's clock does between commands.
 let issued = Date.now();
 const command = () => ({ workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch }, fence: 0, expectedRevision: 0, expectedDrafts: [[key, null]] as [string, SavedDraft | null][], drafts: [[key, { ...draft }]] as [string, SavedDraft | null][], receipt: { authorizationId: "grant-1", operationId: "operation-1", payloadIdentity: payloadIdentity({ edit: "draft" }), outcome: { changed: 1 }, createdAt: 100, issuedAt: ++issued } });
@@ -41,7 +44,7 @@ test("v1 upgrade preserves drafts, adds stores and stays readable by the manual 
   assert.equal(store.get(draft, draft.path)?.content, "agent draft");
 });
 
-for (const failure of ["AbortError", "QuotaExceededError"]) for (const failPutAt of [2, 3]) test(`${failure} on put ${failPutAt} rolls back deletes, puts, receipt and revision`, async () => {
+for (const failure of ["AbortError", "QuotaExceededError"]) for (const failPutAt of [3, 4]) test(`${failure} on put ${failPutAt} rolls back deletes, puts, receipt and revision`, async () => {
   const fake = fakeIndexedDB(draft), records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const input = command(), other = { ...draft, path: "about.html" };
   input.expectedDrafts = [[key, draft], [draftKey(other, other.path), null]];
@@ -91,8 +94,59 @@ test("changed drafts require workspace-scoped expectations, including deletions"
   assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 0 });
   const other = { ...draft, path: "about.html" }, otherKey = draftKey(other, other.path);
   await records.commit({ ...command(), expectedDrafts: [[key, draft], [otherKey, null]], drafts: [[key, null], [otherKey, other]] });
-  assert.deepEqual([...fake.stores.get("drafts")!], [[otherKey, other]]);
+  // The removal leaves its discard record; the save leaves none.
+  assert.deepEqual([...fake.stores.get("drafts")!.keys()], [discardKey, otherKey]);
+  assert.deepEqual((await records.snapshot(draft)).drafts, [[otherKey, other]]);
   assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0 });
+});
+
+test("a draft its discard record hides is absent for agents too: commits, snapshots and takeover proofs", async (t) => {
+  range(t);
+  const fake = fakeIndexedDB(draft), records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
+  // An old copy stayed in the database beside the record of its discard (a move that raced the discard).
+  await indexedDbDrafts(draftDatabaseName, fake.factory).write([[discardKey, discardAt(draft.updatedAt)]]);
+  const manual = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, fake.factory));
+  await manual.load("lex");
+  assert.equal(manual.get(draft, draft.path), undefined, "the editor shows no draft");
+  assert.deepEqual((await records.snapshot(draft)).drafts, []);
+  // A plan made against the hidden copy is stale; one made against "no draft" is what the editor shows.
+  await assert.rejects(records.commit({ ...command(), expectedDrafts: [[key, draft]] }), code("conflict"));
+  assert.deepEqual(await records.setFence(draft, 0, 1, { revision: 0, generation: 0, drafts: [] }), { revision: 0, generation: 1 });
+  const fresh = { ...draft, content: "agent edit", updatedAt: 2 };
+  await records.commit({ ...command(), fence: 1, drafts: [[key, fresh]] });
+  // The save ends the discard in the same transaction, like a save made by hand.
+  assert.deepEqual([...fake.stores.get("drafts")!], [[key, fresh]]);
+  assert.deepEqual((await records.snapshot(draft)).drafts, [[key, fresh]]);
+});
+
+test("an agent's removal commits with its discard record: a copy left in localStorage never brings the draft back", async (t) => {
+  range(t);
+  const fake = fakeIndexedDB(draft), records = indexedDbAgentRecords(draftDatabaseName, fake.factory, () => 50), disk = storage();
+  // The copy a start without the recovery code left behind.
+  disk.setItem(key, JSON.stringify(draft));
+  await records.commit({ ...command(), expectedDrafts: [[key, draft]], drafts: [[key, null]] });
+  assert.deepEqual([...fake.stores.get("drafts")!], [[discardKey, discardAt(50)]]);
+  const loaded = new DraftStore(disk, indexedDbDrafts(draftDatabaseName, fake.factory));
+  await loaded.load("lex", () => import("../src/drafts-recovery.ts"));
+  assert.equal(loaded.get(draft, draft.path), undefined);
+  assert.deepEqual(loaded.list(draft), []);
+  assert.equal(disk.getItem(key), null);
+});
+
+test("only an agent's removal of a draft the database shows writes a discard record, and never an earlier time", async () => {
+  const fake = fakeIndexedDB(draft), records = indexedDbAgentRecords(draftDatabaseName, fake.factory, () => 50);
+  const other = { ...draft, path: "about.html" }, otherKey = draftKey(other, other.path);
+  fake.stores.get("drafts")!.set(discardKey, discardAt(90));
+  // The stored copy is hidden (no newer than the discard at 90) and no draft is stored for the other
+  // path: a plan that leaves both without a draft removes the hidden copy and writes no record.
+  await records.commit({ ...command(), expectedDrafts: [[key, null], [otherKey, null]], drafts: [[key, null], [otherKey, null]] });
+  assert.deepEqual([...fake.stores.get("drafts")!], [[discardKey, discardAt(90)]]);
+  // A draft dated after that discard shows; its removal at 50 leaves the later discard time as it is.
+  const later = { ...draft, updatedAt: 95 };
+  fake.stores.get("drafts")!.set(key, later);
+  const second = command(); second.receipt.operationId = "operation-2";
+  await records.commit({ ...second, expectedRevision: 1, expectedDrafts: [[key, later]], drafts: [[key, null]] });
+  assert.deepEqual([...fake.stores.get("drafts")!], [[discardKey, discardAt(90)]]);
 });
 
 test("contending commits cannot both pass the same revision proof", async () => {

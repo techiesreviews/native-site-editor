@@ -19,9 +19,9 @@ export interface DraftRecovery extends DraftDatabase {
    * discard record and moves every readable localStorage draft (all
    * accounts) into the database, and after the load removes the legacy
    * bytes the database now holds. Damaged records stay stored, and a
-   * discarded draft is left out of the result. A discard record with no
-   * copy left to hide (none in localStorage, none in the database) is
-   * deleted.
+   * discarded draft is left out of the result. Discard records are only
+   * read here: one with no copy left to hide stays stored until its draft
+   * is saved again.
    */
   load(from: string): Promise<[string, unknown][]>;
   /**
@@ -82,15 +82,9 @@ export function recoverDrafts(
     if (discard && discard.updatedAt > (discards.get(key) ?? -Infinity)) discards.set(key, discard.updatedAt);
     return discard;
   };
-  /** Reads every discard record (all accounts), whatever localStorage shows right now, as [draft key, discard time]. */
+  /** Reads every discard record (all accounts), whatever localStorage shows right now. */
   const readDiscards = async (from: DraftDatabase) => {
-    const recorded = new Map<string, number>();
-    for (const [name, record] of await from.load(discardPrefix)) {
-      const key = draftPrefix + name.slice(discardPrefix.length);
-      const discard = learn(key, record);
-      if (discard) recorded.set(key, discard.updatedAt);
-    }
-    return recorded;
+    for (const [name, record] of await from.load(discardPrefix)) learn(draftPrefix + name.slice(discardPrefix.length), record);
   };
   /** Key prefix of the loaded account's drafts; empty until the database has loaded them. */
   let account = "";
@@ -137,7 +131,7 @@ export function recoverDrafts(
         } catch { incomplete(); }
       }
       // Known before anything moves: a copy localStorage gives back, now or later, must not revive a discarded draft.
-      const recorded = await readDiscards(database);
+      await readDiscards(database);
       const moved: [string, SavedDraft][] = [];
       for (const [key, value] of legacy) {
         if (discarded(key, value)) continue;
@@ -154,25 +148,12 @@ export function recoverDrafts(
           else if (current !== null) active = true;
         } catch { active = true; incomplete(); }
       }
-      // The drafts are read and their legacy copies gone: from here on a read that fails costs only its own
-      // step, never the load.
-      // A discard record has done its work once no copy it hides is left: none in localStorage, none in the database.
-      const spent: string[] = [];
-      for (const [key, discardedAt] of recorded) {
-        try {
-          if (discards.get(key) !== discardedAt || storage.getItem(key) !== null) continue;
-          const kept = validDraft(key, await database.get(key));
-          if (!kept || !discarded(key, kept)) spent.push(key);
-        } catch {}
-      }
-      if (spent.length) {
-        // Housekeeping: a record that stays is read again, and tried again, at the next load.
-        await database.write(spent.map((key) => discardChange(key))).catch(() => {});
-        for (const key of spent) discards.delete(key);
-      }
       // Read again as the last step: the store cannot take another tab's announcement until this load has
       // ended, so a discard committed meanwhile is learned here, after the drafts it removed were read.
       // When this read fails, the discards read before the move still hold.
+      // No discard record is deleted here, not even one with no copy left to hide: only its draft's own
+      // save or removal writes it, in one transaction. A delete decided on this load's reads could
+      // remove the record of a save and discard another tab committed since.
       await readDiscards(database).catch(() => {});
       account = from;
       return records.filter(([key, value]) => {

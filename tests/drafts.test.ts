@@ -680,7 +680,38 @@ test("a draft saved again over a discarded copy the database still holds shows a
   await again.load("lex", loadRecovery);
   assert.equal(again.get(draft, draft.path)?.content, "written again");
 });
-test("a discard record goes once the legacy copy it guards is gone, and stays while a copy it hides is stored", async () => {
+test("a save and discard in another tab hold across every await of this tab's load over an older discard record", async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    // An earlier discard left its record; no copy of the draft is stored anywhere.
+    const stored = db.write([[discardRecordKey(key), { ...draft, repo: "", baseSha: null, original: "", content: "", updatedAt: 1 }]]);
+    // A damaged legacy record stays stored, so every start asks for the recovery code.
+    disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+    const one = new DraftStore(disk, db);
+    const two = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
+      write: race.port("write", changes => db.write(changes)),
+    });
+    const done = stored.then(() => one.load("lex", failedImport)).then(() => two.load("lex", loadRecovery));
+    return { done, disk, db, key, one, two };
+  }, async run => {
+    // A tab without the database keeps its copy in localStorage; tab one saves the draft, then discards it.
+    run.disk.setItem(run.key, JSON.stringify({ ...draft, content: "fallback copy", updatedAt: 5 }));
+    run.one.save({ ...draft, content: "saved again", updatedAt: 6 });
+    await run.one.flush();
+    run.one.remove(draft, draft.path);
+    await run.one.flush();
+  }, async run => {
+    assert.deepEqual(run.two.list(draft), []);
+    assert.ok(run.db.map.has(discardRecordKey(run.key)), "the newer discard record is still stored");
+    const again = new DraftStore(run.disk, run.db);
+    await again.load("lex", loadRecovery);
+    assert.equal(again.get(draft, draft.path), undefined);
+    assert.deepEqual(again.list(draft), []);
+  });
+  assert.ok(count >= 3);
+});
+test("a discard record stays while a copy it hides is stored, and no load removes one on its own", async () => {
   const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
   const discards = () => [...db.map.keys()].filter((name) => name.startsWith("astro-site-editor:discard:v1:"));
   await db.write([[key, draft]]);
@@ -703,13 +734,14 @@ test("a discard record goes once the legacy copy it guards is gone, and stays wh
   assert.equal(racing.get(draft, draft.path), undefined);
   assert.equal(disk.getItem(key), null);
   assert.deepEqual(discards(), [name]);
-  // Without that copy, the next load finds the record has nothing left to guard.
+  // Without that copy the record stays as well: a load never writes a discard record on its own (a
+  // save or a discard in another tab could have replaced it since it was read).
   await db.write([[key, null], [name, record]]);
   for (const reload of [1, 2]) {
     const again = new DraftStore(disk, db);
     await again.load("lex", loadRecovery);
     assert.deepEqual(again.list(draft), [], `reload ${reload}`);
-    assert.equal(db.map.size, 0, `reload ${reload}`);
+    assert.deepEqual([...db.map], [[name, record]], `reload ${reload}`);
   }
 });
 test("failed legacy cleanup says an old copy is still stored, and never brings the discarded draft back", async () => {
