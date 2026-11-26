@@ -40,7 +40,7 @@ export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
    * commits without its record. Once the transaction has committed, the
    * legacy bytes of its drafts are removed; a removal that fails is the
    * store's notice (never its error: the change itself was saved) until a
-   * later write leaves none behind.
+   * later write removes every copy it tries to.
    */
   write(changes: [string, SavedDraft | null][]): Promise<void>;
   /**

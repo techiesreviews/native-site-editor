@@ -837,6 +837,8 @@ test("failed legacy cleanup says an old copy is still stored, and never brings t
   await store.flush();
   assert.equal(store.error, null);
   assert.equal(disk.getItem(key), null);
+  // A clean write clears only the cleanup's own notice.
+  assert.match(store.notice!, /Some drafts could not be recovered/);
 });
 for (const change of ["save", "discard"] as const) test(`a failed cleanup after a ${change} is a notice, never a failed save`, async () => {
   const disk = storage(), memory = memoryDrafts(), key = draftKey(draft, draft.path);
@@ -868,7 +870,7 @@ for (const change of ["save", "discard"] as const) test(`a failed cleanup after 
   assert.equal(again.get(draft, draft.path)?.content, change === "save" ? "mine" : undefined);
   disk.setItem(key, newer);
   disk.removeItem = removeItem;
-  write(4);
+  assert.equal(write(4), true);
   await store.flush();
   assert.equal(store.notice, null);
   assert.equal(disk.getItem(key), null);
