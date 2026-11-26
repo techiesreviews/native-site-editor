@@ -1104,10 +1104,11 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       if (!range) throw new Conflict("That element is no longer on the page.");
       const outcome = await actions.media(command);
       if (outcome) return { ...outcome, result: { ...outcome.result, ...await hashOf(actions, path) } };
-      // Placed already: a failed read-back leaves the alt unknown (empty), never the placement unsaid.
-      const { text: placedSource, result } = await readBack(actions, path);
-      const placed = placedSource === undefined ? undefined : locateNativeElement(placedSource, node);
-      return { message: `Placed ${args.file} in ${args.element} on ${path}, unsaved.`, result: { ...result, alt: decodeHtmlEntities(placed ? startTagAttribute(placedSource!, placed, "alt")?.value ?? "" : "", true) } };
+      // Placed already: a failed read-back leaves the alt out (unknown, not empty), never the placement unsaid.
+      const { text: placedSource, result } = await readBack(actions, path), message = `Placed ${args.file} in ${args.element} on ${path}, unsaved.`;
+      if (placedSource === undefined) return { message, result };
+      const placed = locateNativeElement(placedSource, node);
+      return { message, result: { ...result, alt: decodeHtmlEntities(placed ? startTagAttribute(placedSource, placed, "alt")?.value ?? "" : "", true) } };
     }
     case "describe_media":
       if (args.page) await openPage(actions, args.page, command.expectedHash);
@@ -1477,10 +1478,10 @@ export async function applyStructural(command: AgentCommand, kept: PreparedText,
   try {
     const detail = await run(() => applySiteCommand(scoped.actions, command));
     await kept.finish!(() => scoped.current(), scoped.readDrafts);
-    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields. A recorded
-    // hash answers for the live read-back, so its failure (TOOLS-444) is not told beside it.
-    const { hashError, ...live } = detail.result ?? {};
-    outcome = { ...kept.outcome!, result: { ...live, ...(kept.outcome!.result?.hash === undefined && hashError !== undefined ? { hashError } : {}), ...kept.outcome!.result } };
+    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields. The receipt
+    // answers for the live read-back, so that read's failure (TOOLS-444) is not told beside it.
+    const { hashError: _unread, ...live } = detail.result ?? {};
+    outcome = { ...kept.outcome!, result: { ...live, ...kept.outcome!.result } };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
     if (!kept.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
