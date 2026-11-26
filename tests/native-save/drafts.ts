@@ -3,10 +3,14 @@ import { expect, type Page } from "@playwright/test";
 // The drafts this browser keeps (IndexedDB `native-site-editor-drafts`,
 // src/drafts.ts), once the page has written what it had pending. Flush the
 // store directly: a synthetic pagehide would also close the live agent relay.
+// Only drafts the editor would show: the store also holds discard records
+// (`astro-site-editor:discard:v1:`), and a draft no newer than its record is
+// hidden, as `discardHides` in src/drafts.ts decides.
 export type StoredDraft = { path: string; content: string; deleted?: true; movedFrom?: string; [field: string]: unknown };
 
 export async function storedDrafts(page: Page): Promise<StoredDraft[]> {
   const drafts = await page.evaluate(async () => {
+    const draftPrefix = "astro-site-editor:draft:v1:", discardPrefix = "astro-site-editor:discard:v1:";
     await (await import("/src/drafts.ts")).draftStore().flush();
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("native-site-editor-drafts");
@@ -15,10 +19,18 @@ export async function storedDrafts(page: Page): Promise<StoredDraft[]> {
       request.onerror = () => reject(request.error);
     });
     try {
-      return await new Promise<StoredDraft[]>((resolve, reject) => {
-        const request = db.transaction("drafts", "readonly").objectStore("drafts").getAll();
+      // Keys and values in one transaction: each draft is read with its discard record.
+      const store = db.transaction("drafts", "readonly").objectStore("drafts");
+      const read = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
+      });
+      const [keys, values] = await Promise.all([read(store.getAllKeys()), read<StoredDraft[]>(store.getAll())]);
+      const records = new Map(keys.map((key, index) => [String(key), values[index]]));
+      return [...records].flatMap(([key, draft]) => {
+        if (!key.startsWith(draftPrefix)) return [];
+        const discardedAt = Number(records.get(discardPrefix + key.slice(draftPrefix.length))?.updatedAt);
+        return Number(draft.updatedAt) <= discardedAt ? [] : [draft];
       });
     } finally {
       db.close();

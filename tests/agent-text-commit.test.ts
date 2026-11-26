@@ -39,7 +39,8 @@ async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
   // `hold`: a read returns the record it read only once the hold settles (a slow IndexedDB read).
   const reads: { hold?: Promise<void>; started?: () => void } = {};
   const store = new DraftStore(disk, { ...database, write: changes => { manualWrites++; return database.write(changes); },
-    get: async key => { const value = await database.get(key); if (reads.hold) { reads.started?.(); await reads.hold; } return value; } });
+    // The store reads a draft with its discard record (`pair`).
+    pair: async (key, other) => { const value = await database.pair(key, other); if (reads.hold) { reads.started?.(); await reads.hold; } return value; } });
   await store.load(scope.account, () => import("../src/drafts-recovery.ts"));
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const models = createDraftStore({ persistence: store });

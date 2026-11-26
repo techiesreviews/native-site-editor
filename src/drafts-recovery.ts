@@ -7,7 +7,7 @@ import type { DraftDatabase, DraftStore, SavedDraft } from "./drafts";
  * when localStorage holds a draft or cannot be listed, so a normal start
  * pays nothing for it.
  */
-export interface DraftRecovery extends DraftDatabase {
+export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
   /**
    * The localStorage draft keys a listing must still read: every key it can
    * list (one it cannot list shows the notice), and none once the database
@@ -25,11 +25,11 @@ export interface DraftRecovery extends DraftDatabase {
    */
   load(from: string): Promise<[string, unknown][]>;
   /**
-   * The database's `get`, with the draft's discard record read after the
-   * draft: a record its discard hides (a copy another tab was moving when
-   * the draft was discarded) is not returned. While localStorage copies are
-   * still read, the discard is also known here before the copy it guards
-   * can be read.
+   * The draft at `key`, read with its discard record in one transaction: a
+   * record its discard hides (a copy another tab was moving when the draft
+   * was discarded) is not returned. While localStorage copies are still
+   * read, the discard is also known here before the copy it guards can be
+   * read.
    */
   get(key: string): Promise<unknown>;
   /**
@@ -50,8 +50,9 @@ export interface DraftRecovery extends DraftDatabase {
   read(key: string, kept: SavedDraft | undefined): SavedDraft | undefined;
   /**
    * A change was queued. A removal that must survive retained legacy bytes
-   * takes its discard time now, not when it is written: a copy another tab
-   * saves in between is newer and stays. A save ends its draft's discard.
+   * (localStorage copies are still read, or holds one at this key right
+   * now) takes its discard time now, not when it is written: a copy another
+   * tab saves in between is newer and stays. A save ends its draft's discard.
    */
   save(key: string, value: SavedDraft | null): void;
 }
@@ -93,6 +94,8 @@ export function recoverDrafts(
   /** The store's error is a legacy copy this module could not remove: the next clean write clears it. */
   let uncleaned = false;
   const incomplete = () => { store.notice = RECOVERY_INCOMPLETE; };
+  /** localStorage holds a copy at `key` (another tab's, written since this tab loaded), or cannot say. */
+  const retained = (key: string) => { try { return storage.getItem(key) !== null; } catch { return true; } };
   /** A record no newer than its draft's discard: it must not come back. */
   const discarded = (key: string, draft: SavedDraft) => draft.updatedAt <= (discards.get(key) ?? -Infinity);
   /** One key that cannot be listed never hides the others. */
@@ -132,13 +135,19 @@ export function recoverDrafts(
       }
       // Known before anything moves: a copy localStorage gives back, now or later, must not revive a discarded draft.
       await readDiscards(database);
-      const moved: [string, SavedDraft][] = [];
-      for (const [key, value] of legacy) {
+      const newer: [string, SavedDraft, string][] = [];
+      for (const [key, value, raw] of legacy) {
         if (discarded(key, value)) continue;
         // A copy written while the database was unavailable may be the newer one.
         const kept = validDraft(key, await database.get(key));
-        if (!kept || kept.updatedAt <= value.updatedAt) moved.push([key, value]);
+        if (!kept || kept.updatedAt <= value.updatedAt) newer.push([key, value, raw]);
       }
+      // Only a copy localStorage still holds moves, checked as the write's transaction starts (no
+      // await in between). One that is gone was moved by another tab, and a discard there leaves no
+      // record once no copy is stored: writing it now would bring the discarded draft back. A copy
+      // that cannot be read again stays where it is.
+      const moved = newer.filter(([key, , raw]) => { try { return storage.getItem(key) === raw; } catch { return false; } })
+        .map(([key, value]): [string, SavedDraft] => [key, value]);
       if (moved.length) await database.write(moved);
       const records = await database.load(from);
       for (const [key, , raw] of legacy) {
@@ -175,9 +184,10 @@ export function recoverDrafts(
       }
     },
     async get(key) {
-      const record = await database?.get(key);
-      // The draft first: a discard committed between the two reads is then seen with its record.
-      const discard = (active ? learn : validDraft)(key, await database?.get(discardKey(key)));
+      if (!database) return;
+      // Both as one transaction left them: no save or discard in another tab falls between the two reads.
+      const [record, stored] = await database.pair(key, discardKey(key));
+      const discard = (active ? learn : validDraft)(key, stored);
       const draft = validDraft(key, record);
       return draft && discard && draft.updatedAt <= discard.updatedAt ? undefined : record;
     },
@@ -212,7 +222,7 @@ export function recoverDrafts(
     },
     save(key, value) {
       if (value) discards.delete(key);
-      else if (active) discards.set(key, Date.now());
+      else if (active || retained(key)) discards.set(key, Date.now());
     },
   };
 }

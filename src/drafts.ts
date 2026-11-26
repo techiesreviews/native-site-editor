@@ -97,7 +97,7 @@ export const discardHides = (key: string, record: unknown, discard: unknown) =>
  * its discard record hides is not read. The localStorage copy stays stored
  * for the next load.
  */
-const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): DraftDatabase & Pick<DraftRecovery, "save"> => {
+const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): Omit<DraftDatabase, "pair"> & Pick<DraftRecovery, "save"> => {
   /** Discards queued here, by draft key: each is written with its record. */
   const discards = new Map<string, number>();
   /** The record, unless its draft's discard record hides it. */
@@ -112,11 +112,8 @@ const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem"
       const before = await recorded(), records = await database.load(from), after = await recorded().catch(() => before);
       return records.filter(([key, record]) => kept(key, kept(key, record, before.get(key)), after.get(key)));
     },
-    async get(key) {
-      // The draft first: a discard committed between the two reads is then seen with its record.
-      const record = await database.get(key);
-      return kept(key, record, await database.get(discardChange(key)[0]));
-    },
+    // The draft with its discard record, as one transaction left them: no save or discard falls between the two.
+    get: async (key) => kept(key, ...await database.pair(key, discardChange(key)[0])),
     write: (changes) => database.write(changes.flatMap(([key, value]) => {
       const discardedAt = discards.get(key);
       return value || discardedAt !== undefined ? [[key, value], discardChange(key, value ? undefined : discardedAt)] : [[key, value]];
@@ -146,6 +143,8 @@ export interface DraftDatabase {
   /** Every record whose key starts with `from`, as [key, record]. */
   load(from: string): Promise<[string, unknown][]>;
   get(key: string): Promise<unknown>;
+  /** The records at `key` and `other`, read in one transaction: a draft with its discard record. */
+  pair(key: string, other: string): Promise<[unknown, unknown]>;
   /** Puts (a record) and deletes (null) in one transaction; resolves once it commits. */
   write(changes: [string, SavedDraft | null][]): Promise<void>;
 }
@@ -165,7 +164,7 @@ export class DraftStore {
   private recovery?: DraftRecovery;
   private deleted = new Set<string>();
   /** The database in use: the recovery, or its stand-in, when a discard must leave a record (`save` is told each queued change). */
-  private db?: DraftDatabase & Partial<Pick<DraftRecovery, "save">>;
+  private db?: Omit<DraftDatabase, "pair"> & Partial<Pick<DraftRecovery, "save">>;
   /** Key prefix of the loaded account's drafts. */
   private from = "";
   private pending = new Map<string, SavedDraft | null>();
@@ -351,7 +350,7 @@ export class DraftStore {
     void settled.finally(() => this.writes.delete(settled));
     return (this.writing = settled);
   }
-  private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
+  private async settle(db: Pick<DraftDatabase, "write">, batch: [string, SavedDraft | null][], written: Promise<void>) {
     const failed: [string, SavedDraft | null][] = [];
     try {
       await written;
@@ -512,6 +511,10 @@ export function indexedDbDrafts(name = draftDatabaseName, factory: IDBFactory | 
     async get(key) {
       return request((await connection.open()).transaction("drafts", "readonly").objectStore("drafts").get(key));
     },
+    async pair(key, other) {
+      const store = (await connection.open()).transaction("drafts", "readonly").objectStore("drafts");
+      return Promise.all([request(store.get(key)), request(store.get(other))]);
+    },
     // Synchronous when open, so the transaction is queued before this returns.
     write(changes) {
       if (connection.current)
@@ -528,6 +531,7 @@ export function memoryDrafts(): DraftDatabase & { map: Map<string, SavedDraft> }
     map,
     async load(from) { return [...map].filter(([key]) => key.startsWith(from)).map(([key, value]) => [key, structuredClone(value)]); },
     async get(key) { return structuredClone(map.get(key)); },
+    async pair(key, other) { return [structuredClone(map.get(key)), structuredClone(map.get(other))]; },
     async write(changes) { for (const [key, value] of changes) value ? map.set(key, structuredClone(value)) : map.delete(key); },
   };
 }

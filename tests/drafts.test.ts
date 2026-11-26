@@ -502,8 +502,8 @@ test("another tab's discard holds across every await of this tab's load", async 
     disk.getItem = () => { throw new Error("Legacy storage temporarily unreadable"); };
     const one = new DraftStore(disk, db);
     const two = new DraftStore(disk, {
-      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
-      write: race.port("write", changes => db.write(changes)),
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
     });
     // A BroadcastChannel delivers in a later task, never inside the sender's.
     one.announce = keys => void setTimeout(() => void two.refresh(keys));
@@ -570,8 +570,8 @@ test("a discard holds across every await of another tab's move of the legacy cop
     // While the legacy copy is stored, this tab's discard leaves a record.
     const one = new DraftStore(disk, db);
     const two = new DraftStore(disk, {
-      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
-      write: race.port("write", changes => db.write(changes)),
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
     });
     // A BroadcastChannel delivers in a later task, never inside the sender's.
     one.announce = keys => void setTimeout(() => void two.refresh(keys));
@@ -599,8 +599,8 @@ test("a discard, and a moved copy written back after it, hold across every await
     disk.setItem(key, JSON.stringify(draft));
     const one = new DraftStore(disk, db);
     const two = new DraftStore(disk, {
-      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
-      write: race.port("write", changes => db.write(changes)),
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
     });
     one.announce = keys => void setTimeout(() => void two.refresh(keys));
     const done = stored.then(() => one.load("lex", failedImport)).then(() => two.load("lex", failedImport));
@@ -689,8 +689,8 @@ test("a save and discard in another tab hold across every await of this tab's lo
     disk.setItem("astro-site-editor:draft:v1:damaged", "{");
     const one = new DraftStore(disk, db);
     const two = new DraftStore(disk, {
-      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
-      write: race.port("write", changes => db.write(changes)),
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
     });
     const done = stored.then(() => one.load("lex", failedImport)).then(() => two.load("lex", loadRecovery));
     return { done, disk, db, key, one, two };
@@ -710,6 +710,75 @@ test("a save and discard in another tab hold across every await of this tab's lo
     assert.deepEqual(again.list(draft), []);
   });
   assert.ok(count >= 3);
+});
+test("a discard in a tab that finished its recovery holds across every await of another tab's move", async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    disk.setItem(key, JSON.stringify(draft));
+    const one = new DraftStore(disk, db);
+    const two = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
+    });
+    return { done: two.load("lex", loadRecovery), disk, db, key, one };
+  }, async run => {
+    // Tab one moves the copy, removes it from localStorage and ends its load; then the draft is discarded there.
+    await run.one.load("lex", loadRecovery);
+    run.one.remove(draft, draft.path);
+    await run.one.flush();
+  }, async run => {
+    assert.equal(run.db.map.has(run.key), false, "the move wrote no copy back after the discard");
+    const again = new DraftStore(run.disk, run.db);
+    await again.load("lex", loadRecovery);
+    assert.deepEqual(again.list(draft), []);
+  });
+  assert.ok(count >= 4);
+});
+test("a discard after the recovery finished leaves its record when localStorage holds a copy again", async () => {
+  const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+  await db.write([[key, draft]]);
+  // A damaged legacy record stays stored, so this start has the recovery code; it leaves no legacy draft to read.
+  disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  // A tab without the database then keeps its copy in localStorage.
+  disk.setItem(key, JSON.stringify({ ...draft, content: "fallback copy", updatedAt: 5 }));
+  store.remove(draft, draft.path);
+  await store.flush();
+  assert.ok(db.map.has(discardRecordKey(key)), "the discard left its record");
+  const again = new DraftStore(disk, db);
+  await again.load("lex", loadRecovery);
+  assert.deepEqual(again.list(draft), []);
+  assert.equal(disk.getItem(key), null);
+});
+for (const code of ["without", "with"] as const) test(`a refresh never shows the copy a discard record hid when another tab saves between its reads (${code} the recovery code)`, async () => {
+  const count = await forEachAwait(race => {
+    const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
+    // A copy another tab was moving when the draft was discarded: stored, and hidden by the discard record.
+    const stored = db.write([
+      [key, { ...draft, content: "discarded text", updatedAt: 3 }],
+      [discardRecordKey(key), { ...draft, repo: "", baseSha: null, original: "", content: "", updatedAt: 5 }],
+    ]);
+    // A damaged legacy record stays stored, so a start asks for the recovery code.
+    disk.setItem("astro-site-editor:draft:v1:damaged", "{");
+    const one = new DraftStore(disk, db);
+    const two = new DraftStore(disk, {
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
+    });
+    const done = stored.then(() => one.load("lex", failedImport)).then(() => two.load("lex", code === "with" ? loadRecovery : failedImport))
+      .then(() => two.refresh([key]));
+    return { done, key, one, two };
+  }, async run => {
+    run.one.save({ ...draft, content: "saved again", updatedAt: 6 });
+    await run.one.flush();
+  }, async run => {
+    assert.notEqual(run.two.get(draft, draft.path)?.content, "discarded text");
+    // The save's announcement, once the tab has loaded.
+    await run.two.refresh([run.key]);
+    assert.equal(run.two.get(draft, draft.path)?.content, "saved again");
+  });
+  assert.ok(count >= 4);
 });
 test("a discard record stays while a copy it hides is stored, and no load removes one on its own", async () => {
   const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
@@ -834,11 +903,15 @@ test("another tab cleaning up the same legacy copy is not incomplete recovery", 
     const disk = storage(), db = memoryDrafts(), key = draftKey(draft, draft.path);
     disk.setItem(key, JSON.stringify(draft));
     const store = new DraftStore(disk, {
-      get: race.port("get", name => db.get(name)), load: race.port("load", from => db.load(from)),
-      write: race.port("write", changes => db.write(changes)),
+      get: race.port("get", name => db.get(name)), pair: race.port("pair", (name, other) => db.pair(name, other)),
+      load: race.port("load", from => db.load(from)), write: race.port("write", changes => db.write(changes)),
     });
-    return { done: store.load("lex", loadRecovery), disk, key, store };
-  }, run => run.disk.removeItem(run.key), run => {
+    return { done: store.load("lex", loadRecovery), disk, db, key, store };
+  }, async run => {
+    // As the recovery code cleans up: the copy leaves localStorage only once the database holds it.
+    await run.db.write([[run.key, draft]]);
+    run.disk.removeItem(run.key);
+  }, run => {
     assert.deepEqual(run.store.get(draft, draft.path), draft);
     assert.equal(run.store.notice, null);
   });

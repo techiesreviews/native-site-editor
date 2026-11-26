@@ -108,6 +108,9 @@ test("a draft its discard record hides is absent for agents too: commits, snapsh
   const manual = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, fake.factory));
   await manual.load("lex");
   assert.equal(manual.get(draft, draft.path), undefined, "the editor shows no draft");
+  // Reading the key again reads the draft with its record, in one transaction of the real database.
+  await manual.refresh([key]);
+  assert.equal(manual.get(draft, draft.path), undefined, "nor after another tab's announcement");
   assert.deepEqual((await records.snapshot(draft)).drafts, []);
   // A plan made against the hidden copy is stale; one made against "no draft" is what the editor shows.
   await assert.rejects(records.commit({ ...command(), expectedDrafts: [[key, draft]] }), code("conflict"));
