@@ -325,3 +325,57 @@ test("off the atomic path, a write whose file the user typed into since it was m
     if (mounted) assert.deepEqual(plans, [{ onto: merged.replace("past", "past exactly") }], "typed again while saved: made again on that text");
   }
 });
+
+// TOOLS-444: a change that landed but could not be read back says why, never that the file is missing.
+test("a change whose read-back fails stays applied with its Undo and says why; a missing file still reads as missing (TOOLS-444)", async () => {
+  const path = "index.html", source = "<h1>Fresh bread</h1>\n", changed = "<h1>Warm bread</h1>\n";
+  const m = createMemoryWorkspace({ branch: { [path]: source }, open: path });
+  let readFails = false;
+  const actions = {
+    text: async file => { if (readFails) throw new Error("The draft store is unavailable."); return m.workspace.source(file); },
+    isMounted: file => m.openFile() === file, atomicText: () => false, edits: createGuardedEdits(m.workspace),
+  } satisfies Pick<AgentSiteActions, "text" | "isMounted" | "atomicText" | "edits">;
+  // The read-back alone fails: the guarded edit's own reads go through the workspace.
+  const run = actions.edits.run.bind(actions.edits);
+  actions.edits.run = async (...args) => { const outcome = await run(...args); readFails = true; return outcome; };
+  const command: AgentCommand = { id: "write-unread", operation: "write_file", path, branch: "dev", commit: "c",
+    content: changed, expectedHash: await textHash(source), state: "pending", createdAt: 1 };
+  const outcome = await applySiteCommand(actions as unknown as AgentSiteActions, command); // eslint-disable-line no-restricted-syntax -- a file write reads only these ports.
+  assert.equal(outcome.message, `Changed ${path} in the editor as an unsaved draft.`);
+  assert.equal(outcome.result!.hash, null);
+  assert.equal(outcome.result!.hashError, `The change is applied, but reading ${path} back failed (The draft store is unavailable.), so its hash is unknown. Do not apply it again; read ${path} for its hash.`);
+  assert.equal(m.workspace.source(path), changed);
+  // A fresh read gives a usable hash: the next change on it lands and reads back.
+  readFails = false;
+  actions.edits.run = run;
+  const again = await applySiteCommand(actions as unknown as AgentSiteActions, { ...command, id: "write-again", // eslint-disable-line no-restricted-syntax -- as above.
+    content: "<h1>Rye bread</h1>\n", expectedHash: await textHash(changed) });
+  assert.deepEqual(again.result, { path, hash: await textHash("<h1>Rye bread</h1>\n") });
+  assert.ok(m.undo());
+  assert.ok(m.undo());
+  assert.equal(m.workspace.source(path), source);
+});
+
+test("a media change whose read-back fails says why; a media record not there yet still reads as missing (TOOLS-444)", async () => {
+  const path = "index.html", source = '<main><section><img src="/old.png" alt="Old"></section></main>';
+  let page = source, readFails = false;
+  const actions = {
+    open: async () => true, isMounted: () => true,
+    text: async file => { if (readFails) throw new Error("The connection dropped."); return file === path ? page : undefined; },
+    media: async () => { page = page.replace("/old.png", "/images/a.png"); readFails = true; },
+  } satisfies Pick<AgentSiteActions, "open" | "isMounted" | "text" | "media">;
+  const command = (operation: AgentCommand["operation"], args: AgentCommand["args"]): AgentCommand => ({ id: operation, operation, path, branch: "dev", commit: "c",
+    content: "", args, state: "pending", createdAt: 1 });
+  const placed = await applySiteCommand(actions as unknown as AgentSiteActions, { ...command("place_media", { file: "images/a.png", element: "0.0.0" }), expectedHash: await textHash(source) }); // eslint-disable-line no-restricted-syntax -- placing media reads only these ports.
+  assert.equal(placed.message, `Placed images/a.png in 0.0.0 on ${path}, unsaved.`);
+  assert.equal(placed.result!.hash, null);
+  assert.match(String(placed.result!.hashError), /reading index\.html back failed \(The connection dropped\.\).*Do not apply it again/);
+  readFails = false;
+  const described = await applySiteCommand(actions as unknown as AgentSiteActions, command("describe_media", { file: "images/a.png", text: "A loaf" })); // eslint-disable-line no-restricted-syntax -- as above.
+  assert.match(String(described.result!.hashError), /reading \.editor\/media\.json back failed \(The connection dropped\.\)/);
+  // No media record file yet: missing, as before, with no read failure.
+  readFails = false;
+  actions.media = async () => {};
+  const missing = await applySiteCommand(actions as unknown as AgentSiteActions, command("describe_media", { file: "images/a.png", text: "A loaf" })); // eslint-disable-line no-restricted-syntax -- as above.
+  assert.deepEqual(missing.result, { hash: null });
+});
