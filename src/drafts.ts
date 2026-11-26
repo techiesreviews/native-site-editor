@@ -177,7 +177,7 @@ export class DraftStore {
   /** Per key, how often this tab changed it: an agent's read-back loses to any change made during its read. */
   private changes = new Map<string, number>();
   error: string | null = null;
-  /** Not every stored draft could be read (src/drafts-recovery.ts); nothing failed to save. */
+  /** Not every stored draft could be read, or an old copy could not be removed (src/drafts-recovery.ts); nothing failed to save. */
   notice: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;

@@ -824,9 +824,9 @@ test("failed legacy cleanup says an old copy is still stored, and never brings t
   disk.removeItem = () => { throw new Error("Removal denied"); };
   store.remove(draft, draft.path);
   await store.flush();
-  // The discard committed with its record, so the message promises no return of the draft.
-  assert.match(store.error!, /old copy of a draft is still stored/);
-  assert.doesNotMatch(store.error!, /reappear/);
+  // The discard committed with its record: nothing failed to save, and the earlier notice stays.
+  assert.equal(store.error, null);
+  assert.match(store.notice!, /Some drafts could not be recovered/);
   assert.equal(disk.getItem(key), JSON.stringify(draft));
   const again = new DraftStore(disk, db);
   await again.load("lex", loadRecovery);
@@ -836,6 +836,41 @@ test("failed legacy cleanup says an old copy is still stored, and never brings t
   store.remove(draft, draft.path);
   await store.flush();
   assert.equal(store.error, null);
+  assert.equal(disk.getItem(key), null);
+});
+for (const change of ["save", "discard"] as const) test(`a failed cleanup after a ${change} is a notice, never a failed save`, async () => {
+  const disk = storage(), memory = memoryDrafts(), key = draftKey(draft, draft.path);
+  const newer = JSON.stringify({ ...draft, content: "another tab's copy", updatedAt: 2 });
+  disk.setItem(key, JSON.stringify(draft));
+  // Another tab writes a newer localStorage copy while this tab loads: reads keep consulting localStorage.
+  const db: DraftDatabase = { ...memory, load: async from => {
+    if (from.includes("draft:v1:")) disk.setItem(key, newer);
+    return memory.load(from);
+  } };
+  const store = new DraftStore(disk, db), errors: string[] = [];
+  store.onError = message => { errors.push(message); };
+  await store.load("lex", loadRecovery);
+  assert.equal(store.notice, null);
+  const removeItem = disk.removeItem;
+  disk.removeItem = () => { throw new Error("Removal denied"); };
+  const write = (updatedAt: number) => change === "save"
+    ? store.save({ ...draft, content: "mine", updatedAt })
+    : store.remove(draft, draft.path);
+  assert.equal(write(3), true);
+  await store.flush();
+  // The change committed (a save deletes the discard record, a discard puts it); only the old copy stays.
+  assert.equal(store.error, null);
+  assert.deepEqual(errors, []);
+  assert.match(store.notice!, /old copy of a draft is still stored/);
+  assert.equal(disk.getItem(key), newer);
+  const again = new DraftStore(disk, memory);
+  await again.load("lex", loadRecovery);
+  assert.equal(again.get(draft, draft.path)?.content, change === "save" ? "mine" : undefined);
+  disk.setItem(key, newer);
+  disk.removeItem = removeItem;
+  write(4);
+  await store.flush();
+  assert.equal(store.notice, null);
   assert.equal(disk.getItem(key), null);
 });
 test("invalid fallback records report incomplete recovery without deleting their bytes", () => {
