@@ -849,8 +849,9 @@ for (const change of ["save", "discard"] as const) test(`a failed cleanup after 
     if (from.includes("draft:v1:")) disk.setItem(key, newer);
     return memory.load(from);
   } };
-  const store = new DraftStore(disk, db), errors: string[] = [];
+  const store = new DraftStore(disk, db), errors: string[] = [], notices: (string | null)[] = [];
   store.onError = message => { errors.push(message); };
+  store.onNotice = () => { notices.push(store.notice); };
   await store.load("lex", loadRecovery);
   assert.equal(store.notice, null);
   const removeItem = disk.removeItem;
@@ -864,6 +865,8 @@ for (const change of ["save", "discard"] as const) test(`a failed cleanup after 
   assert.equal(store.error, null);
   assert.deepEqual(errors, []);
   assert.match(store.notice!, /old copy of a draft is still stored/);
+  // Told at once, so the open editors show it without waiting for another redraw.
+  assert.deepEqual(notices, [store.notice]);
   assert.equal(disk.getItem(key), newer);
   const again = new DraftStore(disk, memory);
   await again.load("lex", loadRecovery);
@@ -873,7 +876,35 @@ for (const change of ["save", "discard"] as const) test(`a failed cleanup after 
   assert.equal(write(4), true);
   await store.flush();
   assert.equal(store.notice, null);
+  assert.equal(notices.at(-1), null);
   assert.equal(disk.getItem(key), null);
+});
+for (const cleanup of ["fails", "succeeds"] as const) test(`a write still running at sign-out leaves the next session's notice alone when its cleanup ${cleanup}`, async () => {
+  const disk = storage(), memory = memoryDrafts(), key = draftKey(draft, draft.path);
+  const newer = JSON.stringify({ ...draft, content: "another tab's copy", updatedAt: 2 });
+  disk.setItem(key, JSON.stringify(draft));
+  let hold: Promise<void> | undefined, resume = () => {};
+  const db: DraftDatabase = { ...memory,
+    load: async from => {
+      if (from.includes("draft:v1:")) disk.setItem(key, newer);
+      return memory.load(from);
+    },
+    write: async changes => { await hold; return memory.write(changes); },
+  };
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  if (cleanup === "fails") disk.removeItem = () => { throw new Error("Removal denied"); };
+  hold = new Promise(resolve => { resume = resolve; });
+  store.save({ ...draft, content: "mine", updatedAt: 3 });
+  const written = store.flush();
+  store.release();
+  // The next session's own notice, which the old write must neither replace nor clear.
+  const next = cleanup === "fails" ? null : "Browser storage could not be updated. An old copy of a draft is still stored in this browser.";
+  store.notice = next;
+  resume();
+  await written;
+  assert.equal(store.notice, next);
+  assert.equal(store.error, null);
 });
 test("invalid fallback records report incomplete recovery without deleting their bytes", () => {
   const disk = storage(), key = draftKey(draft, draft.path), raw = JSON.stringify({ version: 1 });

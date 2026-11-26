@@ -605,6 +605,10 @@ export function clearHistory() {
   sourceStore().clearHistory();
   // A draft whose write failed is written again (the storage may have room now).
   sourceStore().retry();
+  refreshMounted();
+}
+/** Redraws every open editor's controls and status line (the draft store's notice changed). */
+function refreshMounted() {
   for (const editor of mounted.values()) editor.refresh();
 }
 export function clearDrafts() {
@@ -966,6 +970,7 @@ export function mountSourceEditor(
     },
   };
   mounted.set(file.path, registration);
+  draftStore().onNotice = refreshMounted;
   liveMounted.add(registration);
   update();
   attach();

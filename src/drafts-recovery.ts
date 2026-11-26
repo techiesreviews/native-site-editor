@@ -56,6 +56,8 @@ export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
    * tab saves in between is newer and stays. A save ends its draft's discard.
    */
   save(key: string, value: SavedDraft | null): void;
+  /** The store signed out: a write still running no longer changes its notice, which is the next session's. */
+  release(): void;
 }
 
 const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
@@ -71,7 +73,7 @@ const CLEANUP_FAILED = "Browser storage could not be updated. An old copy of a d
  * `discardChange` is the store's discard record for a draft key (src/drafts.ts), as a database change.
  */
 export function recoverDrafts(
-  store: Pick<DraftStore, "notice">,
+  store: Pick<DraftStore, "notice" | "onNotice">,
   storage: Pick<Storage, "getItem" | "removeItem" | "key" | "length">,
   database: DraftDatabase | undefined,
   validDraft: (key: string, value: unknown) => SavedDraft | undefined,
@@ -96,6 +98,8 @@ export function recoverDrafts(
   let account = "";
   /** Unreadable or newer legacy keys remain: reads consult localStorage alongside the database. */
   let active = false;
+  /** The store signed out: its notice belongs to the next session. */
+  let released = false;
   const incomplete = () => { store.notice = RECOVERY_INCOMPLETE; };
   /** localStorage holds a copy at `key` (another tab's, written since this tab loaded), or cannot say. */
   const retained = (key: string) => { try { return storage.getItem(key) !== null; } catch { return true; } };
@@ -214,14 +218,18 @@ export function recoverDrafts(
       for (const [key, raw] of before) try {
         if (storage.getItem(key) === raw) storage.removeItem(key);
       } catch { failed = true; }
+      if (released) return;
       // A notice already shown (incomplete recovery) stays; the next clean write clears only this one.
+      const shown = store.notice;
       if (!failed) {
-        if (store.notice === CLEANUP_FAILED) store.notice = null;
+        if (shown === CLEANUP_FAILED) store.notice = null;
       } else store.notice ??= CLEANUP_FAILED;
+      if (store.notice !== shown) store.onNotice?.();
     },
     save(key, value) {
       if (value) discards.delete(key);
       else if (active || retained(key)) discards.set(key, Date.now());
     },
+    release() { released = true; },
   };
 }
