@@ -8,7 +8,7 @@ import { gitBlobSha } from "./uploads";
  * when localStorage holds a draft or cannot be listed, so a normal start
  * pays nothing for it.
  */
-export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
+export interface DraftRecovery extends Omit<DraftDatabase, "pair" | "update"> {
   /**
    * The localStorage draft keys a listing must still read: every key it can
    * list (one it cannot list shows the notice), and none once the database
@@ -145,8 +145,9 @@ export function recoverDrafts(
    * lost. Mended (a key spelled another way, a SHA in capitals), it becomes its file's draft while the
    * file has no record and no discard made after it. A plain text edit whose text is already held (its
    * file's healthy draft has the same text, or the text is a GitHub blob it or that draft began from) is
-   * removed. Either way the copy leaves localStorage only while it still holds the bytes judged here, so
-   * a copy another tab rewrote meanwhile stays. True once the copy is gone.
+   * removed. The file's records are judged and the repair written in one transaction, so no save or
+   * discard another tab commits falls between them. The copy leaves localStorage only while it still
+   * holds the bytes judged here, so a copy another tab rewrote meanwhile stays. True once it is gone.
    */
   const resolve = async (from: DraftDatabase, mine: string, key: string, raw: string, fields: Fields) => {
     const names = [named(key), keyOf(fields)].filter((name) => name !== undefined);
@@ -154,25 +155,33 @@ export function recoverDrafts(
     const mended = { ...fields, baseSha: blobName(fields.baseSha) ?? fields.baseSha };
     const draft = validDraft(keyOf(mended) ?? "", mended);
     const file = draft ? draftKey(draft, draft.path) : names[0];
-    const [record, discard] = await from.pair(file, discardKey(file));
-    const discardedAt = validDraft(file, discard)?.updatedAt ?? -Infinity;
-    const current = validDraft(file, record);
-    const held = current && current.updatedAt > discardedAt && !current.opaque && !current.upload ? current : undefined;
     const text = fields.content;
-    const safe = typeof text === "string" && Object.keys(fields).every((field) => EDIT_FIELDS.has(field)) &&
-      ((held && !held.deleted && held.content === text) ||
-        [blobName(fields.baseSha), blobName(held?.baseSha)].includes(await gitBlobSha(new TextEncoder().encode(text))));
+    const plain = typeof text === "string" && Object.keys(fields).every((field) => EDIT_FIELDS.has(field));
+    // Hashed before the file's records are read: nothing awaits between judging them and acting.
+    const blob = plain ? await gitBlobSha(new TextEncoder().encode(text)) : undefined;
     /** What localStorage holds at the copy's key now; undefined when it cannot say. */
     const stored = () => { try { return storage.getItem(key); } catch { return undefined; } };
-    // Gone (another tab resolved it) is resolved; other bytes are judged on a later load.
-    let now = stored();
-    if (!safe) {
-      if (!draft || record !== undefined || draft.updatedAt <= discardedAt) return false;
-      // Checked as the write's transaction starts (no await in between), like the move of a readable copy.
-      if (now !== raw) return now === null;
-      await from.write([[file, draft], discardChange(file)]);
-      now = stored();
-    }
+    let resolved = false as boolean | "repaired";
+    await from.update([file, discardKey(file)], ([record, discard]) => {
+      const discardedAt = validDraft(file, discard)?.updatedAt ?? -Infinity;
+      const current = validDraft(file, record);
+      const held = current && current.updatedAt > discardedAt && !current.opaque && !current.upload ? current : undefined;
+      const now = stored();
+      // Gone (another tab resolved it) is resolved; other bytes are judged on a later load.
+      if (now !== raw) { resolved = now === null; return; }
+      if (plain && ((held && !held.deleted && held.content === text) ||
+        [blobName(fields.baseSha), blobName(held?.baseSha)].includes(blob))) {
+        // Removed while the transaction holds the file's records: the text that makes it safe stays put.
+        try { storage.removeItem(key); resolved = true; } catch {}
+        return;
+      }
+      if (!draft || record !== undefined || draft.updatedAt <= discardedAt) return;
+      resolved = "repaired";
+      return [[file, draft], discardChange(file)];
+    });
+    if (resolved !== "repaired") return resolved;
+    // The copy goes once its repair has committed, and only while it still holds the same bytes.
+    const now = stored();
     if (now !== raw) return now === null;
     try { storage.removeItem(key); return true; } catch { return false; }
   };

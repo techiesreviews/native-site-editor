@@ -97,7 +97,7 @@ export const discardHides = (key: string, record: unknown, discard: unknown) =>
  * its discard record hides is not read. The localStorage copy stays stored
  * for the next load.
  */
-const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): Omit<DraftDatabase, "pair"> & Pick<DraftRecovery, "save"> => {
+const guardDiscards = (database: DraftDatabase, storage: Pick<Storage, "getItem">): Omit<DraftDatabase, "pair" | "update"> & Pick<DraftRecovery, "save"> => {
   /** Discards queued here, by draft key: each is written with its record. */
   const discards = new Map<string, number>();
   /** The record, unless its draft's discard record hides it. */
@@ -147,6 +147,12 @@ export interface DraftDatabase {
   pair(key: string, other: string): Promise<[unknown, unknown]>;
   /** Puts (a record) and deletes (null) in one transaction; resolves once it commits. */
   write(changes: [string, SavedDraft | null][]): Promise<void>;
+  /**
+   * Reads the records at `keys` and writes the changes `decide` returns for them in one transaction,
+   * so nothing another tab commits falls between the reading and the writing. `decide` runs while
+   * the transaction holds them; it returns nothing to write nothing. Resolves once it commits.
+   */
+  update(keys: string[], decide: (records: unknown[]) => [string, SavedDraft | null][] | void): Promise<void>;
 }
 
 /**
@@ -164,7 +170,7 @@ export class DraftStore {
   private recovery?: DraftRecovery;
   private deleted = new Set<string>();
   /** The database in use: the recovery, or its stand-in, when a discard must leave a record (`save` is told each queued change). */
-  private db?: Omit<DraftDatabase, "pair"> & Partial<Pick<DraftRecovery, "save">>;
+  private db?: Omit<DraftDatabase, "pair" | "update"> & Partial<Pick<DraftRecovery, "save">>;
   /** Key prefix of the loaded account's drafts. */
   private from = "";
   private pending = new Map<string, SavedDraft | null>();
@@ -493,16 +499,19 @@ export function indexedDbDrafts(name = draftDatabaseName, factory: IDBFactory | 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Browser draft storage failed."));
   });
+  const put = (store: IDBObjectStore, changes: [string, SavedDraft | null][]) => {
+    for (const [key, value] of changes) value ? store.put(value, key) : store.delete(key);
+  };
+  const committed = (tx: IDBTransaction) => new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error ?? new Error("Browser draft storage failed."));
+  });
   const write = (into: IDBDatabase, changes: [string, SavedDraft | null][]) => {
     const tx = into.transaction("drafts", "readwrite");
-    const store = tx.objectStore("drafts");
-    for (const [key, value] of changes) value ? store.put(value, key) : store.delete(key);
-    const committed = new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error ?? new Error("Browser draft storage failed."));
-    });
+    put(tx.objectStore("drafts"), changes);
+    const done = committed(tx);
     tx.commit?.();
-    return committed;
+    return done;
   };
   return {
     async load(from) {
@@ -524,18 +533,30 @@ export function indexedDbDrafts(name = draftDatabaseName, factory: IDBFactory | 
         try { return write(connection.current, changes); } catch (error) { return Promise.reject(error); }
       return connection.open().then((into) => write(into, changes));
     },
+    async update(keys, decide) {
+      const tx = (await connection.open()).transaction("drafts", "readwrite");
+      const store = tx.objectStore("drafts"), done = committed(tx);
+      // Still active when the reads resolve: the decision and its writes join the same transaction.
+      try { put(store, decide(await Promise.all(keys.map((key) => request(store.get(key))))) ?? []); }
+      catch (error) { tx.abort(); throw error; }
+      await done;
+    },
   };
 }
 
 /** A DraftDatabase in memory, for tests. */
 export function memoryDrafts(): DraftDatabase & { map: Map<string, SavedDraft> } {
   const map = new Map<string, SavedDraft>();
+  const apply = (changes: [string, SavedDraft | null][]) => {
+    for (const [key, value] of changes) value ? map.set(key, structuredClone(value)) : map.delete(key);
+  };
   return {
     map,
     async load(from) { return [...map].filter(([key]) => key.startsWith(from)).map(([key, value]) => [key, structuredClone(value)]); },
     async get(key) { return structuredClone(map.get(key)); },
     async pair(key, other) { return [structuredClone(map.get(key)), structuredClone(map.get(other))]; },
-    async write(changes) { for (const [key, value] of changes) value ? map.set(key, structuredClone(value)) : map.delete(key); },
+    async write(changes) { apply(changes); },
+    async update(keys, decide) { apply(decide(keys.map((key) => structuredClone(map.get(key)))) ?? []); },
   };
 }
 
