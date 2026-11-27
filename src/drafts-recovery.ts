@@ -1,4 +1,5 @@
-import type { DraftDatabase, DraftStore, SavedDraft } from "./drafts";
+import { draftKey, type DraftDatabase, type DraftStore, type SavedDraft } from "./drafts";
+import { gitBlobSha } from "./uploads";
 
 /**
  * The rare half of DraftStore (src/drafts.ts): drafts still in localStorage
@@ -18,7 +19,9 @@ export interface DraftRecovery extends Omit<DraftDatabase, "pair"> {
    * The database's `load`, with recovery around it: first reads every
    * discard record and moves every readable localStorage draft (all
    * accounts) into the database, and after the load removes the legacy
-   * bytes the database now holds. Damaged records stay stored, and a
+   * bytes the database now holds. A damaged record of the account loaded
+   * resolves itself where that provably loses nothing (`resolve`); every
+   * other one stays stored and sets the notice. A
    * discarded draft is left out of the result. Discard records are only
    * read here: one with no copy left to hide stays stored until its draft
    * is saved again.
@@ -67,6 +70,15 @@ const RECOVERY_INCOMPLETE = "Some drafts could not be recovered.";
  * back as the draft. Nothing failed to save: this is the store's notice, never its error.
  */
 const CLEANUP_FAILED = "Browser storage could not be updated. An old copy of a draft is still stored in this browser.";
+/** The fields of a plain text edit: a copy with any other (a deletion, a move, an upload, bytes) holds more than its text. */
+const EDIT_FIELDS = new Set(["version", "account", "repoId", "repo", "branch", "path", "baseSha", "original", "content", "updatedAt"]);
+type Fields = Record<string, unknown>;
+/** A git blob SHA in any case, as the editor writes it; undefined for anything else. */
+const blobName = (value: unknown) => typeof value === "string" && /^[a-f0-9]{40}$/i.test(value) ? value.toLowerCase() : undefined;
+/** The draft key of the file `fields` name, or undefined when they name none. */
+const keyOf = (fields: Fields) => typeof fields.account === "string" && typeof fields.repoId === "number" &&
+  typeof fields.branch === "string" && typeof fields.path === "string"
+  ? draftKey({ account: fields.account, repoId: fields.repoId, repo: "", branch: fields.branch }, fields.path) : undefined;
 
 /**
  * `store` shows the notice, a failed cleanup included. Without a `database`, drafts stay in localStorage and nothing is read from or written to one.
@@ -121,12 +133,57 @@ export function recoverDrafts(
     if (!complete) incomplete();
     return { keys, complete };
   };
+  /** The draft key of the file a localStorage key names, as the editor spells it; undefined when it names none. */
+  const named = (key: string) => {
+    try {
+      const [account, repoId, branch, path] = JSON.parse(key.slice(draftPrefix.length)) as unknown[];
+      return keyOf({ account, repoId, branch, path });
+    } catch { return undefined; }
+  };
+  /**
+   * A damaged localStorage copy of the account `mine` (a key prefix), resolved only where nothing can be
+   * lost. Mended (a key spelled another way, a SHA in capitals), it becomes its file's draft while the
+   * file has no record and no discard made after it. A plain text edit whose text is already held (its
+   * file's healthy draft has the same text, or the text is a GitHub blob it or that draft began from) is
+   * removed. Either way the copy leaves localStorage only while it still holds the bytes judged here, so
+   * a copy another tab rewrote meanwhile stays. True once the copy is gone.
+   */
+  const resolve = async (from: DraftDatabase, mine: string, key: string, raw: string, fields: Fields) => {
+    const names = [named(key), keyOf(fields)].filter((name) => name !== undefined);
+    if (!names.length || names.some((name) => !name.startsWith(mine))) return false;
+    const mended = { ...fields, baseSha: blobName(fields.baseSha) ?? fields.baseSha };
+    const draft = validDraft(keyOf(mended) ?? "", mended);
+    const file = draft ? draftKey(draft, draft.path) : names[0];
+    const [record, discard] = await from.pair(file, discardKey(file));
+    const discardedAt = validDraft(file, discard)?.updatedAt ?? -Infinity;
+    const current = validDraft(file, record);
+    const held = current && current.updatedAt > discardedAt && !current.opaque && !current.upload ? current : undefined;
+    const text = fields.content;
+    const safe = typeof text === "string" && Object.keys(fields).every((field) => EDIT_FIELDS.has(field)) &&
+      ((held && !held.deleted && held.content === text) ||
+        [blobName(fields.baseSha), blobName(held?.baseSha)].includes(await gitBlobSha(new TextEncoder().encode(text))));
+    /** What localStorage holds at the copy's key now; undefined when it cannot say. */
+    const stored = () => { try { return storage.getItem(key); } catch { return undefined; } };
+    // Gone (another tab resolved it) is resolved; other bytes are judged on a later load.
+    let now = stored();
+    if (!safe) {
+      if (!draft || record !== undefined || draft.updatedAt <= discardedAt) return false;
+      // Checked as the write's transaction starts (no await in between), like the move of a readable copy.
+      if (now !== raw) return now === null;
+      await from.write([[file, draft], discardChange(file)]);
+      now = stored();
+    }
+    if (now !== raw) return now === null;
+    try { storage.removeItem(key); return true; } catch { return false; }
+  };
   return {
     keys: () => account && !active ? [] : scan().keys,
     async load(from) {
       if (!database) return [];
       /** Readable legacy drafts as [key, record, stored bytes]. */
       const legacy: [string, SavedDraft, string][] = [];
+      /** Records that parse but are no draft the editor can read, as [key, stored bytes, fields]. */
+      const damaged: [string, string, Fields][] = [];
       const found = scan();
       active = !found.complete;
       for (const key of found.keys) {
@@ -135,8 +192,10 @@ export function recoverDrafts(
         catch { active = true; incomplete(); continue; }
         if (raw === null) continue;
         try {
-          const value = validDraft(key, JSON.parse(raw));
+          const parsed: unknown = JSON.parse(raw);
+          const value = validDraft(key, parsed);
           if (value) legacy.push([key, value, raw]);
+          else if (parsed && typeof parsed === "object") damaged.push([key, raw, parsed as Fields]);
           else incomplete();
         } catch { incomplete(); }
       }
@@ -156,6 +215,10 @@ export function recoverDrafts(
       const moved = newer.filter(([key, , raw]) => { try { return storage.getItem(key) === raw; } catch { return false; } })
         .map(([key, value]): [string, SavedDraft] => [key, value]);
       if (moved.length) await database.write(moved);
+      // After the move, so a readable copy of the same file counts as its draft; one at a time, so a
+      // second damaged copy of a file sees the draft the first became. The rest keep the notice.
+      for (const [key, raw, fields] of damaged)
+        if (!await resolve(database, from, key, raw, fields).catch(() => false)) incomplete();
       const records = await database.load(from);
       for (const [key, , raw] of legacy) {
         try {
