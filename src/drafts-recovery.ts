@@ -150,12 +150,11 @@ export function recoverDrafts(
    * holds the bytes judged here, so a copy another tab rewrote meanwhile stays. True once it is gone.
    */
   const resolve = async (from: DraftDatabase, mine: string, key: string, raw: string, fields: Fields) => {
-    const names = [named(key), keyOf(fields)].filter((name) => name !== undefined);
-    // The key and the copy must name the same file of this account: a copy naming two is kept.
-    if (!names.length || names.some((name) => name !== names[0] || !name.startsWith(mine))) return false;
+    // The key and the copy must each name a whole file, the same one, of this account: any other is kept.
+    const file = keyOf(fields);
+    if (!file || named(key) !== file || !file.startsWith(mine)) return false;
     const mended = { ...fields, baseSha: blobName(fields.baseSha) ?? fields.baseSha };
-    const draft = validDraft(keyOf(mended) ?? "", mended);
-    const file = draft ? draftKey(draft, draft.path) : names[0];
+    const draft = validDraft(file, mended);
     const text = fields.content;
     const plain = typeof text === "string" && Object.keys(fields).every((field) => EDIT_FIELDS.has(field));
     // Hashed before the file's records are read: nothing awaits between judging them and acting.
@@ -164,9 +163,11 @@ export function recoverDrafts(
     const stored = () => { try { return storage.getItem(key); } catch { return undefined; } };
     let resolved = false as boolean | "repaired";
     await from.update([file, discardKey(file)], ([record, discard]) => {
-      const discardedAt = validDraft(file, discard)?.updatedAt ?? -Infinity;
+      // A discard record it cannot read has no time, and nothing counts as made after it.
+      const discardedAt = discard === undefined ? -Infinity : validDraft(file, discard)?.updatedAt;
+      const after = (time: unknown) => typeof time === "number" && Number.isFinite(time) && typeof discardedAt === "number" && time > discardedAt;
       const current = validDraft(file, record);
-      const held = current && current.updatedAt > discardedAt && !current.opaque && !current.upload ? current : undefined;
+      const held = current && after(current.updatedAt) && !current.opaque && !current.upload ? current : undefined;
       const now = stored();
       // Gone (another tab resolved it) is resolved; other bytes are judged on a later load.
       if (now !== raw) { resolved = now === null; return; }
@@ -176,7 +177,7 @@ export function recoverDrafts(
         try { storage.removeItem(key); resolved = true; } catch {}
         return;
       }
-      if (!draft || record !== undefined || draft.updatedAt <= discardedAt) return;
+      if (!draft || record !== undefined || !after(draft.updatedAt)) return;
       resolved = "repaired";
       return [[file, draft], discardChange(file)];
     });
