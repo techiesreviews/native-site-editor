@@ -373,11 +373,16 @@ test("a damaged copy whose text is already safe elsewhere is dropped, and the no
 test("a damaged copy that may still hold work stays stored, with the notice", async () => {
   const disk = storage(), db = memoryDrafts();
   await db.write([[draftKey(draft, draft.path), { ...draft, content: "other text", updatedAt: 5 }],
-    discardChange(draftKey(draft, "discarded.md"), 3), [draftKey(draft, "a.md"), { ...draft, path: "a.md", content: "same", updatedAt: 5 }]]);
+    discardChange(draftKey(draft, "discarded.md"), 3), [draftKey(draft, "a.md"), { ...draft, path: "a.md", content: "same", updatedAt: 5 }],
+    discardChange(draftKey(draft, "late.md"), 3)]);
   const kept: [string, string][] = [
     ["astro-site-editor:draft:v1:damaged", "{"],
-    // Its key names a.md, whose draft holds the same text, but the copy itself is for b.md.
+    // Its key names a.md, whose draft holds the same text, but the copy itself is for b.md: whole, or with no repository id.
     [legacyKey("lex", "a.md"), JSON.stringify({ ...noRepo, path: "b.md", content: "same" })],
+    [legacyKey("LEX", "a.md"), JSON.stringify({ ...noRepo, repoId: undefined, path: "b.md", content: "same" })],
+    // Repairable but with no usable time beside a discard record: it may be older than the discard.
+    [legacyKey("Lex", "late.md"), JSON.stringify({ ...draft, path: "late.md", updatedAt: undefined })],
+    [legacyKey("LEX", "late.md"), JSON.stringify({ ...draft, path: "late.md", updatedAt: "9" })],
     // Its file's healthy draft holds other text.
     [draftKey(draft, draft.path), JSON.stringify(noRepo)],
     // Repairable, but its file already has a draft with other text.
@@ -396,6 +401,8 @@ test("a damaged copy that may still hold work stays stored, with the notice", as
   for (const [key, raw] of kept) assert.equal(disk.getItem(key), raw, key);
   assert.equal(store.get(draft, draft.path)?.content, "other text");
   assert.equal(store.get(draft, "a.md")?.content, "same");
+  const [lateDiscard, lateRecord] = discardChange(draftKey(draft, "late.md"), 3);
+  assert.deepEqual(db.map.get(lateDiscard), lateRecord);
   assert.deepEqual(store.list(draft).map((value) => value.path).sort(), ["a.md", draft.path]);
 });
 test("another account's damaged copies are never touched", async () => {
