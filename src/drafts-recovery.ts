@@ -151,7 +151,8 @@ export function recoverDrafts(
    */
   const resolve = async (from: DraftDatabase, mine: string, key: string, raw: string, fields: Fields) => {
     const names = [named(key), keyOf(fields)].filter((name) => name !== undefined);
-    if (!names.length || names.some((name) => !name.startsWith(mine))) return false;
+    // The key and the copy must name the same file of this account: a copy naming two is kept.
+    if (!names.length || names.some((name) => name !== names[0] || !name.startsWith(mine))) return false;
     const mended = { ...fields, baseSha: blobName(fields.baseSha) ?? fields.baseSha };
     const draft = validDraft(keyOf(mended) ?? "", mended);
     const file = draft ? draftKey(draft, draft.path) : names[0];
