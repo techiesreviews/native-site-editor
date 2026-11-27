@@ -161,6 +161,15 @@ export function recoverDrafts(
     const blob = plain ? await gitBlobSha(new TextEncoder().encode(text)) : undefined;
     /** What localStorage holds at the copy's key now; undefined when it cannot say. */
     const stored = () => { try { return storage.getItem(key); } catch { return undefined; } };
+    /**
+     * For bytes other than those judged: gone (another tab resolved it) is resolved. Other bytes, or
+     * bytes it cannot read, may be another tab's newer draft: reads keep checking localStorage, as
+     * they do for a readable copy rewritten meanwhile, and the copy is judged again on a later load.
+     */
+    const gone = (now: string | null | undefined) => {
+      if (now !== null) active = true;
+      return now === null;
+    };
     let resolved = false as boolean | "repaired";
     await from.update([file, discardKey(file)], ([record, discard]) => {
       // A discard record it cannot read has no time, and nothing counts as made after it.
@@ -169,8 +178,7 @@ export function recoverDrafts(
       const current = validDraft(file, record);
       const held = current && after(current.updatedAt) && !current.opaque && !current.upload ? current : undefined;
       const now = stored();
-      // Gone (another tab resolved it) is resolved; other bytes are judged on a later load.
-      if (now !== raw) { resolved = now === null; return; }
+      if (now !== raw) { resolved = gone(now); return; }
       if (plain && ((held && !held.deleted && held.content === text) ||
         [blobName(fields.baseSha), blobName(held?.baseSha)].includes(blob))) {
         // Removed while the transaction holds the file's records: the text that makes it safe stays put.
@@ -184,7 +192,7 @@ export function recoverDrafts(
     if (resolved !== "repaired") return resolved;
     // The copy goes once its repair has committed, and only while it still holds the same bytes.
     const now = stored();
-    if (now !== raw) return now === null;
+    if (now !== raw) return gone(now);
     try { storage.removeItem(key); return true; } catch { return false; }
   };
   return {

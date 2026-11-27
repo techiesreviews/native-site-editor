@@ -442,6 +442,8 @@ for (const step of ["repair read", "repair write", "drop read"] as const) test(`
   assert.equal(disk.getItem(key), newer);
   assert.match(store.notice!, /Some drafts could not be recovered/);
   if (step === "repair read") assert.equal(memory.map.has(file), false);
+  // The other tab's healthy copy is newer than the stored draft: it shows now, not after a reload.
+  else if (step === "drop read") assert.equal(store.get(draft, draft.path)?.content, "another tab's copy");
   else assert.deepEqual(store.get(draft, draft.path), draft);
 });
 for (const commit of ["save", "discard", "changed text"] as const) test(`a damaged copy stays when another tab's ${commit} commits while this tab judges it`, async () => {
