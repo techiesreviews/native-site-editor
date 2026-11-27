@@ -1,4 +1,5 @@
 import { waitForConnection } from "./mcp-prompt";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -83,6 +84,31 @@ test("a damaged old draft keeps healthy drafts visible and reports incomplete re
     await showPublish(page);
     for (const path of ["index.html", "notes.txt"])
       await expect(page.locator("#publish-files .publish-menu__file", { hasText: path })).toBeVisible();
+  }
+});
+
+test("a damaged old draft the editor can repair, or whose text is already saved, resolves itself and the notice stays away", async ({ page, baseURL }) => {
+  const content = indexSource.replace("A native browser preview", "Repaired unsaved page");
+  const robots = readFileSync(resolve("fixtures/native-starter/robots.txt"));
+  const robotsSha = createHash("sha1").update(`blob ${robots.length}\0`).update(robots).digest("hex");
+  await page.addInitScript(({ scope, content, original, robots, robotsSha }) => {
+    if (window !== window.top || sessionStorage.getItem("draft-repair-seeded")) return;
+    sessionStorage.setItem("draft-repair-seeded", "1");
+    const key = (account: string, path: string) => "astro-site-editor:draft:v1:" + JSON.stringify([account, scope.repoId, scope.branch, path]);
+    // Under a key with the account in capitals: the editor spells it in lower case.
+    localStorage.setItem(key(scope.account.toUpperCase(), "index.html"), JSON.stringify({ ...scope, version: 1, path: "index.html",
+      baseSha: "a".repeat(40), original, content, updatedAt: 1 }));
+    // No repository name, and only GitHub's own text.
+    const { repo: _, ...noRepo } = scope;
+    localStorage.setItem(key(scope.account, "robots.txt"), JSON.stringify({ ...noRepo, version: 1, path: "robots.txt",
+      baseSha: robotsSha, original: robots, content: robots, updatedAt: 1 }));
+  }, { scope, content, original: indexSource, robots: robots.toString(), robotsSha });
+  for (let load = 0; load < 2; load++) {
+    await open(page, baseURL);
+    await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("Repaired unsaved page");
+    await expect(page.getByText("Some drafts could not be recovered")).toHaveCount(0);
+    expect((await storedDrafts(page)).map(value => value.path)).toEqual(["index.html"]);
+    expect(await legacyDraftKeys(page)).toEqual([]);
   }
 });
 

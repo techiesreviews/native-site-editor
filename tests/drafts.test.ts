@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DraftStore, draftKey, indexedDbDrafts, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
+import { createHash } from "node:crypto";
+import { DraftStore, discardChange, draftKey, indexedDbDrafts, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
 import { moveFile } from "../src/file-changes.ts";
 import { githubScope, holdsDraftScope } from "../src/workspace-session.ts";
 import { forEachAwait } from "./support/await-race.ts";
@@ -320,6 +321,116 @@ test("an invalid legacy record stays stored and reports incomplete recovery", as
   await store.flush();
   assert.match(store.notice!, /Some drafts could not be recovered/);
   assert.equal(disk.getItem("astro-site-editor:draft:v1:invalid"), JSON.stringify({ version: 1 }));
+});
+/** A localStorage draft key as an older or foreign writer may have spelled it (the account's case kept). */
+const legacyKey = (account: string, path = draft.path) =>
+  "astro-site-editor:draft:v1:" + JSON.stringify([account, draft.repoId, draft.branch, path]);
+/** The git blob SHA of `text`: GitHub's name for a file holding it. */
+const blobSha = (text: string) => {
+  const bytes = Buffer.from(text);
+  return createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
+};
+/** A copy the editor can neither read nor repair: it lacks the repository name. */
+const { repo: _repo, ...noRepo } = draft;
+test("a damaged copy under the wrong key, or with a fixable shape, becomes a normal draft and the notice goes", async () => {
+  const disk = storage(), db = memoryDrafts();
+  // The editor keys drafts by the account in lower case.
+  const wrongKey = legacyKey("Lex");
+  const fixable = { ...draft, path: "about.md", baseSha: "A".repeat(40) };
+  disk.setItem(wrongKey, JSON.stringify(draft));
+  disk.setItem(draftKey(fixable, fixable.path), JSON.stringify(fixable));
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.equal(store.notice, null);
+  assert.deepEqual(store.get(draft, draft.path), draft);
+  assert.deepEqual(store.get(fixable, fixable.path), { ...fixable, baseSha: "a".repeat(40) });
+  assert.deepEqual(store.list(draft).map((value) => value.path), ["about.md", draft.path]);
+  assert.equal(disk.length, 0);
+  // The next start has nothing left to recover.
+  let calls = 0;
+  const again = new DraftStore(disk, db);
+  await again.load("lex", () => { calls++; return loadRecovery(); });
+  assert.equal(calls, 0);
+  assert.equal(again.notice, null);
+  assert.deepEqual(again.get(draft, draft.path), draft);
+});
+test("a damaged copy whose text is already safe elsewhere is dropped, and the notice goes", async () => {
+  const disk = storage(), db = memoryDrafts();
+  // The file's newer healthy draft holds the same text.
+  await db.write([[draftKey(draft, draft.path), { ...draft, updatedAt: 5 }]]);
+  disk.setItem(draftKey(draft, draft.path), JSON.stringify(noRepo));
+  // Only GitHub's own text: the blob the copy began from.
+  const onGitHub = { ...noRepo, path: "about.md", original: "on GitHub", content: "on GitHub", baseSha: blobSha("on GitHub") };
+  disk.setItem(legacyKey("lex", "about.md"), JSON.stringify(onGitHub));
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.equal(store.notice, null);
+  assert.equal(disk.length, 0);
+  assert.deepEqual(store.get(draft, draft.path), { ...draft, updatedAt: 5 });
+  assert.equal(store.get(draft, "about.md"), undefined);
+  assert.deepEqual([...db.map.keys()], [draftKey(draft, draft.path)]);
+});
+test("a damaged copy that may still hold work stays stored, with the notice", async () => {
+  const disk = storage(), db = memoryDrafts();
+  await db.write([[draftKey(draft, draft.path), { ...draft, content: "other text", updatedAt: 5 }],
+    discardChange(draftKey(draft, "discarded.md"), 3)]);
+  const kept: [string, string][] = [
+    ["astro-site-editor:draft:v1:damaged", "{"],
+    // Its file's healthy draft holds other text.
+    [draftKey(draft, draft.path), JSON.stringify(noRepo)],
+    // Repairable, but its file already has a draft with other text.
+    [legacyKey("Lex"), JSON.stringify({ ...draft, content: "wrong key text" })],
+    // Repairable, but the file was discarded after it: it would come back hidden, then be lost.
+    [legacyKey("Lex", "discarded.md"), JSON.stringify({ ...draft, path: "discarded.md" })],
+    // A deletion is work, even when the text it held is GitHub's.
+    [legacyKey("lex", "gone.md"), JSON.stringify({ ...noRepo, path: "gone.md", deleted: true, original: "x", content: "x", baseSha: blobSha("x") })],
+    // Nothing says which file it is for.
+    ["astro-site-editor:draft:v1:invalid", JSON.stringify({ version: 1, content: "x" })],
+  ];
+  for (const [key, raw] of kept) disk.setItem(key, raw);
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.match(store.notice!, /Some drafts could not be recovered/);
+  for (const [key, raw] of kept) assert.equal(disk.getItem(key), raw, key);
+  assert.equal(store.get(draft, draft.path)?.content, "other text");
+  assert.deepEqual(store.list(draft).map((value) => value.path), [draft.path]);
+});
+test("another account's damaged copies are never touched", async () => {
+  const disk = storage(), db = memoryDrafts();
+  const theirs = { ...draft, account: "someone" }, { repo: _, ...theirsNoRepo } = theirs;
+  await db.write([[draftKey(theirs, theirs.path), theirs]]);
+  const kept: [string, string][] = [
+    // Repairable and droppable, were they this account's.
+    [legacyKey("Someone"), JSON.stringify(theirs)],
+    [draftKey(theirs, theirs.path), JSON.stringify(theirsNoRepo)],
+    // The key names this account, the copy another one.
+    [legacyKey("lex", "mixed.md"), JSON.stringify({ ...theirs, path: "mixed.md" })],
+  ];
+  for (const [key, raw] of kept) disk.setItem(key, raw);
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.match(store.notice!, /Some drafts could not be recovered/);
+  for (const [key, raw] of kept) assert.equal(disk.getItem(key), raw, key);
+  assert.deepEqual([...db.map.keys()], [draftKey(theirs, theirs.path)]);
+});
+for (const step of ["repair read", "repair write", "drop read"] as const) test(`a damaged copy another tab rewrites meanwhile stays stored (${step})`, async () => {
+  const disk = storage(), memory = memoryDrafts(), file = draftKey(draft, draft.path);
+  const key = step === "drop read" ? file : legacyKey("Lex");
+  const raw = JSON.stringify(step === "drop read" ? noRepo : draft);
+  const newer = JSON.stringify({ ...draft, content: "another tab's copy", updatedAt: 9 });
+  if (step === "drop read") await memory.write([[file, draft]]);
+  disk.setItem(key, raw);
+  // Another tab writes the key while this tab reads the copy's file, or writes the repaired draft.
+  const rewrite = () => { if (disk.getItem(key) === raw) disk.setItem(key, newer); };
+  const db: DraftDatabase = { ...memory,
+    pair: async (name, other) => { const read = await memory.pair(name, other); if (step !== "repair write") rewrite(); return read; },
+    write: async (changes) => { await memory.write(changes); if (step === "repair write") rewrite(); } };
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.equal(disk.getItem(key), newer);
+  assert.match(store.notice!, /Some drafts could not be recovered/);
+  if (step === "repair read") assert.equal(memory.map.has(file), false);
+  else assert.deepEqual(store.get(draft, draft.path), draft);
 });
 for (const failAt of ["read", "key", "length"] as const) test(`a legacy ${failAt} failure retains accessible recovery and durable saving`, async () => {
   const disk = storage(), db = memoryDrafts();
