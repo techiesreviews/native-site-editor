@@ -423,14 +423,32 @@ for (const step of ["repair read", "repair write", "drop read"] as const) test(`
   // Another tab writes the key while this tab reads the copy's file, or writes the repaired draft.
   const rewrite = () => { if (disk.getItem(key) === raw) disk.setItem(key, newer); };
   const db: DraftDatabase = { ...memory,
-    pair: async (name, other) => { const read = await memory.pair(name, other); if (step !== "repair write") rewrite(); return read; },
-    write: async (changes) => { await memory.write(changes); if (step === "repair write") rewrite(); } };
+    update: async (keys, decide) => {
+      await memory.update(keys, (records) => { if (step !== "repair write") rewrite(); return decide(records); });
+      if (step === "repair write") rewrite();
+    } };
   const store = new DraftStore(disk, db);
   await store.load("lex", loadRecovery);
   assert.equal(disk.getItem(key), newer);
   assert.match(store.notice!, /Some drafts could not be recovered/);
   if (step === "repair read") assert.equal(memory.map.has(file), false);
   else assert.deepEqual(store.get(draft, draft.path), draft);
+});
+for (const commit of ["save", "discard", "changed text"] as const) test(`a damaged copy stays when another tab's ${commit} commits while this tab judges it`, async () => {
+  const disk = storage(), memory = memoryDrafts(), file = draftKey(draft, draft.path);
+  // Repairable, or (for "changed text") dropped as long as the file's draft holds the same text.
+  const key = commit === "changed text" ? file : legacyKey("Lex");
+  const raw = JSON.stringify(commit === "changed text" ? noRepo : draft);
+  if (commit === "changed text") await memory.write([[file, draft]]);
+  disk.setItem(key, raw);
+  const theirs: [string, SavedDraft | null] = commit === "discard" ? discardChange(file, 9) : [file, { ...draft, content: "another tab's save", updatedAt: 9 }];
+  // Committed while this tab hashes the copy's text, after it last awaited anything but the judging transaction.
+  const db: DraftDatabase = { ...memory, update: async (keys, decide) => { await memory.write([theirs]); return memory.update(keys, decide); } };
+  const store = new DraftStore(disk, db);
+  await store.load("lex", loadRecovery);
+  assert.equal(disk.getItem(key), raw);
+  assert.match(store.notice!, /Some drafts could not be recovered/);
+  assert.deepEqual(memory.map.get(theirs[0]), theirs[1]);
 });
 for (const failAt of ["read", "key", "length"] as const) test(`a legacy ${failAt} failure retains accessible recovery and durable saving`, async () => {
   const disk = storage(), db = memoryDrafts();
